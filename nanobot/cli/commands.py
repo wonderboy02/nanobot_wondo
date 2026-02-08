@@ -146,6 +146,54 @@ This file stores important information that should persist across sessions.
 """)
         console.print("  [dim]Created memory/MEMORY.md[/dim]")
 
+    # Create dashboard directory and structure
+    dashboard_dir = workspace / "dashboard"
+    dashboard_dir.mkdir(exist_ok=True)
+
+    # Initialize dashboard JSON files
+    import json
+
+    dashboard_files = {
+        "tasks.json": {"version": "1.0", "tasks": []},
+        "questions.json": {"version": "1.0", "questions": []},
+        "notifications.json": {"version": "1.0", "notifications": []},
+    }
+
+    for filename, data in dashboard_files.items():
+        file_path = dashboard_dir / filename
+        if not file_path.exists():
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+
+    # Create knowledge subdirectory
+    knowledge_dir = dashboard_dir / "knowledge"
+    knowledge_dir.mkdir(exist_ok=True)
+
+    knowledge_files = {
+        "history.json": {"version": "1.0", "completed_tasks": [], "projects": []},
+        "insights.json": {"version": "1.0", "insights": []},
+        "people.json": {"version": "1.0", "people": []},
+    }
+
+    for filename, data in knowledge_files.items():
+        file_path = knowledge_dir / filename
+        if not file_path.exists():
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+
+    console.print("  [dim]Created dashboard/ structure[/dim]")
+
+    # Copy DASHBOARD.md template
+    dashboard_md = workspace / "DASHBOARD.md"
+    if not dashboard_md.exists():
+        template_path = Path(__file__).parent.parent.parent / "workspace" / "DASHBOARD.md"
+        if template_path.exists():
+            import shutil
+            shutil.copy(template_path, dashboard_md)
+            console.print("  [dim]Created DASHBOARD.md[/dim]")
+        else:
+            console.print("[yellow]Warning: DASHBOARD.md template not found[/yellow]")
+
 
 # ============================================================================
 # Gateway / Server
@@ -626,6 +674,260 @@ def cron_run(
         console.print(f"[green]✓[/green] Job executed")
     else:
         console.print(f"[red]Failed to run job {job_id}[/red]")
+
+
+# ============================================================================
+# Dashboard Commands
+# ============================================================================
+
+def _get_dashboard_manager():
+    """Helper to initialize DashboardManager."""
+    from nanobot.config.loader import load_config
+    from nanobot.dashboard.manager import DashboardManager
+
+    config = load_config()
+    workspace = config.workspace_path
+    dashboard_path = workspace / "dashboard"
+    return DashboardManager(dashboard_path)
+
+
+dashboard_app = typer.Typer(help="Manage your dashboard")
+app.add_typer(dashboard_app, name="dashboard")
+
+
+@dashboard_app.command("show")
+def dashboard_show():
+    """Show dashboard overview."""
+    manager = _get_dashboard_manager()
+    dashboard = manager.load()
+
+    console.print(f"\n{__logo__} Dashboard\n")
+
+    # Tasks summary
+    tasks = dashboard.get('tasks', [])
+    active_tasks = [t for t in tasks if t.get('status') == 'active']
+    someday_tasks = [t for t in tasks if t.get('status') == 'someday']
+
+    console.print(f"[bold]Tasks:[/bold] {len(active_tasks)} active, {len(someday_tasks)} someday")
+
+    if active_tasks:
+        table = Table(title="Active Tasks", show_header=True, header_style="bold cyan")
+        table.add_column("ID", style="dim", width=10)
+        table.add_column("Title", width=40)
+        table.add_column("Progress", width=10)
+        table.add_column("Deadline", width=20)
+
+        for task in active_tasks[:10]:  # Show first 10
+            progress = f"{task.get('progress', {}).get('percentage', 0):.0f}%"
+            deadline = task.get('deadline_text', task.get('deadline', '-')[:10] if task.get('deadline') else '-')
+            table.add_row(task['id'][:8], task['title'][:40], progress, deadline)
+
+        console.print(table)
+
+        if len(active_tasks) > 10:
+            console.print(f"[dim]... and {len(active_tasks) - 10} more[/dim]\n")
+
+    # Questions
+    questions = dashboard.get('questions', [])
+    pending_questions = [q for q in questions if not q.get('answered', False)]
+
+    console.print(f"\n[bold]Questions:[/bold] {len(pending_questions)} pending")
+
+    if pending_questions:
+        for i, q in enumerate(pending_questions[:5], 1):
+            priority = q.get('priority', 'low')
+            color = {'high': 'red', 'medium': 'yellow', 'low': 'dim'}.get(priority, 'white')
+            console.print(f"  [{color}]{i}. [{q['id'][:8]}] {q['question']}[/{color}]")
+
+        if len(pending_questions) > 5:
+            console.print(f"[dim]  ... and {len(pending_questions) - 5} more[/dim]")
+
+    console.print()
+
+
+@dashboard_app.command("tasks")
+def dashboard_tasks(
+    all: bool = typer.Option(False, "--all", "-a", help="Show all tasks including someday"),
+    someday: bool = typer.Option(False, "--someday", "-s", help="Show only someday tasks"),
+):
+    """List tasks."""
+    manager = _get_dashboard_manager()
+    dashboard = manager.load()
+
+    tasks = dashboard.get('tasks', [])
+
+    if someday:
+        tasks = [t for t in tasks if t.get('status') == 'someday']
+        title = "Someday Tasks"
+    elif all:
+        title = "All Tasks"
+    else:
+        tasks = [t for t in tasks if t.get('status') == 'active']
+        title = "Active Tasks"
+
+    if not tasks:
+        console.print("No tasks.")
+        return
+
+    table = Table(title=title, show_header=True, header_style="bold cyan")
+    table.add_column("ID", style="dim", width=10)
+    table.add_column("Title", width=35)
+    table.add_column("Progress", width=10)
+    table.add_column("Priority", width=10)
+    table.add_column("Deadline", width=20)
+    table.add_column("Status", width=10)
+
+    for task in tasks:
+        progress = f"{task.get('progress', {}).get('percentage', 0):.0f}%"
+        priority = task.get('priority', '-')
+        deadline = task.get('deadline_text', task.get('deadline', '-')[:10] if task.get('deadline') else '-')
+        status = task.get('status', 'unknown')
+
+        table.add_row(
+            task['id'][:8],
+            task['title'][:35],
+            progress,
+            priority,
+            deadline,
+            status
+        )
+
+    console.print(table)
+
+
+@dashboard_app.command("questions")
+def dashboard_questions():
+    """List pending questions."""
+    manager = _get_dashboard_manager()
+    dashboard = manager.load()
+
+    questions = dashboard.get('questions', [])
+    pending = [q for q in questions if not q.get('answered', False)]
+
+    if not pending:
+        console.print("No pending questions.")
+        return
+
+    console.print(f"\n[bold]Question Queue[/bold] ({len(pending)} pending)\n")
+
+    for q in pending:
+        priority = q.get('priority', 'low')
+        color = {'high': 'red', 'medium': 'yellow', 'low': 'dim'}.get(priority, 'white')
+
+        console.print(f"[{color}]ID:[/{color}] [{color}]{q['id']}[/{color}]")
+        console.print(f"[{color}]Q:[/{color}] {q['question']}")
+        console.print(f"[{color}]Priority:[/{color}] {priority}")
+        if q.get('related_task_id'):
+            console.print(f"[{color}]Related Task:[/{color}] {q['related_task_id']}")
+        console.print()
+
+
+@dashboard_app.command("answer")
+def dashboard_answer(
+    question_id: str = typer.Argument(..., help="Question ID"),
+    answer: str = typer.Argument(..., help="Your answer"),
+):
+    """Answer a question from the queue."""
+    from datetime import datetime
+
+    # Validate inputs
+    if not answer or not answer.strip():
+        console.print("[red]Error: Answer cannot be empty[/red]")
+        raise typer.Exit(1)
+
+    if len(answer) > 10000:
+        console.print("[red]Error: Answer too long (max 10000 characters)[/red]")
+        raise typer.Exit(1)
+
+    manager = _get_dashboard_manager()
+    dashboard = manager.load()
+
+    questions = dashboard.get('questions', [])
+
+    # Find question
+    question = None
+    for q in questions:
+        if q['id'] == question_id or q['id'].startswith(question_id):
+            question = q
+            break
+
+    if not question:
+        console.print(f"[red]Question {question_id} not found[/red]")
+        raise typer.Exit(1)
+
+    # Mark as answered
+    question['answered'] = True
+    question['answer'] = answer
+    question['answered_at'] = datetime.now().isoformat()
+
+    # Save
+    manager.save(dashboard)
+
+    console.print(f"[green]✓[/green] Question answered: {question['question']}")
+    console.print(f"[green]→[/green] {answer}")
+
+
+@dashboard_app.command("dismiss")
+def dashboard_dismiss(
+    question_id: str = typer.Argument(..., help="Question ID to dismiss"),
+):
+    """Dismiss a question (keeps it in queue)."""
+    console.print(f"[dim]Question {question_id} dismissed (stays in queue)[/dim]")
+    console.print("[dim]Tip: Use 'answer' to actually respond[/dim]")
+
+
+@dashboard_app.command("history")
+def dashboard_history():
+    """Show completed tasks history."""
+    manager = _get_dashboard_manager()
+    dashboard = manager.load()
+
+    history = dashboard.get('knowledge', {}).get('history', {})
+    completed = history.get('completed_tasks', [])
+
+    if not completed:
+        console.print("No completed tasks yet.")
+        return
+
+    table = Table(title="History", show_header=True, header_style="bold green")
+    table.add_column("ID", style="dim", width=10)
+    table.add_column("Title", width=40)
+    table.add_column("Completed", width=20)
+    table.add_column("Duration", width=10)
+
+    for task in reversed(completed[-20:]):  # Last 20
+        completed_at = task.get('completed_at', '')[:10]
+        duration = f"{task.get('duration_days', 0)}d"
+
+        table.add_row(
+            task['id'][:8],
+            task['title'][:40],
+            completed_at,
+            duration
+        )
+
+    console.print(table)
+
+
+@dashboard_app.command("worker")
+def dashboard_worker():
+    """Manually run the worker agent."""
+    from nanobot.config.loader import load_config
+    from nanobot.dashboard.worker import WorkerAgent
+
+    config = load_config()
+    workspace = config.workspace_path
+    dashboard_path = workspace / "dashboard"
+
+    console.print(f"{__logo__} Running worker agent...")
+
+    async def run():
+        worker = WorkerAgent(dashboard_path)
+        await worker.run_cycle()
+
+    asyncio.run(run())
+
+    console.print("[green]✓[/green] Worker cycle complete")
 
 
 # ============================================================================

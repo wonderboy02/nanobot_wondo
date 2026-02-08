@@ -18,7 +18,7 @@ class ContextBuilder:
     into a coherent prompt for the LLM.
     """
     
-    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md"]
+    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md", "DASHBOARD.md"]
     
     def __init__(self, workspace: Path):
         self.workspace = workspace
@@ -57,7 +57,7 @@ class ContextBuilder:
             always_content = self.skills.load_skills_for_context(always_skills)
             if always_content:
                 parts.append(f"# Active Skills\n\n{always_content}")
-        
+
         # 2. Available skills: only show summary (agent uses read_file to load)
         skills_summary = self.skills.build_skills_summary()
         if skills_summary:
@@ -67,7 +67,12 @@ The following skills extend your capabilities. To use a skill, read its SKILL.md
 Skills with available="false" need dependencies installed first - you can try installing them with apt/brew.
 
 {skills_summary}""")
-        
+
+        # Dashboard state (Active tasks + Question Queue)
+        dashboard_context = self._get_dashboard_context()
+        if dashboard_context:
+            parts.append(f"# Dashboard State\n\n{dashboard_context}")
+
         return "\n\n---\n\n".join(parts)
     
     def _get_identity(self) -> str:
@@ -109,14 +114,43 @@ When remembering something, write to {workspace_path}/memory/MEMORY.md"""
     def _load_bootstrap_files(self) -> str:
         """Load all bootstrap files from workspace."""
         parts = []
-        
+
         for filename in self.BOOTSTRAP_FILES:
             file_path = self.workspace / filename
             if file_path.exists():
                 content = file_path.read_text(encoding="utf-8")
                 parts.append(f"## {filename}\n\n{content}")
-        
+
         return "\n\n".join(parts) if parts else ""
+
+    def _get_dashboard_context(self) -> str:
+        """
+        Get current Dashboard state for context.
+
+        Returns:
+            Dashboard summary (active tasks + unanswered questions).
+        """
+        try:
+            from nanobot.dashboard.helper import get_dashboard_summary
+            dashboard_path = self.workspace / "dashboard"
+
+            # Dashboard directory doesn't exist yet - silent skip
+            if not dashboard_path.exists():
+                return ""
+
+            return get_dashboard_summary(dashboard_path)
+
+        except ImportError:
+            # Dashboard module not installed - silent skip
+            return ""
+        except Exception as e:
+            # Unexpected error - log but don't break context building
+            try:
+                from loguru import logger
+                logger.debug(f"Dashboard context skipped: {e}")
+            except:
+                pass
+            return ""
     
     def build_messages(
         self,

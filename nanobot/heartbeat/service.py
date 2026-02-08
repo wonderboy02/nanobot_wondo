@@ -101,27 +101,55 @@ class HeartbeatService:
     
     async def _tick(self) -> None:
         """Execute a single heartbeat tick."""
+        # Run Worker Agent first
+        await self._run_worker()
+
+        # Then check HEARTBEAT.md
         content = self._read_heartbeat_file()
-        
+
         # Skip if HEARTBEAT.md is empty or doesn't exist
         if _is_heartbeat_empty(content):
             logger.debug("Heartbeat: no tasks (HEARTBEAT.md empty)")
             return
-        
+
         logger.info("Heartbeat: checking for tasks...")
-        
+
         if self.on_heartbeat:
             try:
                 response = await self.on_heartbeat(HEARTBEAT_PROMPT)
-                
+
                 # Check if agent said "nothing to do"
                 if HEARTBEAT_OK_TOKEN.replace("_", "") in response.upper().replace("_", ""):
                     logger.info("Heartbeat: OK (no action needed)")
                 else:
                     logger.info(f"Heartbeat: completed task")
-                    
+
             except Exception as e:
                 logger.error(f"Heartbeat execution failed: {e}")
+
+    async def _run_worker(self) -> None:
+        """Run the Worker Agent to check dashboard."""
+        dashboard_path = self.workspace / "dashboard"
+
+        # Dashboard not initialized - skip worker
+        if not dashboard_path.exists():
+            return
+
+        try:
+            from nanobot.dashboard.worker import WorkerAgent
+            worker = WorkerAgent(dashboard_path)
+            await worker.run_cycle()
+            logger.debug("Worker cycle completed successfully")
+
+        except ImportError:
+            # Dashboard module not available - log once
+            logger.debug("Dashboard worker not available")
+        except FileNotFoundError as e:
+            # Dashboard files missing
+            logger.warning(f"Dashboard files missing: {e}")
+        except Exception as e:
+            # Other errors - log and continue
+            logger.error(f"Worker execution failed: {e}")
     
     async def trigger_now(self) -> str | None:
         """Manually trigger a heartbeat."""
