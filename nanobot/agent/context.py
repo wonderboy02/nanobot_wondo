@@ -164,8 +164,14 @@ When remembering something, write to {workspace_path}/memory/MEMORY.md"""
         """
         Build the complete message list for an LLM call.
 
+        STATELESS DESIGN:
+        - Session history is NOT included in LLM context
+        - Dashboard Summary provides all necessary context
+        - Each request is independent (pure stateless)
+        - Session history is kept for logging/debugging only
+
         Args:
-            history: Previous conversation messages.
+            history: Previous conversation messages (NOT USED in context).
             current_message: The new user message.
             skill_names: Optional skills to include.
             media: Optional list of local file paths for images/media.
@@ -177,14 +183,14 @@ When remembering something, write to {workspace_path}/memory/MEMORY.md"""
         """
         messages = []
 
-        # System prompt
+        # System prompt (includes Dashboard Summary with full state)
         system_prompt = self.build_system_prompt(skill_names)
         if channel and chat_id:
             system_prompt += f"\n\n## Current Session\nChannel: {channel}\nChat ID: {chat_id}"
         messages.append({"role": "system", "content": system_prompt})
 
-        # History
-        messages.extend(history)
+        # Session history REMOVED - Dashboard is single source of truth
+        # messages.extend(history)  # ← Stateless: No history in context
 
         # Current message (with optional image attachments)
         user_content = self._build_user_content(current_message, media)

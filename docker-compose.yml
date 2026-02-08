@@ -1,0 +1,13 @@
+services:
+  nanobot:
+    build: .
+    container_name: nanobot
+    volumes:
+      # Mount entire .nanobot directory (config + workspace + dashboard)
+      - ~/.nanobot:/root/.nanobot
+    ports:
+      - "18790:18790"
+    command: gateway
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Seoul  # Change this to your timezone if needed

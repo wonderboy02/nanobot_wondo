@@ -17,3 +17,24 @@ docs/
 __pycache__/
 poetry.lock
 .pytest_cache/
+
+# User configuration and data
+.nanobot/
+config.json
+*.secret
+
+# Personal dashboard data
+dashboard/*.json
+workspace/dashboard/*.json
+workspace/dashboard/knowledge/*.json
+
+# Personal memory
+workspace/memory/*.md
+
+# But keep template files (these are part of the codebase)
+!workspace/DASHBOARD.md
+!workspace/AGENTS.md
+!workspace/SOUL.md
+!workspace/USER.md
+!workspace/TOOLS.md
+!workspace/HEARTBEAT.md

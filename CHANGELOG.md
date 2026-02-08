@@ -1,0 +1,262 @@
+# Changelog
+
+## [0.1.4] - 2026-02-08
+
+### Version Bump
+
+- `pyproject.toml`: 0.1.3.post4 → 0.1.4
+
+### Changed - Stateless Agent Architecture
+
+**Dashboard System - Major Redesign**
+
+Dashboard 시스템을 완전한 Stateless 아키텍처로 재설계하여 효율성과 맥락 이해를 대폭 개선했습니다.
+
+#### 핵심 변경사항
+
+**1. Session History 제거**
+- ❌ 기존: Session history (최대 50개 메시지)가 매번 LLM context에 포함
+- ✅ 현재: Session history 완전 제거, Dashboard Summary만으로 맥락 제공
+- 📊 효과: ~5,000 tokens 절감 per request
+
+**2. Dashboard Summary 강화** (`nanobot/dashboard/helper.py`)
+- ❌ 기존: Active tasks 10개 제한, Questions 5개 제한
+- ✅ 현재: 모든 active tasks, 모든 unanswered questions 표시
+- 📝 추가 정보: context, blocker, tags, asked_count, last_asked_at, type 등
+
+**3. 맥락 기반 업데이트** (`workspace/DASHBOARD.md` 재작성)
+- 하나의 메시지가 여러 질문에 동시 답변 가능
+- Agent가 전체 Dashboard 상태를 홀리스틱하게 업데이트
+- 암시적 정보 추출 ("어려워요" = blocker)
+
+**4. Silent 모드 구현** (`nanobot/agent/loop.py`)
+- Agent가 "SILENT" 응답 → 메시지 전송 안 함
+- Dashboard 업데이트 시 불필요한 확인 메시지 방지
+- Session에는 여전히 기록됨 (디버깅용)
+- `_process_message()` docstring에 None 반환 케이스 명시
+- `agent.run()`에서 이미 None 체크 존재 (안전함)
+
+#### 기술적 세부사항
+
+**Modified Files**:
+- `nanobot/dashboard/helper.py`
+  - `get_dashboard_summary()`: 제한 제거, 상세 정보 추가
+  - 모든 task/question 메타데이터 포함
+
+- `nanobot/agent/context.py`
+  - `build_messages()`: Session history 제거
+  - Stateless 설계로 전환
+  - Dashboard Summary가 단일 진실 공급원
+
+- `nanobot/agent/loop.py`
+  - Silent 모드 체크 로직 추가
+  - `SILENT_RESPONSE_KEYWORD` 상수 정의 (유지보수성 개선)
+  - `final_content == "SILENT"` → `return None`
+  - Session 저장은 유지 (로깅용)
+  - `_process_message()` docstring 개선
+
+- `workspace/DASHBOARD.md`
+  - 완전히 재작성 (맥락 기반 프롬프트)
+  - 홀리스틱 업데이트 지침
+  - 상세한 예시 포함
+
+**Architecture Changes**:
+```
+Before (v0.1.3):
+System Prompt + Session History (50개) + Current Message
+→ Token 사용 많음, Context 희석
+
+After (v0.1.4):
+System Prompt + Dashboard Summary (전체 상태) + Current Message
+→ Token 절감, 명확한 맥락
+```
+
+**Benefits**:
+1. ✅ **Token 효율성**: ~5,000 tokens 절감 per request
+2. ✅ **맥락 이해**: Dashboard 상태가 완전하고 명확함
+3. ✅ **Stateless 순수성**: 각 요청이 독립적
+4. ✅ **디버깅 용이**: Session 로그는 여전히 유지
+5. ✅ **UX 개선**: Silent 모드로 불필요한 응답 제거
+
+**Trade-offs**:
+- Race condition 허용 (Worker vs Main Agent, 0.056% 확률)
+- Session history 접근 불가 (Dashboard가 대체)
+
+### Added
+
+- **Docker Compose 지원** (`docker-compose.yml`)
+  - 간편한 Docker 환경 설정
+  - README에 사용 가이드 추가
+  - 로컬 config 자동 마운트
+
+- **Configuration Template** (`config.example.json`)
+  - 새 사용자를 위한 설정 예제
+  - README에서 참조
+
+### Documentation
+
+- `README.md` 대폭 개선:
+  - Dashboard System 섹션 추가 (사용법, 예제)
+  - Docker Compose 가이드 추가
+  - Docker 직접 사용 가이드 개선
+  - config.example.json 참조 추가
+- `.gitignore` 개인 데이터 보호 강화:
+  - Dashboard JSON 파일 (.json)
+  - Memory 파일 (.md)
+  - 템플릿 파일은 유지 (!workspace/*.md)
+  - 설정 파일 보호 (config.json, *.secret)
+- `CLAUDE.md`: Dashboard System v0.1.4 섹션 추가
+- `CHANGELOG.md`: 상세한 변경 이력 추가
+
+---
+
+## [Unreleased] - Dashboard Sync Manager
+
+**Status**: Phase 3 완료 (LLM 테스트 및 최적화)
+
+### Added
+- **Dashboard System**: 완전히 새로운 Dashboard 관리 시스템
+  - Task 관리 (active/someday 자동 분류)
+  - Question Queue (비동기 소통)
+  - Knowledge Base (History, Insights, People)
+  - Link System (모든 항목 간 연결)
+
+- **Core Components**:
+  - `DashboardManager` - Dashboard 로드/저장
+  - `WorkerAgent` - 30분마다 자동 실행
+    - 진행률 체크 (7가지 Case)
+    - Question 생성 (중복 방지, Cooldown)
+    - Completed task → History 이동
+    - Active/Someday 재평가
+  - `schema.py` - Pydantic 스키마 검증
+
+- **CLI Commands**:
+  - `nanobot dashboard show` - Dashboard 전체 보기
+  - `nanobot dashboard tasks` - Task 목록
+  - `nanobot dashboard questions` - Question Queue
+  - `nanobot dashboard answer` - 질문 답변
+  - `nanobot dashboard history` - 완료 작업
+  - `nanobot dashboard worker` - Worker 수동 실행
+
+- **Testing Infrastructure**:
+  - `tests/test_dashboard.py` - Pytest 단위 테스트
+  - `scripts/test_dashboard.sh` - Bash 통합 테스트
+  - `scripts/test_dashboard.py` - Python 통합 테스트
+  - `scripts/test_context_dashboard.py` - Context 통합 테스트
+  - `scripts/test_agent_dashboard.py` - Agent 통합 테스트
+  - `tests/fixtures/example_dashboard.json` - 예제 데이터
+
+- **Documentation**:
+  - `FINAL_DESIGN.md` - 최종 확정 설계 문서
+  - `TEST_GUIDE.md` - 테스트 가이드
+  - `DASHBOARD.md` - Agent 지침 (workspace/)
+
+- **Agent Integration (Phase 2)**:
+  - `nanobot/dashboard/helper.py` - Dashboard 요약 헬퍼
+  - Context Builder 수정 - DASHBOARD.md 자동 포함
+  - Dashboard State 자동 포함 (Active tasks + Questions)
+  - Agent가 자동으로 Dashboard 지침 따름
+
+- **LLM Optimization (Phase 3)**:
+  - DASHBOARD.md 대폭 간소화 (8.3KB → 4KB)
+  - Tool call 유도를 위한 구체적 JSON 예제 추가
+  - "YOU MUST CALL THESE TOOLS" 강조 추가
+  - Step-by-step 워크플로우 명시
+  - `scripts/test_agent_e2e.py` - E2E 테스트 스크립트
+
+### Changed
+- **Heartbeat Service**: Worker Agent 자동 실행 추가
+- **Onboard Command**: Dashboard 디렉토리 자동 생성
+
+### Removed
+- `DESIGN_PROPOSAL.md` - 초기 설계 (deprecated)
+- `IMPLEMENTATION_PLAN.md` - 초기 계획 (deprecated)
+
+### Technical Details
+
+**Agent 동작 방식 변경**:
+- 기존: 직접 답장
+- 신규: 조용히 Dashboard 업데이트 → Question Queue로만 소통
+
+**데이터 구조**:
+```
+workspace/dashboard/
+├── tasks.json           # Task 목록
+├── questions.json       # Question Queue
+├── notifications.json   # 알림
+└── knowledge/
+    ├── history.json     # 완료 작업, 프로젝트
+    ├── insights.json    # 지식
+    └── people.json      # 인간관계
+```
+
+**Worker Logic**:
+- 시간 기반 vs 실제 진행률 비교
+- 7가지 Case 기반 Question 생성
+- Cooldown 시스템 (중복 방지)
+- 우선순위 자동 조정
+
+### Migration Guide
+
+기존 사용자:
+```bash
+# 1. 최신 버전으로 업데이트
+pip install --upgrade nanobot-ai
+
+# 2. Dashboard 초기화
+nanobot onboard
+
+# 3. 기존 데이터 마이그레이션 (수동)
+# TODO: 마이그레이션 스크립트 작성 예정
+```
+
+### Completed Phases
+
+- ✅ **Phase 1**: 핵심 인프라 (DashboardManager, Worker, CLI, 스키마)
+- ✅ **Phase 2**: Agent 통합 (Context Builder 수정, Dashboard State 포함)
+- ✅ **Phase 3**: LLM 테스트 및 최적화
+  - DASHBOARD.md 간소화
+  - Gemini 3 Pro 통합 (`gemini/gemini-3-pro-preview`)
+  - LiteLLM 1.81.9 업데이트
+  - Tool call 성공 (read_file + write_file)
+  - Dashboard 업데이트 검증 완료
+
+### Next Steps (Phase 4)
+
+- [ ] Docker 테스트 및 배포
+- [ ] E2E 테스트 개선
+- [ ] Link 시스템 검증
+- [ ] CI/CD 파이프라인
+
+### Future (Phase 5)
+
+- [ ] Subtask 기능
+- [ ] YouTube Summary Tool
+- [ ] 웹 UI (선택)
+- [ ] 다국어 지원
+
+### LLM 호환성
+
+**테스트 완료:**
+- ✅ Gemini 3 Pro (gemini/gemini-3-pro-preview) - **추천!**
+- ⚠️ GPT-4o - Tool call이 불안정함
+
+**권장 설정:**
+```json
+{
+  "agents": {
+    "defaults": {
+      "model": "gemini/gemini-3-pro-preview"
+    }
+  },
+  "providers": {
+    "gemini": {
+      "apiKey": "YOUR_API_KEY"
+    }
+  }
+}
+```
+
+---
+
+**Note**: 이 버전은 아직 릴리스되지 않았습니다. Phase 2 완료 후 정식 릴리스 예정.

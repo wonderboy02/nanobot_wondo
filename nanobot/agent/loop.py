@@ -22,6 +22,10 @@ from nanobot.agent.subagent import SubagentManager
 from nanobot.session.manager import SessionManager
 
 
+# Silent mode keyword - agent returns this to skip sending response
+SILENT_RESPONSE_KEYWORD = "SILENT"
+
+
 class AgentLoop:
     """
     The agent loop is the core processing engine.
@@ -143,12 +147,15 @@ class AgentLoop:
     async def _process_message(self, msg: InboundMessage) -> OutboundMessage | None:
         """
         Process a single inbound message.
-        
+
         Args:
             msg: The inbound message to process.
-        
+
         Returns:
             The response message, or None if no response needed.
+            Returns None in two cases:
+            1. Silent mode: Agent returns "SILENT" (Dashboard updates only)
+            2. System messages: Internal routing messages
         """
         # Handle system messages (subagent announces)
         # The chat_id contains the original "channel:chat_id" to route back to
@@ -229,12 +236,23 @@ class AgentLoop:
         
         if final_content is None:
             final_content = "I've completed processing but have no response to give."
-        
-        # Save to session
+
+        # Check for Silent mode
+        is_silent = final_content.strip().upper() == SILENT_RESPONSE_KEYWORD
+
+        # Save to session (always save for logging/debugging)
         session.add_message("user", msg.content)
-        session.add_message("assistant", final_content)
+        if is_silent:
+            session.add_message("assistant", "[Dashboard updated silently]")
+        else:
+            session.add_message("assistant", final_content)
         self.sessions.save(session)
-        
+
+        # Return None for Silent mode (no response sent)
+        if is_silent:
+            logger.debug(f"Silent mode: Dashboard updated without response")
+            return None
+
         return OutboundMessage(
             channel=msg.channel,
             chat_id=msg.chat_id,

@@ -101,6 +101,8 @@ nanobot onboard
 
 **2. Configure** (`~/.nanobot/config.json`)
 
+> **Tip**: Copy `config.example.json` to `~/.nanobot/config.json` and fill in your API keys.
+
 ```json
 {
   "providers": {
@@ -383,6 +385,12 @@ Config file: `~/.nanobot/config.json`
 | `nanobot status` | Show status |
 | `nanobot channels login` | Link WhatsApp (scan QR) |
 | `nanobot channels status` | Show channel status |
+| `nanobot dashboard show` | View entire dashboard |
+| `nanobot dashboard tasks` | View tasks only |
+| `nanobot dashboard questions` | View question queue |
+| `nanobot dashboard answer <id> "..."` | Answer a question |
+| `nanobot dashboard history` | View completed tasks |
+| `nanobot dashboard worker` | Run worker agent manually |
 
 <details>
 <summary><b>Scheduled Tasks (Cron)</b></summary>
@@ -401,12 +409,99 @@ nanobot cron remove <job_id>
 
 </details>
 
+## 📊 Dashboard
+
+**Dashboard Sync Manager** is a silent task management system where the agent updates a structured dashboard instead of replying directly.
+
+### Features
+
+- **Task Management**: Automatic active/someday classification based on deadlines
+- **Question Queue**: Async communication - agent asks questions, you answer when ready
+- **Knowledge Base**: Completed tasks, insights, and relationships
+- **Worker Agent**: Runs every 30 minutes to check progress and generate questions
+
+### Usage
+
+```bash
+# View dashboard
+nanobot dashboard show
+
+# View tasks only
+nanobot dashboard tasks
+
+# View questions
+nanobot dashboard questions
+
+# Answer a question
+nanobot dashboard answer q_001 "https://youtube.com/watch?v=example"
+
+# View completed tasks
+nanobot dashboard history
+
+# Run worker manually (auto-runs every 30 min)
+nanobot dashboard worker
+```
+
+### How it works
+
+When you tell the agent about a task, it silently updates `~/.nanobot/workspace/dashboard/`:
+
+```
+User: "내일까지 React 영상 봐야해"
+  ↓
+Agent: (silently updates dashboard/tasks.json and dashboard/questions.json)
+  ↓
+(No reply - check dashboard instead)
+```
+
+The Worker Agent automatically:
+- Checks task progress vs deadlines
+- Generates questions when needed (e.g., "시작했어?")
+- Moves completed tasks to history
+- Adjusts active/someday status
+
+### Files
+
+```
+~/.nanobot/workspace/dashboard/
+├── tasks.json           # Active and someday tasks
+├── questions.json       # Question queue
+├── notifications.json   # Notifications
+└── knowledge/
+    ├── history.json     # Completed tasks and projects
+    ├── insights.json    # Saved knowledge
+    └── people.json      # Relationships
+```
+
+**Recommended LLM**: Use `gemini/gemini-3-pro-preview` for best Dashboard update reliability.
+
 ## 🐳 Docker
 
-> [!TIP]
-> The `-v ~/.nanobot:/root/.nanobot` flag mounts your local config directory into the container, so your config and workspace persist across container restarts.
+### Using Docker Compose (Recommended)
 
-Build and run nanobot in a container:
+**1. Build and start**
+
+```bash
+# First time setup
+nanobot onboard  # Creates ~/.nanobot/config.json
+vim ~/.nanobot/config.json  # Add your API keys
+
+# Start with docker-compose
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+```
+
+**2. Stop**
+
+```bash
+docker-compose down
+```
+
+Your config and dashboard data persist in `~/.nanobot/` on the host.
+
+### Using Docker directly
 
 ```bash
 # Build the image
@@ -415,16 +510,18 @@ docker build -t nanobot .
 # Initialize config (first time only)
 docker run -v ~/.nanobot:/root/.nanobot --rm nanobot onboard
 
-# Edit config on host to add API keys
+# Edit config to add API keys
 vim ~/.nanobot/config.json
 
-# Run gateway (connects to Telegram/WhatsApp)
+# Run gateway
 docker run -v ~/.nanobot:/root/.nanobot -p 18790:18790 nanobot gateway
 
 # Or run a single command
 docker run -v ~/.nanobot:/root/.nanobot --rm nanobot agent -m "Hello!"
-docker run -v ~/.nanobot:/root/.nanobot --rm nanobot status
+docker run -v ~/.nanobot:/root/.nanobot --rm nanobot dashboard show
 ```
+
+> **Note**: The `-v ~/.nanobot:/root/.nanobot` flag mounts your local config and workspace into the container, so all data (config, dashboard, memory) persists across container restarts.
 
 ## 📁 Project Structure
 
