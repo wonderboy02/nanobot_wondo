@@ -63,6 +63,88 @@ web_fetch(url: str, extractMode: str = "markdown", maxChars: int = 50000) -> str
 - Supports markdown or plain text extraction
 - Output is truncated at 50,000 characters by default
 
+## Dashboard Management (v0.1.5+)
+
+**IMPORTANT**: Use these specialized tools instead of `read_file`/`write_file` for dashboard operations.
+
+### create_task
+Create a new task with automatic ID generation and timestamps.
+```
+create_task(
+    title: str,
+    deadline: str = "",          # e.g., "내일", "금요일", "2026-02-15"
+    priority: str = "medium",    # low, medium, high
+    context: str = "",
+    tags: list[str] = []
+) -> str
+```
+
+### update_task
+Update an existing task's progress, status, blockers, etc.
+```
+update_task(
+    task_id: str,
+    progress: int = None,        # 0-100
+    status: str = None,          # active, completed, someday, cancelled
+    blocked: bool = None,
+    blocker_note: str = None,
+    context: str = None,
+    deadline: str = None,
+    priority: str = None,
+    tags: list[str] = None
+) -> str
+```
+
+### answer_question
+Mark a question as answered with the provided answer.
+```
+answer_question(
+    question_id: str,
+    answer: str
+) -> str
+```
+
+### create_question
+Create a new question in the question queue.
+```
+create_question(
+    question: str,
+    priority: str = "medium",    # low, medium, high
+    type: str = "info_gather",   # info_gather, progress_check, etc.
+    related_task_id: str = None,
+    context: str = ""
+) -> str
+```
+
+### save_insight
+Save a learning or insight to the knowledge base.
+```
+save_insight(
+    content: str,
+    category: str = "general",   # tech, life, work, learning
+    title: str = "",
+    source: str = "",
+    tags: list[str] = []
+) -> str
+```
+
+### move_to_history
+Move a completed task to the history knowledge base.
+```
+move_to_history(
+    task_id: str,
+    reflection: str = ""
+) -> str
+```
+
+**Benefits**:
+- ✅ Automatic ID and timestamp generation
+- ✅ Pydantic schema validation
+- ✅ Prevents malformed JSON
+- ✅ Protected from accidental file modifications
+
+**Note**: Dashboard JSON files (`tasks.json`, `questions.json`, etc.) are read-only for generic file tools. Always use the dashboard-specific tools above.
+
 ## Communication
 
 ### message

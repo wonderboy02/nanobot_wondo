@@ -373,6 +373,11 @@ Config file: `~/.nanobot/config.json`
 | `tools.restrictToWorkspace` | `false` | When `true`, restricts **all** agent tools (shell, file read/write/edit, list) to the workspace directory. Prevents path traversal and out-of-scope access. |
 | `channels.*.allowFrom` | `[]` (allow all) | Whitelist of user IDs. Empty = allow everyone; non-empty = only listed users can interact. |
 
+**Instruction File Protection** (v0.1.4+):
+- Agent cannot modify instruction files: `DASHBOARD.md`, `TOOLS.md`, `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `HEARTBEAT.md`, `config.json`, `.env`
+- Dashboard updates go to data files: `dashboard/tasks.json`, `dashboard/questions.json`
+- Clear error messages guide agent to correct files
+
 
 ## CLI Reference
 
@@ -473,19 +478,54 @@ The Worker Agent automatically:
     └── people.json      # Relationships
 ```
 
+### Dashboard Tools (v0.1.5+)
+
+The agent uses **specialized dashboard tools** instead of directly manipulating JSON files:
+
+**Available Tools**:
+- `create_task(title, deadline, priority, context, tags)` - Create new task
+- `update_task(task_id, progress, status, blocked, blocker_note, ...)` - Update task
+- `answer_question(question_id, answer)` - Answer a question
+- `create_question(question, priority, type, related_task_id)` - Create question
+- `save_insight(content, category, title, tags)` - Save learning
+- `move_to_history(task_id, reflection)` - Archive completed task
+
+**Benefits**:
+- ✅ Automatic ID and timestamp generation
+- ✅ Pydantic schema validation
+- ✅ Prevents malformed JSON
+- ✅ Clear, action-based interface
+- ✅ Protected files (read-only for generic file tools)
+
+**Example**:
+```python
+# Agent automatically uses dashboard tools
+create_task(title="블로그 작성", deadline="금요일", priority="high")
+update_task(task_id="task_12345678", progress=50, blocked=True)
+```
+
 **Recommended LLM**: Use `gemini/gemini-3-pro-preview` for best Dashboard update reliability.
 
 ## 🐳 Docker
 
 ### Using Docker Compose (Recommended)
 
-**1. Build and start**
+**1. First time setup**
 
 ```bash
-# First time setup
-nanobot onboard  # Creates ~/.nanobot/config.json
+# Option A: Use config template (no nanobot installation needed)
+mkdir -p ~/.nanobot
+cp config.example.json ~/.nanobot/config.json
 vim ~/.nanobot/config.json  # Add your API keys
 
+# Option B: If nanobot is already installed
+nanobot onboard
+vim ~/.nanobot/config.json
+```
+
+**2. Build and start**
+
+```bash
 # Start with docker-compose
 docker-compose up -d
 
@@ -493,7 +533,7 @@ docker-compose up -d
 docker-compose logs -f
 ```
 
-**2. Stop**
+**3. Stop**
 
 ```bash
 docker-compose down
@@ -507,10 +547,14 @@ Your config and dashboard data persist in `~/.nanobot/` on the host.
 # Build the image
 docker build -t nanobot .
 
-# Initialize config (first time only)
-docker run -v ~/.nanobot:/root/.nanobot --rm nanobot onboard
+# First time setup (choose one)
+# Option A: Use config template
+mkdir -p ~/.nanobot
+cp config.example.json ~/.nanobot/config.json
+vim ~/.nanobot/config.json  # Add your API keys
 
-# Edit config to add API keys
+# Option B: Initialize with Docker
+docker run -v ~/.nanobot:/root/.nanobot --rm nanobot onboard
 vim ~/.nanobot/config.json
 
 # Run gateway

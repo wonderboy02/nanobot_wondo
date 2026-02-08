@@ -1,0 +1,5 @@
+{
+  "$schema": "https://config.anthropic.com/v1/rules-schema.json",
+  "permissionMode": "auto",
+  "comment": "자동 승인 모드: 모든 도구를 permission 없이 사용 가능"
+}

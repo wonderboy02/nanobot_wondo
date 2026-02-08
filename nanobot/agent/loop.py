@@ -106,9 +106,27 @@ class AgentLoop:
         spawn_tool = SpawnTool(manager=self.subagents)
         self.tools.register(spawn_tool)
         
-        # Cron tool (for scheduling)
-        if self.cron_service:
-            self.tools.register(CronTool(self.cron_service))
+        # Cron tool (REMOVED - use recurring tasks instead)
+
+        # Dashboard tools
+        from nanobot.agent.tools.dashboard import (
+            CreateTaskTool,
+            UpdateTaskTool,
+            AnswerQuestionTool,
+            CreateQuestionTool,
+            SaveInsightTool,
+            MoveToHistoryTool,
+        )
+
+        self.tools.register(CreateTaskTool(workspace=self.workspace))
+        self.tools.register(UpdateTaskTool(workspace=self.workspace))
+        self.tools.register(AnswerQuestionTool(workspace=self.workspace))
+        self.tools.register(CreateQuestionTool(workspace=self.workspace))
+        self.tools.register(SaveInsightTool(workspace=self.workspace))
+        self.tools.register(MoveToHistoryTool(workspace=self.workspace))
+        # Recurring Task 시스템으로 대체 예정
+        # if self.cron_service:
+        #     self.tools.register(CronTool(self.cron_service))
     
     async def run(self) -> None:
         """Run the agent loop, processing messages from the bus."""

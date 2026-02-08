@@ -1,5 +1,102 @@
 # Changelog
 
+## [0.1.5] - 2026-02-08
+
+### Added - Dashboard Tools System
+
+**Problem**: Agent가 `read_file`/`write_file`로 Dashboard JSON을 직접 조작하면서 발생한 문제들:
+- ❌ 잘못된 JSON 구조 생성 (배열 대신 객체)
+- ❌ 검증 없음 → malformed data 위험
+- ❌ 복잡한 지시사항 (300+ 줄)
+- ❌ Agent가 JSON 수동 구성 → 높은 오류율
+- ❌ E2E 테스트 실패
+
+**Solution**: Dashboard 전용 도구 6개 생성
+
+#### New Tools
+
+1. **`create_task`** - Task 생성
+   - 자동 ID 생성 (`task_xxxxxxxx`)
+   - 자동 timestamp 처리
+   - 올바른 JSON 구조 보장
+
+2. **`update_task`** - Task 업데이트
+   - Progress, status, blocker, context 업데이트
+   - Schema validation
+
+3. **`answer_question`** - 질문 답변
+   - 질문을 answered로 마킹
+   - Answer + timestamp 저장
+
+4. **`create_question`** - 질문 생성
+   - Question queue에 추가
+   - Priority, type, related_task_id 설정
+
+5. **`save_insight`** - 지식 저장
+   - Knowledge base에 insight 저장
+   - Category, tags로 분류
+
+6. **`move_to_history`** - 완료 Task 아카이빙
+   - Task를 history로 이동
+   - Reflection 추가
+
+#### Implementation Details
+
+**New Files**:
+- `nanobot/agent/tools/dashboard/__init__.py`
+- `nanobot/agent/tools/dashboard/base.py` - BaseDashboardTool (공통 유틸리티)
+- `nanobot/agent/tools/dashboard/create_task.py`
+- `nanobot/agent/tools/dashboard/update_task.py`
+- `nanobot/agent/tools/dashboard/answer_question.py`
+- `nanobot/agent/tools/dashboard/create_question.py`
+- `nanobot/agent/tools/dashboard/save_insight.py`
+- `nanobot/agent/tools/dashboard/move_to_history.py`
+
+**Modified Files**:
+- `nanobot/agent/loop.py`
+  - `_register_default_tools()`: Dashboard 도구 6개 자동 등록
+
+- `nanobot/agent/tools/filesystem.py`
+  - Dashboard JSON 파일들을 READ_ONLY_PATTERNS에 추가
+  - `tasks.json`, `questions.json`, `history.json`, `insights.json`, etc.
+  - 명확한 에러 메시지: "Use dashboard tools instead of write_file"
+
+- `workspace/DASHBOARD.md`
+  - 305 lines → 248 lines (18% 감소)
+  - JSON 예제 제거, 도구 기반 인터페이스로 전환
+  - 명확한 사용 예시 및 시나리오 추가
+
+#### Benefits
+
+✅ **올바른 JSON 구조** - 도구가 자동 보장
+✅ **Pydantic 검증** - 데이터 무결성 보장
+✅ **간소화된 지시사항** - 18% 감소
+✅ **명확한 인터페이스** - 도구 이름으로 의도 표현
+✅ **보안 강화** - Dashboard 파일 read-only 보호
+✅ **E2E 테스트 통과** - 올바른 구조 생성
+
+#### Usage Example
+
+**Before** (복잡하고 오류 발생 가능):
+```python
+dashboard = read_file("dashboard/tasks.json")
+data = json.loads(dashboard)
+data["tasks"].append({
+    "id": "task_" + random_id(),
+    "title": "블로그 작성",
+    "created_at": datetime.now().isoformat(),
+    # ... 20+ 필드 수동 구성 ...
+})
+write_file("dashboard/tasks.json", json.dumps(data))
+```
+
+**After** (간단하고 안전):
+```python
+create_task(title="블로그 작성", deadline="금요일", priority="medium")
+```
+
+---
+
 ## [0.1.4] - 2026-02-08
 
 ### Version Bump
@@ -82,7 +179,21 @@ System Prompt + Dashboard Summary (전체 상태) + Current Message
 - Race condition 허용 (Worker vs Main Agent, 0.056% 확률)
 - Session history 접근 불가 (Dashboard가 대체)
 
+### Removed
+
+- **Cron Tool 제거** (`nanobot/agent/loop.py`)
+  - Agent tool 목록에서 제거 (Recurring Task 시스템으로 대체 예정)
+  - Dashboard 중심 설계 강화
+  - CLI cron 명령어는 여전히 사용 가능
+
 ### Added
+
+- **파일 접근 제어 시스템** (`nanobot/agent/tools/filesystem.py`)
+  - 지침 파일(DASHBOARD.md, TOOLS.md 등) 쓰기 차단
+  - Read-only 파일 패턴 기반 필터링
+  - 명확한 에러 메시지로 Agent 자동 복구 유도
+  - 보호 대상: DASHBOARD.md, TOOLS.md, AGENTS.md, SOUL.md, USER.md, IDENTITY.md, HEARTBEAT.md, config.json, .env
+  - 허용 대상: dashboard/*.json, dashboard/knowledge/*.json, memory/*.md
 
 - **Docker Compose 지원** (`docker-compose.yml`)
   - 간편한 Docker 환경 설정

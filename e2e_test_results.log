@@ -1,0 +1,234 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.1, pytest-8.4.1, pluggy-1.6.0 -- C:\Python313\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\wondo\dev\nanobot_wondo
+configfile: pyproject.toml
+plugins: anyio-4.9.0, langsmith-0.3.45, asyncio-1.3.0, mock-3.14.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 30 items / 12 deselected / 18 selected
+
+tests/dashboard/e2e/test_contextual_updates.py::test_contextual_01_multiple_answers_one_message FAILED [  5%]
+tests/dashboard/e2e/test_contextual_updates.py::test_contextual_02_implicit_blocker_extraction PASSED [ 11%]
+tests/dashboard/e2e/test_contextual_updates.py::test_contextual_03_silent_mode PASSED [ 16%]
+tests/dashboard/e2e/test_contextual_updates.py::test_contextual_04_holistic_update PASSED [ 22%]
+tests/dashboard/e2e/test_contextual_updates.py::test_contextual_05_no_limit_on_items PASSED [ 27%]
+tests/dashboard/e2e/test_journey.py::test_journey_01_one_week_lifecycle PASSED [ 33%]
+tests/dashboard/e2e/test_journey.py::test_journey_02_complex_project PASSED [ 38%]
+tests/dashboard/e2e/test_journey.py::test_journey_03_multitasking_priorities PASSED [ 44%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_01_add_new_task FAILED [ 50%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_02_update_progress FAILED [ 55%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_03_complete_task FAILED [ 61%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_04_answer_question FAILED [ 66%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_05_cancel_task FAILED [ 72%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_06_change_deadline FAILED [ 77%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_07_block_task FAILED [ 83%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_08_multiple_tasks FAILED [ 88%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_09_natural_language_dates FAILED [ 94%]
+tests/dashboard/e2e/test_user_scenarios.py::test_scenario_10_add_links FAILED [100%]
+
+================================== FAILURES ===================================
+_______________ test_contextual_01_multiple_answers_one_message _______________
+tests\dashboard\e2e\test_contextual_updates.py:200: in test_contextual_01_multiple_answers_one_message
+    assert answered_count >= 2, f"Should answer at least 2 questions, got {answered_count}"
+E   AssertionError: Should answer at least 2 questions, got 1
+E   assert 1 >= 2
+---------------------------- Captured stderr call -----------------------------
+2026-02-08 21:28:17.167 | INFO     | nanobot.agent.loop:_process_message:183 - Processing message from cli:user
+2026-02-08 21:28:22.786 | DEBUG    | nanobot.agent.loop:_process_message:245 - Executing tool: answer_question with arguments: {"answer": "\uc720\ud29c\ube0c\ub85c \uacf5\ubd80 \uc911\uc785\ub2c8\ub2e4.", "question_id": "q_001"}
+2026-02-08 21:28:22.812 | DEBUG    | nanobot.agent.loop:_process_message:245 - Executing tool: update_task with arguments: {"progress": 50, "blocked": true, "task_id": "task_001", "context": "\uc720\ud29c\ube0c \uac15\uc758\ub85c \ud559\uc2b5 \uc911", "blocker_note": "Hook \uac1c\ub150\uc774 \uc5b4\ub824\uc6cc\uc11c \ub9c9\ud798"}
+2026-02-08 21:28:22.815 | DEBUG    | nanobot.agent.loop:_process_message:245 - Executing tool: save_insight with arguments: {"tags": ["react", "study", "blocker"], "title": "React Hook \ud559\uc2b5 \ub09c\uad00", "category": "learning", "content": "React \ud559\uc2b5 \uc911 Hook \uac1c\ub150 \uc774\ud574\uc5d0 \uc5b4\ub824\uc6c0\uc744 \uacaa\uc74c. \uc720\ud29c\ube0c \uac15\uc758 \ud65c\uc6a9 \uc911."}
+2026-02-08 21:28:25.062 | DEBUG    | nanobot.agent.loop:_process_message:271 - Silent mode: Dashboard updated without response
+________________________ test_scenario_01_add_new_task ________________________
+tests\dashboard\e2e\test_user_scenarios.py:143: in test_scenario_01_add_new_task
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+______________________ test_scenario_02_update_progress _______________________
+tests\dashboard\e2e\test_user_scenarios.py:182: in test_scenario_02_update_progress
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+_______________________ test_scenario_03_complete_task ________________________
+tests\dashboard\e2e\test_user_scenarios.py:226: in test_scenario_03_complete_task
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+______________________ test_scenario_04_answer_question _______________________
+tests\dashboard\e2e\test_user_scenarios.py:280: in test_scenario_04_answer_question
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+________________________ test_scenario_05_cancel_task _________________________
+tests\dashboard\e2e\test_user_scenarios.py:333: in test_scenario_05_cancel_task
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+______________________ test_scenario_06_change_deadline _______________________
+tests\dashboard\e2e\test_user_scenarios.py:371: in test_scenario_06_change_deadline
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+_________________________ test_scenario_07_block_task _________________________
+tests\dashboard\e2e\test_user_scenarios.py:412: in test_scenario_07_block_task
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+_______________________ test_scenario_08_multiple_tasks _______________________
+tests\dashboard\e2e\test_user_scenarios.py:452: in test_scenario_08_multiple_tasks
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+___________________ test_scenario_09_natural_language_dates ___________________
+tests\dashboard\e2e\test_user_scenarios.py:495: in test_scenario_09_natural_language_dates
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+_________________________ test_scenario_10_add_links __________________________
+tests\dashboard\e2e\test_user_scenarios.py:541: in test_scenario_10_add_links
+    setup = await agent_setup
+            ^^^^^^^^^^^^^^^^^
+E   TypeError: object dict can't be used in 'await' expression
+============================== warnings summary ===============================
+..\..\AppData\Roaming\Python\Python313\site-packages\pydantic\_internal\_config.py:323
+  C:\Users\wondo\AppData\Roaming\Python\Python313\site-packages\pydantic\_internal\_config.py:323: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.11/migration/
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning)
+
+tests\dashboard\e2e\test_contextual_updates.py:105
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_contextual_updates.py:105: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_contextual_updates.py:230
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_contextual_updates.py:230: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_contextual_updates.py:268
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_contextual_updates.py:268: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_contextual_updates.py:297
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_contextual_updates.py:297: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_contextual_updates.py:407
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_contextual_updates.py:407: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_error_scenarios.py:89
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_error_scenarios.py:89: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_error_scenarios.py:125
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_error_scenarios.py:125: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_error_scenarios.py:165
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_error_scenarios.py:165: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_error_scenarios.py:211
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_error_scenarios.py:211: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_error_scenarios.py:248
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_error_scenarios.py:248: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_error_scenarios.py:287
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_error_scenarios.py:287: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_error_scenarios.py:321
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_error_scenarios.py:321: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_journey.py:149
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_journey.py:149: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_journey.py:379
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_journey.py:379: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_journey.py:544
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_journey.py:544: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:132
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:132: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:172
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:172: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:216
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:216: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:269
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:269: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:324
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:324: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:362
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:362: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:403
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:403: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:442
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:442: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:485
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:485: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_user_scenarios.py:532
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_user_scenarios.py:532: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_worker_integration.py:93
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_worker_integration.py:93: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_worker_integration.py:139
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_worker_integration.py:139: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_worker_integration.py:199
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_worker_integration.py:199: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_worker_integration.py:245
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_worker_integration.py:245: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests\dashboard\e2e\test_worker_integration.py:314
+  C:\Users\wondo\dev\nanobot_wondo\tests\dashboard\e2e\test_worker_integration.py:314: PytestUnknownMarkWarning: Unknown pytest.mark.e2e - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.e2e
+
+tests/dashboard/e2e/test_contextual_updates.py: 6 warnings
+tests/dashboard/e2e/test_journey.py: 15 warnings
+  C:\Users\wondo\AppData\Roaming\Python\Python313\site-packages\aiohttp\connector.py:943: DeprecationWarning: enable_cleanup_closed ignored because https://github.com/python/cpython/pull/118960 is fixed in Python version sys.version_info(major=3, minor=13, micro=1, releaselevel='final', serial=0)
+    super().__init__(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/dashboard/e2e/test_contextual_updates.py::test_contextual_01_multiple_answers_one_message
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_01_add_new_task
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_02_update_progress
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_03_complete_task
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_04_answer_question
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_05_cancel_task
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_06_change_deadline
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_07_block_task
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_08_multiple_tasks
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_09_natural_language_dates
+FAILED tests/dashboard/e2e/test_user_scenarios.py::test_scenario_10_add_links
+==== 11 failed, 7 passed, 12 deselected, 52 warnings in 269.80s (0:04:29) =====

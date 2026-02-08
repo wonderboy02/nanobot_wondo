@@ -1,0 +1,180 @@
+{
+  "tasks": [
+    {
+      "id": "task_001",
+      "title": "React 영상 보기",
+      "raw_input": "내일까지 React 영상 봐야해",
+      "deadline": "2026-02-07T23:59:00",
+      "deadline_text": "내일",
+      "estimation": {
+        "hours": 2,
+        "complexity": "medium",
+        "confidence": "medium"
+      },
+      "progress": {
+        "percentage": 30,
+        "last_update": "2026-02-06T15:00:00",
+        "note": "영상 30% 봤음",
+        "blocked": false,
+        "blocker_note": null
+      },
+      "status": "active",
+      "priority": "high",
+      "context": "주말에 집중해서 보기",
+      "tags": ["learning", "react"],
+      "links": {
+        "projects": ["proj_001"],
+        "people": [],
+        "insights": [],
+        "resources": []
+      },
+      "created_at": "2026-02-06T10:00:00",
+      "updated_at": "2026-02-06T15:00:00",
+      "completed_at": null
+    },
+    {
+      "id": "task_002",
+      "title": "블로그 글 쓰기",
+      "raw_input": "이번 주말에 블로그 글 써야지",
+      "deadline": "2026-02-09T23:59:00",
+      "deadline_text": "이번 주말",
+      "estimation": {
+        "hours": 4,
+        "complexity": "high",
+        "confidence": "low"
+      },
+      "progress": {
+        "percentage": 0,
+        "last_update": "2026-02-06T10:00:00",
+        "note": "",
+        "blocked": false
+      },
+      "status": "active",
+      "priority": "medium",
+      "context": "",
+      "tags": ["writing", "blog"],
+      "links": {
+        "projects": [],
+        "people": [],
+        "insights": ["insight_001"],
+        "resources": []
+      },
+      "created_at": "2026-02-06T10:00:00",
+      "updated_at": "2026-02-06T10:00:00"
+    },
+    {
+      "id": "task_003",
+      "title": "운동하기",
+      "raw_input": "언젠가는 운동 시작해야지",
+      "deadline": null,
+      "deadline_text": "언젠가",
+      "estimation": {
+        "hours": null,
+        "complexity": "low",
+        "confidence": "low"
+      },
+      "progress": {
+        "percentage": 0,
+        "last_update": "2026-02-05T10:00:00",
+        "note": ""
+      },
+      "status": "someday",
+      "priority": "low",
+      "context": "건강해지고 싶음",
+      "tags": ["health"],
+      "links": {},
+      "created_at": "2026-02-05T10:00:00",
+      "updated_at": "2026-02-05T10:00:00"
+    }
+  ],
+  "questions": [
+    {
+      "id": "q_001",
+      "question": "React 영상 어떤 거야? 링크 있어?",
+      "context": "Need link for task_001",
+      "priority": "high",
+      "type": "info_gather",
+      "related_task_id": "task_001",
+      "asked_count": 0,
+      "last_asked_at": null,
+      "created_at": "2026-02-06T10:00:00",
+      "cooldown_hours": 24,
+      "answered": false,
+      "answer": null,
+      "answered_at": null
+    },
+    {
+      "id": "q_002",
+      "question": "블로그 글 주제는 뭐로 할 거야?",
+      "context": "Need topic for task_002",
+      "priority": "medium",
+      "type": "info_gather",
+      "related_task_id": "task_002",
+      "asked_count": 0,
+      "last_asked_at": null,
+      "created_at": "2026-02-06T10:00:00",
+      "cooldown_hours": 48,
+      "answered": false
+    }
+  ],
+  "knowledge": {
+    "history": {
+      "completed_tasks": [
+        {
+          "id": "task_000",
+          "title": "프로젝트 기획서 작성",
+          "completed_at": "2026-02-05T18:00:00",
+          "duration_days": 3,
+          "progress_note": "완료",
+          "links": {
+            "projects": ["proj_001"]
+          },
+          "moved_at": "2026-02-05T18:01:00"
+        }
+      ],
+      "projects": [
+        {
+          "id": "proj_001",
+          "name": "React 학습 프로젝트",
+          "description": "React 19 새 기능 공부하기",
+          "status": "active",
+          "task_ids": ["task_001"],
+          "created_at": "2026-02-01T00:00:00",
+          "updated_at": "2026-02-06T10:00:00"
+        }
+      ]
+    },
+    "insights": [
+      {
+        "id": "insight_001",
+        "category": "tech",
+        "title": "React Server Components 장점",
+        "content": "RSC는 서버에서 렌더링되어 클라이언트 번들 크기를 줄일 수 있다.",
+        "source": "온라인 강의",
+        "tags": ["react", "rsc", "web"],
+        "links": {
+          "tasks": ["task_001"],
+          "projects": ["proj_001"]
+        },
+        "created_at": "2026-02-05T00:00:00"
+      }
+    ],
+    "people": [
+      {
+        "id": "person_001",
+        "name": "김멘토",
+        "role": "React 전문가",
+        "relationship": "온라인 멘토",
+        "context": "React 관련 질문할 때",
+        "contact": "mentor@example.com",
+        "links": {
+          "projects": ["proj_001"],
+          "tasks": ["task_001"],
+          "insights": ["insight_001"]
+        },
+        "notes": "주말에 시간 많음",
+        "last_contact": "2026-02-03"
+      }
+    ]
+  }
+}
