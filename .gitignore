@@ -18,6 +18,16 @@ __pycache__/
 poetry.lock
 .pytest_cache/
 
+# IDE and editor files
+.vscode/
+.claude/
+.idea/
+
+# Node.js dependencies
+node_modules/
+bridge/node_modules/
+*.log
+
 # User configuration and data
 .nanobot/
 config.json
