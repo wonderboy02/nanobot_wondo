@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from nanobot.agent.tools.dashboard.base import BaseDashboardTool
+from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
 
 
 class SaveInsightTool(BaseDashboardTool):
@@ -52,6 +52,7 @@ class SaveInsightTool(BaseDashboardTool):
             "required": ["content"],
         }
 
+    @with_dashboard_lock
     async def execute(
         self,
         content: str,

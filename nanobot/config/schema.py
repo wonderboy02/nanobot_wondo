@@ -56,9 +56,18 @@ class AgentDefaults(BaseModel):
     max_tool_iterations: int = 20
 
 
+class WorkerConfig(BaseModel):
+    """Worker Agent configuration."""
+    enabled: bool = True
+    use_llm: bool = True
+    fallback_to_rules: bool = True
+    model: str = "google/gemini-2.0-flash-exp"
+
+
 class AgentsConfig(BaseModel):
     """Agent configuration."""
     defaults: AgentDefaults = Field(default_factory=AgentDefaults)
+    worker: WorkerConfig = Field(default_factory=WorkerConfig)
 
 
 class ProviderConfig(BaseModel):

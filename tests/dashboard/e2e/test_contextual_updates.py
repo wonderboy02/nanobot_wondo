@@ -62,17 +62,17 @@ def agent_setup(tmp_path):
         "- create_task(title, deadline, priority, context, tags)\n"
         "- update_task(task_id, progress, status, blocked, blocker_note, ...)\n"
         "- answer_question(question_id, answer)\n"
-        "- create_question(question, priority, type, related_task_id)\n"
-        "- save_insight(content, category, title, tags)\n"
         "- move_to_history(task_id, reflection)\n\n"
         "## Core Principles\n\n"
         "1. **Use dashboard tools, NOT read_file/write_file**\n"
         "2. **One message can contain multiple pieces of information**\n"
-        "3. **Think holistically** - extract all info\n\n"
+        "3. **Think holistically** - extract all info\n"
+        "4. **Detect blockers**: Words like '어려워요', '막혔어요', '힘들어요' mean blocked=True\n\n"
         "## Workflow\n\n"
         "1. Analyze message holistically\n"
-        "2. Use appropriate dashboard tools\n"
-        "3. Reply SILENT for regular updates\n",
+        "2. Extract: answers, progress, blockers, context\n"
+        "3. Use appropriate dashboard tools\n"
+        "4. Reply SILENT for regular updates\n",
         encoding="utf-8"
     )
 

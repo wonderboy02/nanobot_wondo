@@ -87,10 +87,10 @@ def agent_setup(tmp_path):
         "- create_task(title, deadline, priority, context, tags)\n"
         "- update_task(task_id, progress, status, blocked, blocker_note, ...)\n"
         "- answer_question(question_id, answer)\n"
-        "- create_question(question, priority, type, related_task_id)\n"
-        "- save_insight(content, category, title, tags)\n"
         "- move_to_history(task_id, reflection)\n\n"
         "**IMPORTANT**: Use dashboard tools, NOT read_file/write_file for dashboard operations.\n\n"
+        "**Note**: Worker Agent handles question creation and notification scheduling automatically.\n"
+        "You only need to respond to user messages and update dashboard based on conversation.\n\n"
         "Reply SILENT for regular updates.",
         encoding="utf-8"
     )
@@ -136,9 +136,10 @@ async def test_scenario_01_add_new_task(agent_setup):
     User: "다음 주까지 블로그 글 써야 해"
     Expected:
       - tasks.json: 1 task added
-      - questions.json: 1+ question
       - status: "active"
       - deadline: ~다음 주
+
+    Note: Question generation is Worker Agent's responsibility (not tested here)
     """
     setup = agent_setup
     agent = setup["agent"]
@@ -159,13 +160,6 @@ async def test_scenario_01_add_new_task(agent_setup):
     assert "블로그" in task["title"] or "글" in task["title"], \
         f"Task title should mention blog/writing: {task['title']}"
     assert task["status"] == "active", "Task should be active"
-
-    # Verify questions
-    with open(dashboard / "questions.json", encoding="utf-8") as f:
-        questions_data = json.load(f)
-        questions = questions_data.get("questions", [])
-
-    assert len(questions) >= 1, "Should generate at least 1 question"
 
 
 @pytest.mark.asyncio

@@ -88,6 +88,75 @@ workspace/              # 사용자 워크스페이스
         └── people.json     # 인간관계
 ```
 
+## 구현 예정 (Planned Features)
+
+다음 기능들은 설계가 완료되어 구현 문서가 준비되어 있습니다:
+
+### 1. Question Queue 번호 매핑 답변 + Dashboard Lock
+
+**문서**: [`implementation_docs/question_answer_numbered_mapping.md`](implementation_docs/question_answer_numbered_mapping.md)
+
+**목적**:
+- Question Queue 답변을 위한 **번호 매핑 방식** 구현
+- Worker ↔ Main Agent 간 Dashboard 파일 충돌 방지 (asyncio.Lock)
+
+**주요 기능**:
+- `/questions` 명령어로 질문 목록 조회 (번호 표시)
+- 번호 형식으로 답변 (예: "1. 답변1\n2. 답변2")
+- **한 번에 여러 질문 답변** 가능
+- Dashboard 도구에 Lock 적용 (충돌 확률 0%)
+- Worker Agent에 Retry 로직 (Lock 잡혀있으면 3분 후 재시도)
+
+**기술 스택**:
+- 메모리 캐시 (딕셔너리, TTL 1시간, 크기 제한 100개)
+- 정규표현식 파싱 (Python `re` 모듈)
+- `asyncio.Lock` (전역 Lock)
+- Message Bus metadata 활용
+
+**수정 예정 파일**:
+- `nanobot/channels/telegram.py` (번호 매핑 시스템, ~120줄)
+- `nanobot/agent/loop.py` (Lock + metadata 처리, ~30줄)
+- `nanobot/agent/tools/dashboard/base.py` (Lock 통합, ~15줄)
+- `nanobot/agent/tools/dashboard/*.py` (6개 도구, 각 ~5줄)
+- `nanobot/heartbeat/service.py` (Worker Retry, ~30줄)
+
+**Total: ~280줄 추가** (Inline Keyboard 대비 50% 감소)
+
+---
+
+### 2. Recurring Tasks System
+
+**문서**: [`implementation_docs/recurring-tasks-implementation.md`](implementation_docs/recurring-tasks-implementation.md)
+
+**목적**:
+- 매일 반복되는 작업(습관) 관리 시스템 추가
+- Streak tracking (연속 달성 일수), 자동 질문 생성
+- Dashboard Tools 기반 설계 (v0.1.5 이후)
+
+**주요 기능**:
+- Daily recurring tasks (주중/주말 필터 지원)
+- 자동 질문 생성 (특정 시간에, e.g., "09:00")
+- Streak tracking (연속 달성 일수)
+- Statistics (총 완료/누락 횟수)
+- Worker에서 자동 관리 (Daily reset, Question generation)
+
+**기술 스택**:
+- Pydantic schemas (RecurringConfig, RecurringStatistics)
+- Dashboard Tools integration (create_task, update_task)
+- Worker Agent (check_recurring_tasks)
+
+**수정 예정 파일**:
+- `nanobot/dashboard/schema.py` (RecurringConfig 추가, ~80줄)
+- `nanobot/agent/tools/dashboard/create_task.py` (recurring 파라미터, ~30줄)
+- `nanobot/agent/tools/dashboard/update_task.py` (recurring 업데이트, ~20줄)
+- `nanobot/dashboard/worker.py` (check_recurring_tasks 메서드, ~150줄)
+- `nanobot/dashboard/helper.py` (Recurring 정보 표시, ~30줄)
+- `workspace/DASHBOARD.md` (Recurring Tasks 섹션, ~80줄)
+
+**Total: ~390줄 추가**
+
+---
+
 ## 개발 가이드라인
 
 ### 코드 스타일

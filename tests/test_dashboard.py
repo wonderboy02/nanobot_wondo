@@ -85,9 +85,11 @@ async def test_worker_check_task_progress(test_workspace):
     manager = DashboardManager(dashboard_path)
 
     # Create a task that's behind schedule
+    # last_update must be < 48h ago to avoid stale check (Case 4)
     now = datetime.now()
     deadline = now + timedelta(days=3)
     created = now - timedelta(days=2)  # Created 2 days ago, deadline in 3 days
+    recent_update = now - timedelta(hours=12)  # Updated 12h ago (not stale)
 
     dashboard = manager.load()
     dashboard["tasks"].append({
@@ -97,13 +99,13 @@ async def test_worker_check_task_progress(test_workspace):
         "deadline": deadline.isoformat(),
         "progress": {
             "percentage": 0,  # Not started
-            "last_update": created.isoformat(),
+            "last_update": recent_update.isoformat(),
             "note": "",
             "blocked": False
         },
         "priority": "medium",
         "created_at": created.isoformat(),
-        "updated_at": created.isoformat()
+        "updated_at": recent_update.isoformat()
     })
     manager.save(dashboard)
 
@@ -111,7 +113,7 @@ async def test_worker_check_task_progress(test_workspace):
     worker = WorkerAgent(dashboard_path)
     await worker.run_cycle()
 
-    # Check if question was added
+    # Check if question was added (Case 1: not started, time_progress_ratio > 0.2)
     dashboard2 = manager.load()
     assert len(dashboard2["questions"]) > 0
     assert "시작했어" in dashboard2["questions"][0]["question"]
@@ -163,9 +165,10 @@ def test_worker_reevaluate_active_status(test_workspace):
     dashboard_path = test_workspace / "dashboard"
     manager = DashboardManager(dashboard_path)
 
-    # Create a task with far deadline (should be someday)
+    # Create a task with far deadline and old update (should be someday)
     now = datetime.now()
     far_deadline = now + timedelta(days=30)
+    old_update = now - timedelta(days=10)  # Last update 10 days ago (> 7 days threshold)
 
     dashboard = manager.load()
     dashboard["tasks"].append({
@@ -176,11 +179,11 @@ def test_worker_reevaluate_active_status(test_workspace):
         "priority": "low",
         "progress": {
             "percentage": 0,
-            "last_update": now.isoformat(),
+            "last_update": old_update.isoformat(),
             "note": ""
         },
-        "created_at": now.isoformat(),
-        "updated_at": now.isoformat()
+        "created_at": old_update.isoformat(),
+        "updated_at": old_update.isoformat()
     })
     manager.save(dashboard)
 

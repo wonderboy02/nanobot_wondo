@@ -31,24 +31,29 @@ def test_is_read_only_detects_instruction_files(tmp_path):
 
 
 def test_is_read_only_allows_data_files(tmp_path):
-    """Test that _is_read_only allows dashboard data files."""
+    """Test that _is_read_only allows memory files but blocks dashboard JSON."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     dashboard_dir = workspace / "dashboard"
     dashboard_dir.mkdir()
 
-    # Test data files (should NOT be read-only)
-    data_files = [
+    # Dashboard JSON files ARE read-only (use dashboard tools instead)
+    dashboard_files = [
         dashboard_dir / "tasks.json",
         dashboard_dir / "questions.json",
         dashboard_dir / "notifications.json",
-        workspace / "memory" / "MEMORY.md",
     ]
 
-    for file_path in data_files:
+    for file_path in dashboard_files:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.touch()
-        assert not _is_read_only(file_path, workspace), f"{file_path.name} should be writable"
+        assert _is_read_only(file_path, workspace), f"{file_path.name} should be read-only (use dashboard tools)"
+
+    # Memory files should NOT be read-only
+    memory_file = workspace / "memory" / "MEMORY.md"
+    memory_file.parent.mkdir(parents=True, exist_ok=True)
+    memory_file.touch()
+    assert not _is_read_only(memory_file, workspace), "MEMORY.md should be writable"
 
 
 @pytest.mark.asyncio
@@ -68,19 +73,19 @@ async def test_write_tool_blocks_instruction_files(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_write_tool_allows_data_files(tmp_path):
-    """Test that WriteFileTool allows writing to data files."""
+async def test_write_tool_blocks_dashboard_json(tmp_path):
+    """Test that WriteFileTool blocks writing to dashboard JSON files."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
     tool = WriteFileTool(allowed_dir=workspace)
 
-    # Write to dashboard/tasks.json (should succeed)
+    # Write to dashboard/tasks.json (should fail - use dashboard tools)
     tasks_path = str(workspace / "dashboard" / "tasks.json")
     result = await tool.execute(path=tasks_path, content='{"tasks": []}')
 
-    assert "Successfully wrote" in result
-    assert (workspace / "dashboard" / "tasks.json").exists()
+    assert "Error:" in result
+    assert "read-only" in result.lower() or "dashboard tools" in result.lower()
 
 
 @pytest.mark.asyncio
@@ -107,8 +112,8 @@ async def test_edit_tool_blocks_instruction_files(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_edit_tool_allows_data_files(tmp_path):
-    """Test that EditFileTool allows editing data files."""
+async def test_edit_tool_blocks_dashboard_json(tmp_path):
+    """Test that EditFileTool blocks editing dashboard JSON files."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     dashboard_dir = workspace / "dashboard"
@@ -120,12 +125,12 @@ async def test_edit_tool_allows_data_files(tmp_path):
 
     tool = EditFileTool(allowed_dir=workspace)
 
-    # Edit tasks.json (should succeed)
+    # Edit tasks.json (should fail - use dashboard tools)
     result = await tool.execute(
         path=str(tasks_path),
         old_text='{"tasks": []}',
         new_text='{"tasks": ["task1"]}'
     )
 
-    assert "Successfully edited" in result
-    assert '{"tasks": ["task1"]}' in tasks_path.read_text()
+    assert "Error:" in result
+    assert "read-only" in result.lower() or "dashboard tools" in result.lower()

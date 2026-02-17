@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-from nanobot.agent.tools.dashboard.base import BaseDashboardTool
+from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
 
 
 class CreateQuestionTool(BaseDashboardTool):
@@ -52,6 +52,7 @@ class CreateQuestionTool(BaseDashboardTool):
             "required": ["question"],
         }
 
+    @with_dashboard_lock
     async def execute(
         self,
         question: str,

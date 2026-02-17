@@ -1,232 +1,110 @@
 # Available Tools
 
-This document describes the tools available to nanobot.
-
 ## File Operations
 
-### read_file
-Read the contents of a file.
-```
+```python
 read_file(path: str) -> str
-```
-
-### write_file
-Write content to a file (creates parent directories if needed).
-```
 write_file(path: str, content: str) -> str
-```
-
-### edit_file
-Edit a file by replacing specific text.
-```
 edit_file(path: str, old_text: str, new_text: str) -> str
-```
-
-### list_dir
-List contents of a directory.
-```
 list_dir(path: str) -> str
 ```
 
 ## Shell Execution
 
-### exec
-Execute a shell command and return output.
-```
+```python
 exec(command: str, working_dir: str = None) -> str
 ```
-
-**Safety Notes:**
-- Commands have a configurable timeout (default 60s)
-- Dangerous commands are blocked (rm -rf, format, dd, shutdown, etc.)
-- Output is truncated at 10,000 characters
-- Optional `restrictToWorkspace` config to limit paths
+⚠️ Dangerous commands blocked. 60s timeout. Output truncated at 10KB.
 
 ## Web Access
 
-### web_search
-Search the web using Brave Search API.
-```
+```python
 web_search(query: str, count: int = 5) -> str
+web_fetch(url: str, extractMode: str = "markdown") -> str
 ```
 
-Returns search results with titles, URLs, and snippets. Requires `tools.web.search.apiKey` in config.
+## Messaging
 
-### web_fetch
-Fetch and extract main content from a URL.
+```python
+message(text: str, channel: str, to: str) -> str
 ```
-web_fetch(url: str, extractMode: str = "markdown", maxChars: int = 50000) -> str
-```
-
-**Notes:**
-- Content is extracted using readability
-- Supports markdown or plain text extraction
-- Output is truncated at 50,000 characters by default
-
-## Dashboard Management (v0.1.5+)
-
-**IMPORTANT**: Use these specialized tools instead of `read_file`/`write_file` for dashboard operations.
-
-### create_task
-Create a new task with automatic ID generation and timestamps.
-```
-create_task(
-    title: str,
-    deadline: str = "",          # e.g., "내일", "금요일", "2026-02-15"
-    priority: str = "medium",    # low, medium, high
-    context: str = "",
-    tags: list[str] = []
-) -> str
-```
-
-### update_task
-Update an existing task's progress, status, blockers, etc.
-```
-update_task(
-    task_id: str,
-    progress: int = None,        # 0-100
-    status: str = None,          # active, completed, someday, cancelled
-    blocked: bool = None,
-    blocker_note: str = None,
-    context: str = None,
-    deadline: str = None,
-    priority: str = None,
-    tags: list[str] = None
-) -> str
-```
-
-### answer_question
-Mark a question as answered with the provided answer.
-```
-answer_question(
-    question_id: str,
-    answer: str
-) -> str
-```
-
-### create_question
-Create a new question in the question queue.
-```
-create_question(
-    question: str,
-    priority: str = "medium",    # low, medium, high
-    type: str = "info_gather",   # info_gather, progress_check, etc.
-    related_task_id: str = None,
-    context: str = ""
-) -> str
-```
-
-### save_insight
-Save a learning or insight to the knowledge base.
-```
-save_insight(
-    content: str,
-    category: str = "general",   # tech, life, work, learning
-    title: str = "",
-    source: str = "",
-    tags: list[str] = []
-) -> str
-```
-
-### move_to_history
-Move a completed task to the history knowledge base.
-```
-move_to_history(
-    task_id: str,
-    reflection: str = ""
-) -> str
-```
-
-**Benefits**:
-- ✅ Automatic ID and timestamp generation
-- ✅ Pydantic schema validation
-- ✅ Prevents malformed JSON
-- ✅ Protected from accidental file modifications
-
-**Note**: Dashboard JSON files (`tasks.json`, `questions.json`, etc.) are read-only for generic file tools. Always use the dashboard-specific tools above.
-
-## Communication
-
-### message
-Send a message to the user (used internally).
-```
-message(content: str, channel: str = None, chat_id: str = None) -> str
-```
+Send messages to chat channels (telegram, discord, etc.).
 
 ## Background Tasks
 
-### spawn
-Spawn a subagent to handle a task in the background.
-```
-spawn(task: str, label: str = None) -> str
-```
-
-Use for complex or time-consuming tasks that can run independently. The subagent will complete the task and report back when done.
-
-## Scheduled Reminders (Cron)
-
-Use the `exec` tool to create scheduled reminders with `nanobot cron add`:
-
-### Set a recurring reminder
-```bash
-# Every day at 9am
-nanobot cron add --name "morning" --message "Good morning! ☀️" --cron "0 9 * * *"
-
-# Every 2 hours
-nanobot cron add --name "water" --message "Drink water! 💧" --every 7200
-```
-
-### Set a one-time reminder
-```bash
-# At a specific time (ISO format)
-nanobot cron add --name "meeting" --message "Meeting starts now!" --at "2025-01-31T15:00:00"
-```
-
-### Manage reminders
-```bash
-nanobot cron list              # List all jobs
-nanobot cron remove <job_id>   # Remove a job
-```
-
-## Heartbeat Task Management
-
-The `HEARTBEAT.md` file in the workspace is checked every 30 minutes.
-Use file operations to manage periodic tasks:
-
-### Add a heartbeat task
 ```python
-# Append a new task
-edit_file(
-    path="HEARTBEAT.md",
-    old_text="## Example Tasks",
-    new_text="- [ ] New periodic task here\n\n## Example Tasks"
-)
+spawn(task_description: str, skill_names: list[str] = None) -> str
+```
+Spawn a subagent for complex background tasks.
+
+## Dashboard Management
+
+**⚠️ IMPORTANT**: Use these tools instead of `read_file`/`write_file` for dashboard operations.
+
+### Task Management
+```python
+create_task(title: str, deadline: str = "", priority: str = "medium",
+            context: str = "", tags: list[str] = []) -> str
+
+update_task(task_id: str, progress: int = None, status: str = None,
+            blocked: bool = None, blocker_note: str = None,
+            context: str = None, deadline: str = None,
+            priority: str = None, tags: list[str] = None) -> str
+
+move_to_history(task_id: str, reflection: str = "") -> str
 ```
 
-### Remove a heartbeat task
+**Status values**: `active`, `completed`, `someday`, `cancelled`
+**Priority values**: `low`, `medium`, `high`
+
+### Question Management
 ```python
-# Remove a specific task
-edit_file(
-    path="HEARTBEAT.md",
-    old_text="- [ ] Task to remove\n",
-    new_text=""
-)
+answer_question(question_id: str, answer: str) -> str
+
+create_question(question: str, priority: str = "medium",
+                type: str = "info_gather",
+                related_task_id: str = None) -> str
+
+update_question(question_id: str, priority: str = None,
+                type: str = None, cooldown_hours: int = None,
+                context: str = None) -> str
+
+remove_question(question_id: str, reason: str = "") -> str
 ```
 
-### Rewrite all tasks
+**Question Types**: `info_gather`, `progress_check`, `deadline_check`, `blocker_check`, etc.
+
+### Notification Management
 ```python
-# Replace the entire file
-write_file(
-    path="HEARTBEAT.md",
-    content="# Heartbeat Tasks\n\n- [ ] Task 1\n- [ ] Task 2\n"
-)
+schedule_notification(message: str, scheduled_at: str,
+                     type: str = "reminder", priority: str = "medium",
+                     related_task_id: str = None,
+                     related_question_id: str = None,
+                     context: str = "") -> str
+
+update_notification(notification_id: str, message: str = None,
+                   scheduled_at: str = None, priority: str = None) -> str
+
+cancel_notification(notification_id: str, reason: str = "") -> str
+
+list_notifications(status: str = None, related_task_id: str = None) -> str
 ```
+
+**Notification Types**: `reminder`, `deadline_alert`, `progress_check`, `blocker_followup`, `question_reminder`
+**Status values**: `pending`, `delivered`, `cancelled`
+
+**When to use:**
+- Schedule reminders for deadlines, progress checks, or follow-ups
+- Notifications are delivered via Cron at exact scheduled time
+- Always check `list_notifications()` before creating new ones to avoid duplicates
 
 ---
 
-## Adding Custom Tools
+## Dashboard Tool Benefits
 
-To add custom tools:
-1. Create a class that extends `Tool` in `nanobot/agent/tools/`
-2. Implement `name`, `description`, `parameters`, and `execute`
-3. Register it in `AgentLoop._register_default_tools()`
+✅ **Automatic**: ID generation, timestamps, validation
+✅ **Safe**: Pydantic schema validation, atomic writes
+✅ **Simple**: No JSON manipulation needed
+
+❌ **Don't use**: `read_file("dashboard/tasks.json")` or `write_file(...)`
+✅ **Use instead**: `create_task()`, `update_task()`, etc.

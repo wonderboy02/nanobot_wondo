@@ -96,6 +96,35 @@ class QuestionsFile(BaseModel):
 
 
 # ============================================================================
+# Notification Schemas
+# ============================================================================
+
+class Notification(BaseModel):
+    """Notification schema."""
+    id: str
+    message: str
+    scheduled_at: str  # ISO datetime
+    scheduled_at_text: Optional[str] = None  # Natural language (e.g., "내일 아침")
+    type: Literal["reminder", "deadline_alert", "progress_check", "blocker_followup", "question_reminder"] = "reminder"
+    priority: Literal["low", "medium", "high"] = "medium"
+    related_task_id: Optional[str] = None
+    related_question_id: Optional[str] = None
+    status: Literal["pending", "delivered", "cancelled"] = "pending"
+    cron_job_id: Optional[str] = None
+    created_at: str  # ISO datetime
+    delivered_at: Optional[str] = None  # ISO datetime
+    cancelled_at: Optional[str] = None  # ISO datetime
+    context: str = ""
+    created_by: Literal["worker", "user", "main_agent"] = "worker"
+
+
+class NotificationsFile(BaseModel):
+    """notifications.json schema."""
+    version: str = "1.0"
+    notifications: list[Notification] = Field(default_factory=list)
+
+
+# ============================================================================
 # Knowledge Schemas
 # ============================================================================
 
@@ -173,7 +202,7 @@ class Dashboard(BaseModel):
     """Complete dashboard schema."""
     tasks: list[Task]
     questions: list[Question]
-    notifications: list = Field(default_factory=list)  # TODO: define schema
+    notifications: list[Notification] = Field(default_factory=list)
     knowledge: dict  # Contains history, insights, people
 
 
@@ -189,6 +218,11 @@ def validate_tasks_file(data: dict) -> TasksFile:
 def validate_questions_file(data: dict) -> QuestionsFile:
     """Validate questions.json."""
     return QuestionsFile(**data)
+
+
+def validate_notifications_file(data: dict) -> NotificationsFile:
+    """Validate notifications.json."""
+    return NotificationsFile(**data)
 
 
 def validate_history_file(data: dict) -> HistoryFile:

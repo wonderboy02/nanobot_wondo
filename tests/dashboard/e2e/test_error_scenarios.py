@@ -19,7 +19,7 @@ from nanobot.config.loader import load_config
 
 
 @pytest.fixture
-async def agent_setup(tmp_path):
+def agent_setup(tmp_path):
     """Setup Agent with clean dashboard."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -96,7 +96,7 @@ async def test_error_01_ambiguous_message(agent_setup):
       - Either ask clarifying question OR
       - Create generic task with note to clarify
     """
-    setup = await agent_setup
+    setup = agent_setup
     agent = setup["agent"]
     dashboard = setup["dashboard"]
 
@@ -132,7 +132,7 @@ async def test_error_02_file_corruption_recovery(agent_setup):
       - Reset or recover
       - Continue operation
     """
-    setup = await agent_setup
+    setup = agent_setup
     agent = setup["agent"]
     dashboard = setup["dashboard"]
 
@@ -172,7 +172,7 @@ async def test_error_03_very_long_context(agent_setup):
       - May summarize or paginate
       - Doesn't crash
     """
-    setup = await agent_setup
+    setup = agent_setup
     agent = setup["agent"]
     dashboard = setup["dashboard"]
 
@@ -217,7 +217,7 @@ async def test_error_04_missing_required_fields(agent_setup):
       - Schema validation catches errors
       - Agent can still operate
     """
-    setup = await agent_setup
+    setup = agent_setup
     agent = setup["agent"]
     dashboard = setup["dashboard"]
 
@@ -254,7 +254,7 @@ async def test_error_05_concurrent_updates(agent_setup):
       - No data loss
       - Latest write wins or merge
     """
-    setup = await agent_setup
+    setup = agent_setup
     agent = setup["agent"]
     dashboard = setup["dashboard"]
 
@@ -293,7 +293,7 @@ async def test_error_06_invalid_date_format(agent_setup):
       - Parse and normalize
       - Or ask for clarification
     """
-    setup = await agent_setup
+    setup = agent_setup
     agent = setup["agent"]
     dashboard = setup["dashboard"]
 
@@ -327,7 +327,7 @@ async def test_error_07_extremely_long_message(agent_setup):
       - Process without truncating important info
       - Or summarize appropriately
     """
-    setup = await agent_setup
+    setup = agent_setup
     agent = setup["agent"]
     dashboard = setup["dashboard"]
 

@@ -283,12 +283,22 @@ def gateway(
     async def on_heartbeat(prompt: str) -> str:
         """Execute heartbeat through the agent."""
         return await agent.process_direct(prompt, session_key="heartbeat")
-    
+
+    # Determine worker model (from config or fallback to fast model)
+    worker_config = getattr(config.agents, 'worker', None)
+    worker_model = worker_config.model if worker_config else "google/gemini-2.0-flash-exp"
+    use_llm_worker = worker_config.use_llm if worker_config else True
+
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
         on_heartbeat=on_heartbeat,
         interval_s=30 * 60,  # 30 minutes
-        enabled=True
+        enabled=True,
+        provider=provider,
+        model=worker_model,
+        cron_service=cron,
+        bus=bus,
+        use_llm_worker=use_llm_worker,
     )
     
     # Create channel manager

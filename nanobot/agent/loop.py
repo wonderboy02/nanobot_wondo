@@ -114,19 +114,32 @@ class AgentLoop:
             UpdateTaskTool,
             AnswerQuestionTool,
             CreateQuestionTool,
-            SaveInsightTool,
+            UpdateQuestionTool,
+            RemoveQuestionTool,
             MoveToHistoryTool,
+            SaveInsightTool,
+            ScheduleNotificationTool,
+            UpdateNotificationTool,
+            CancelNotificationTool,
+            ListNotificationsTool,
         )
 
         self.tools.register(CreateTaskTool(workspace=self.workspace))
         self.tools.register(UpdateTaskTool(workspace=self.workspace))
         self.tools.register(AnswerQuestionTool(workspace=self.workspace))
         self.tools.register(CreateQuestionTool(workspace=self.workspace))
-        self.tools.register(SaveInsightTool(workspace=self.workspace))
+        self.tools.register(UpdateQuestionTool(workspace=self.workspace))
+        self.tools.register(RemoveQuestionTool(workspace=self.workspace))
         self.tools.register(MoveToHistoryTool(workspace=self.workspace))
-        # Recurring Task 시스템으로 대체 예정
-        # if self.cron_service:
-        #     self.tools.register(CronTool(self.cron_service))
+        self.tools.register(SaveInsightTool(workspace=self.workspace))
+
+        # Notification tools (user explicit requests)
+        # Worker handles automatic notifications, Main handles user requests like "remind me tomorrow"
+        if self.cron_service:
+            self.tools.register(ScheduleNotificationTool(workspace=self.workspace, cron_service=self.cron_service))
+            self.tools.register(UpdateNotificationTool(workspace=self.workspace, cron_service=self.cron_service))
+            self.tools.register(CancelNotificationTool(workspace=self.workspace, cron_service=self.cron_service))
+            self.tools.register(ListNotificationsTool(workspace=self.workspace))
     
     async def run(self) -> None:
         """Run the agent loop, processing messages from the bus."""

@@ -2,7 +2,7 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, Optional
 
 from loguru import logger
 
@@ -49,11 +49,21 @@ class HeartbeatService:
         on_heartbeat: Callable[[str], Coroutine[Any, Any, str]] | None = None,
         interval_s: int = DEFAULT_HEARTBEAT_INTERVAL_S,
         enabled: bool = True,
+        provider: Optional[Any] = None,  # LLMProvider
+        model: Optional[str] = None,
+        cron_service: Optional[Any] = None,  # CronService
+        bus: Optional[Any] = None,  # MessageBus
+        use_llm_worker: bool = True,
     ):
         self.workspace = workspace
         self.on_heartbeat = on_heartbeat
         self.interval_s = interval_s
         self.enabled = enabled
+        self.provider = provider
+        self.model = model
+        self.cron_service = cron_service
+        self.bus = bus
+        self.use_llm_worker = use_llm_worker
         self._running = False
         self._task: asyncio.Task | None = None
     
@@ -136,10 +146,38 @@ class HeartbeatService:
             return
 
         try:
+            # Use LLM Worker if enabled and dependencies available
+            if (
+                self.use_llm_worker
+                and self.provider is not None
+                and self.model is not None
+                and self.cron_service is not None
+                and self.bus is not None
+            ):
+                try:
+                    from nanobot.dashboard.llm_worker import LLMWorkerAgent
+
+                    worker = LLMWorkerAgent(
+                        workspace=self.workspace,
+                        provider=self.provider,
+                        model=self.model,
+                        cron_service=self.cron_service,
+                        bus=self.bus,
+                    )
+                    await worker.run_cycle()
+                    logger.debug("LLM Worker cycle completed successfully")
+                    return
+                except ImportError:
+                    logger.warning("LLM Worker not available, falling back to rule-based worker")
+                except Exception as e:
+                    logger.error(f"LLM Worker execution failed: {e}, falling back to rule-based worker")
+
+            # Fallback to rule-based worker
             from nanobot.dashboard.worker import WorkerAgent
+
             worker = WorkerAgent(dashboard_path)
             await worker.run_cycle()
-            logger.debug("Worker cycle completed successfully")
+            logger.debug("Rule-based Worker cycle completed successfully")
 
         except ImportError:
             # Dashboard module not available - log once

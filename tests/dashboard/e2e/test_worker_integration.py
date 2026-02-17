@@ -22,7 +22,7 @@ from nanobot.dashboard.worker import WorkerAgent
 
 
 @pytest.fixture
-async def integration_setup(tmp_path):
+def integration_setup(tmp_path):
     """Setup Agent + Worker with clean dashboard."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
@@ -100,7 +100,7 @@ async def test_integration_01_agent_add_worker_ask(integration_setup):
       3. Worker generates question (task not started)
       4. Verify question in queue
     """
-    setup = await integration_setup
+    setup = integration_setup
     agent = setup["agent"]
     worker = setup["worker"]
     manager = setup["manager"]
@@ -146,7 +146,7 @@ async def test_integration_02_worker_ask_agent_answer(integration_setup):
       3. Agent processes answer and updates task
       4. Verify task updated
     """
-    setup = await integration_setup
+    setup = integration_setup
     agent = setup["agent"]
     worker = setup["worker"]
     manager = setup["manager"]
@@ -206,7 +206,7 @@ async def test_integration_03_complete_then_history(integration_setup):
       3. Worker moves completed task to history
       4. Verify task in history, removed from active
     """
-    setup = await integration_setup
+    setup = integration_setup
     agent = setup["agent"]
     worker = setup["worker"]
     manager = setup["manager"]
@@ -255,7 +255,7 @@ async def test_integration_04_full_lifecycle(integration_setup):
       6. User completes
       7. Worker moves to history
     """
-    setup = await integration_setup
+    setup = integration_setup
     agent = setup["agent"]
     worker = setup["worker"]
     manager = setup["manager"]
@@ -317,7 +317,7 @@ async def test_integration_05_multiple_workers_cycles(integration_setup):
 
     Multiple worker cycles with different task states
     """
-    setup = await integration_setup
+    setup = integration_setup
     agent = setup["agent"]
     worker = setup["worker"]
     manager = setup["manager"]

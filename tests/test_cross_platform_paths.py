@@ -29,7 +29,7 @@ def test_read_only_detection_cross_platform():
     test_cases = [
         (Path("/workspace/DASHBOARD.md"), True),
         (Path("/workspace/subdir/DASHBOARD.md"), True),
-        (Path("/workspace/dashboard/tasks.json"), False),
+        (Path("/workspace/dashboard/tasks.json"), True),  # Dashboard JSON is read-only (use dashboard tools)
         (Path("/workspace/memory/MEMORY.md"), False),
     ]
 

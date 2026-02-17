@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from nanobot.agent.tools.dashboard.base import BaseDashboardTool
+from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
 
 
 class MoveToHistoryTool(BaseDashboardTool):
@@ -39,6 +39,7 @@ class MoveToHistoryTool(BaseDashboardTool):
             "required": ["task_id"],
         }
 
+    @with_dashboard_lock
     async def execute(
         self, task_id: str, reflection: str = "", **kwargs: Any
     ) -> str:
