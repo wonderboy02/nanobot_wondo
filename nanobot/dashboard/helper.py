@@ -116,18 +116,7 @@ def get_dashboard_summary(
 
         parts.append("\n".join(question_lines))
 
-    # Header — direct Agent to use dashboard tools, not file writes
-    header = """## Dashboard State
-
-**Use dashboard tools to update** (create_task, update_task, answer_question, etc.).
-Do NOT use write_file for dashboard JSON files.
-
-**DO NOT modify**: DASHBOARD.md, TOOLS.md, AGENTS.md (read-only instruction files)
-
----
-"""
-
     if not parts:
-        return header + "\nNo active tasks or questions."
+        return "No active tasks or questions."
 
-    return header + "\n\n".join(parts)
+    return "\n\n".join(parts)

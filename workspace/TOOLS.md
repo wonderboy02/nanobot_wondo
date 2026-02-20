@@ -39,8 +39,6 @@ Spawn a subagent for complex background tasks.
 
 ## Dashboard Management
 
-**⚠️ IMPORTANT**: Use these tools instead of `read_file`/`write_file` for dashboard operations.
-
 ### Task Management
 ```python
 create_task(title: str, deadline: str = "", priority: str = "medium",
@@ -98,16 +96,3 @@ list_notifications(status: str = None, related_task_id: str = None) -> str
 - Notifications are delivered via Cron at exact scheduled time
 - Always check `list_notifications()` before creating new ones to avoid duplicates
 
----
-
-## Dashboard Tool Benefits
-
-✅ **Automatic**: ID generation, timestamps, validation
-✅ **Safe**: Pydantic schema validation, atomic writes
-✅ **Simple**: No JSON manipulation needed
-✅ **Backend-agnostic**: Same tools work with both JSON files and Notion
-
-❌ **Don't use**: `read_file("dashboard/tasks.json")` or `write_file(...)`
-✅ **Use instead**: `create_task()`, `update_task()`, etc.
-
-> Storage backend (JSON or Notion) is configured at startup. Tools auto-detect — no code changes needed.
