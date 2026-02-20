@@ -1,11 +1,14 @@
 """Telegram channel implementation using python-telegram-bot."""
 
 import asyncio
+import json
 import re
+import time
+from pathlib import Path
 
 from loguru import logger
 from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
@@ -85,12 +88,24 @@ class TelegramChannel(BaseChannel):
     
     name = "telegram"
     
-    def __init__(self, config: TelegramConfig, bus: MessageBus, groq_api_key: str = ""):
+    _CACHE_TTL = 3600  # 1 hour
+    _CACHE_MAX_SIZE = 100
+
+    def __init__(
+        self,
+        config: TelegramConfig,
+        bus: MessageBus,
+        groq_api_key: str = "",
+        workspace: Path | None = None,
+    ):
         super().__init__(config, bus)
         self.config: TelegramConfig = config
         self.groq_api_key = groq_api_key
+        self.workspace = workspace
         self._app: Application | None = None
         self._chat_ids: dict[str, int] = {}  # Map sender_id to chat_id for replies
+        # Question cache: {chat_id: {"mapping": {number: question_id}, "created_at": float}}
+        self._question_cache: dict[int, dict] = {}
     
     async def start(self) -> None:
         """Start the Telegram bot with long polling."""
@@ -116,9 +131,10 @@ class TelegramChannel(BaseChannel):
             )
         )
         
-        # Add /start command handler
-        from telegram.ext import CommandHandler
+        # Add command handlers
         self._app.add_handler(CommandHandler("start", self._on_start))
+        self._app.add_handler(CommandHandler("questions", self._on_questions))
+        self._app.add_handler(CommandHandler("tasks", self._on_tasks))
         
         logger.info("Starting Telegram bot (polling mode)...")
         
@@ -191,6 +207,192 @@ class TelegramChannel(BaseChannel):
             "Send me a message and I'll respond!"
         )
     
+    async def _on_questions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /questions command — show unanswered questions with numbered mapping."""
+        if not update.message or not update.effective_user:
+            return
+
+        user = update.effective_user
+        sender_id = str(user.id)
+        if user.username:
+            sender_id = f"{sender_id}|{user.username}"
+
+        if not self.is_allowed(sender_id):
+            return
+
+        chat_id = update.message.chat_id
+
+        if not self.workspace:
+            await update.message.reply_text("Workspace not configured.")
+            return
+
+        # Load questions.json
+        questions_path = self.workspace / "dashboard" / "questions.json"
+        if not questions_path.exists():
+            await update.message.reply_text("No questions yet.")
+            return
+
+        try:
+            data = json.loads(questions_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Failed to read questions.json: {e}")
+            await update.message.reply_text("Failed to read questions.")
+            return
+
+        # Filter unanswered questions
+        unanswered = [q for q in data.get("questions", []) if not q.get("answered")]
+
+        if not unanswered:
+            await update.message.reply_text("No unanswered questions! 🎉")
+            return
+
+        # Build numbered mapping and display
+        mapping: dict[int, str] = {}
+        lines = ["📋 <b>Unanswered Questions</b>\n"]
+        for i, q in enumerate(unanswered, start=1):
+            q_id = q.get("id", "?")
+            question_text = q.get("question", "")
+            priority = q.get("priority", "")
+            related = q.get("related_task_id", "")
+
+            mapping[i] = q_id
+            line = f"<b>{i}.</b> {question_text}"
+            if priority:
+                line += f"  [{priority}]"
+            if related:
+                line += f"  (→{related})"
+            lines.append(line)
+
+        lines.append("\n💡 번호로 답변하세요 (예: 1. 답변)")
+
+        # Save to cache (one-time use)
+        self._evict_cache()
+        self._question_cache[chat_id] = {
+            "mapping": mapping,
+            "created_at": time.time(),
+        }
+
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+    async def _on_tasks(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /tasks command — show active tasks."""
+        if not update.message or not update.effective_user:
+            return
+
+        user = update.effective_user
+        sender_id = str(user.id)
+        if user.username:
+            sender_id = f"{sender_id}|{user.username}"
+
+        if not self.is_allowed(sender_id):
+            return
+
+        if not self.workspace:
+            await update.message.reply_text("Workspace not configured.")
+            return
+
+        # Load tasks.json
+        tasks_path = self.workspace / "dashboard" / "tasks.json"
+        if not tasks_path.exists():
+            await update.message.reply_text("No tasks yet.")
+            return
+
+        try:
+            data = json.loads(tasks_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.error(f"Failed to read tasks.json: {e}")
+            await update.message.reply_text("Failed to read tasks.")
+            return
+
+        # Filter active tasks
+        active = [t for t in data.get("tasks", []) if t.get("status") == "active"]
+
+        if not active:
+            await update.message.reply_text("No active tasks.")
+            return
+
+        lines = ["📋 <b>Active Tasks</b>\n"]
+        for t in active:
+            t_id = t.get("id", "?")
+            title = t.get("title", "")
+            raw_progress = t.get("progress", 0)
+            if isinstance(raw_progress, dict):
+                pct = raw_progress.get("percentage", 0)
+            else:
+                pct = raw_progress
+            priority = t.get("priority", "")
+            blocked = raw_progress.get("blocked", False) if isinstance(raw_progress, dict) else False
+
+            line = f"• <b>{title}</b> ({pct}%)"
+            if priority:
+                line += f"  [{priority}]"
+            if blocked:
+                line += " ⚠️ Blocked"
+            line += f"\n  <code>{t_id}</code>"
+            lines.append(line)
+
+        await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+    @staticmethod
+    def _parse_numbered_answers(
+        text: str, mapping: dict[int, str]
+    ) -> tuple[dict[str, str], list[str]]:
+        """Parse numbered answers from text using a mapping of number→question_id.
+
+        Pattern: line starts with a digit followed by a separator (. ) : or space).
+        Lines that don't match are appended to the previous answer (multi-line support).
+
+        Returns:
+            (numbered_answers: {question_id: answer}, unmatched_lines: [str])
+        """
+        pattern = re.compile(r"^(\d+)[.):\s]\s*(.*)", re.DOTALL)
+        numbered: dict[str, str] = {}
+        unmatched: list[str] = []
+        last_qid: str | None = None
+
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+
+            m = pattern.match(stripped)
+            if m:
+                num = int(m.group(1))
+                answer_text = m.group(2).strip()
+                if num in mapping:
+                    qid = mapping[num]
+                    numbered[qid] = answer_text
+                    last_qid = qid
+                else:
+                    # Number not in mapping — treat as unmatched
+                    unmatched.append(stripped)
+                    last_qid = None
+            elif last_qid is not None:
+                # Continuation of previous answer (multi-line)
+                numbered[last_qid] += "\n" + stripped
+            else:
+                unmatched.append(stripped)
+
+        return numbered, unmatched
+
+    def _evict_cache(self) -> None:
+        """Remove expired and excess cache entries."""
+        now = time.time()
+        # Remove expired entries
+        expired = [
+            cid for cid, entry in self._question_cache.items()
+            if now - entry["created_at"] > self._CACHE_TTL
+        ]
+        for cid in expired:
+            del self._question_cache[cid]
+
+        # Evict oldest if over size limit
+        while len(self._question_cache) > self._CACHE_MAX_SIZE:
+            oldest_cid = min(
+                self._question_cache, key=lambda c: self._question_cache[c]["created_at"]
+            )
+            del self._question_cache[oldest_cid]
+
     async def _on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming messages (text, photos, voice, documents)."""
         if not update.message or not update.effective_user:
@@ -242,7 +444,6 @@ class TelegramChannel(BaseChannel):
                 ext = self._get_extension(media_type, getattr(media_file, 'mime_type', None))
                 
                 # Save to workspace/media/
-                from pathlib import Path
                 media_dir = Path.home() / ".nanobot" / "media"
                 media_dir.mkdir(parents=True, exist_ok=True)
                 
@@ -270,9 +471,26 @@ class TelegramChannel(BaseChannel):
                 content_parts.append(f"[{media_type}: download failed]")
         
         content = "\n".join(content_parts) if content_parts else "[empty message]"
-        
+
         logger.debug(f"Telegram message from {sender_id}: {content[:50]}...")
-        
+
+        # Check question cache for numbered answer parsing
+        extra_metadata: dict = {}
+        cache_entry = self._question_cache.get(chat_id)
+        if cache_entry and content != "[empty message]":
+            mapping = cache_entry["mapping"]
+            answers, unmatched = self._parse_numbered_answers(content, mapping)
+            if answers:
+                extra_metadata["question_answers"] = answers
+                # Replace content with unmatched lines only (or empty note)
+                content = "\n".join(unmatched) if unmatched else ""
+                logger.info(
+                    f"Parsed {len(answers)} numbered answer(s), "
+                    f"{len(unmatched)} unmatched line(s)"
+                )
+            # One-time use: always delete cache after attempt
+            del self._question_cache[chat_id]
+
         # Forward to the message bus
         await self._handle_message(
             sender_id=sender_id,
@@ -284,7 +502,8 @@ class TelegramChannel(BaseChannel):
                 "user_id": user.id,
                 "username": user.username,
                 "first_name": user.first_name,
-                "is_group": message.chat.type != "private"
+                "is_group": message.chat.type != "private",
+                **extra_metadata,
             }
         )
     

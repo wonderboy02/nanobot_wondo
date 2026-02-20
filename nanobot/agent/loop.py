@@ -18,6 +18,8 @@ from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.cron import CronTool
+from nanobot.agent.tools.dashboard.schedule_notification import ScheduleNotificationTool
+from nanobot.agent.tools.dashboard.update_notification import UpdateNotificationTool
 from nanobot.agent.subagent import SubagentManager
 from nanobot.session.manager import SessionManager
 
@@ -210,11 +212,47 @@ class AgentLoop:
         cron_tool = self.tools.get("cron")
         if isinstance(cron_tool, CronTool):
             cron_tool.set_context(msg.channel, msg.chat_id)
-        
+
+        # Set context for notification tools (so they know where to deliver)
+        schedule_tool = self.tools.get("schedule_notification")
+        if isinstance(schedule_tool, ScheduleNotificationTool):
+            schedule_tool.set_context(msg.channel, msg.chat_id)
+
+        update_notif_tool = self.tools.get("update_notification")
+        if isinstance(update_notif_tool, UpdateNotificationTool):
+            update_notif_tool.set_context(msg.channel, msg.chat_id)
+
+        # Handle pre-parsed question answers from numbered mapping
+        answer_results: list[str] = []
+        question_answers = msg.metadata.get("question_answers")
+        if question_answers and isinstance(question_answers, dict):
+            answer_tool = self.tools.get("answer_question")
+            if answer_tool:
+                for q_id, answer in question_answers.items():
+                    try:
+                        result = await answer_tool.execute(
+                            question_id=q_id, answer=answer
+                        )
+                        answer_results.append(result)
+                        logger.info(f"Auto-answered {q_id}: {result}")
+                    except Exception as e:
+                        answer_results.append(f"Error answering {q_id}: {e}")
+                        logger.error(f"Failed to auto-answer {q_id}: {e}")
+
+        # Inject answer results into the message content for Agent awareness
+        effective_content = msg.content
+        if answer_results:
+            summary = "\n".join(f"- {r}" for r in answer_results)
+            prefix = f"[System: Auto-answered {len(answer_results)} question(s):\n{summary}]"
+            if effective_content:
+                effective_content = f"{prefix}\n\n{effective_content}"
+            else:
+                effective_content = prefix
+
         # Build initial messages (use get_history for LLM-formatted messages)
         messages = self.context.build_messages(
             history=session.get_history(),
-            current_message=msg.content,
+            current_message=effective_content,
             media=msg.media if msg.media else None,
             channel=msg.channel,
             chat_id=msg.chat_id,
@@ -325,7 +363,15 @@ class AgentLoop:
         cron_tool = self.tools.get("cron")
         if isinstance(cron_tool, CronTool):
             cron_tool.set_context(origin_channel, origin_chat_id)
-        
+
+        schedule_tool = self.tools.get("schedule_notification")
+        if isinstance(schedule_tool, ScheduleNotificationTool):
+            schedule_tool.set_context(origin_channel, origin_chat_id)
+
+        update_notif_tool = self.tools.get("update_notification")
+        if isinstance(update_notif_tool, UpdateNotificationTool):
+            update_notif_tool.set_context(origin_channel, origin_chat_id)
+
         # Build messages with the announce content
         messages = self.context.build_messages(
             history=session.get_history(),

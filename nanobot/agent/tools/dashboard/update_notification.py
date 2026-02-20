@@ -14,6 +14,13 @@ class UpdateNotificationTool(BaseDashboardTool):
     def __init__(self, workspace: Path, cron_service: CronService):
         super().__init__(workspace)
         self.cron_service = cron_service
+        self._channel: str | None = None
+        self._chat_id: str | None = None
+
+    def set_context(self, channel: str, chat_id: str) -> None:
+        """Set the current channel and chat_id for notification delivery."""
+        self._channel = channel
+        self._chat_id = chat_id
 
     @property
     def name(self) -> str:
@@ -110,6 +117,8 @@ class UpdateNotificationTool(BaseDashboardTool):
                         schedule=schedule,
                         message=notification["message"],
                         deliver=True,
+                        channel=self._channel,
+                        to=self._chat_id,
                         delete_after_run=True,
                     )
 
