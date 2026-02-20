@@ -11,6 +11,19 @@ from nanobot.agent.loop import AgentLoop
 from nanobot.dashboard.llm_worker import LLMWorkerAgent
 from nanobot.cron.service import CronService
 from nanobot.bus.queue import MessageBus
+from nanobot.providers.base import LLMResponse, ToolCallRequest
+
+
+def _make_response(content: str, tool_calls: list[dict] | None = None) -> LLMResponse:
+    """Build an LLMResponse from simplified dict spec used in tests."""
+    tc_objects = []
+    for tc in (tool_calls or []):
+        tc_objects.append(ToolCallRequest(
+            id=tc.get("id", ""),
+            name=tc["name"],
+            arguments=tc.get("arguments", {}),
+        ))
+    return LLMResponse(content=content, tool_calls=tc_objects)
 
 
 @pytest.fixture
@@ -110,9 +123,9 @@ class TestNotificationWorkflow:
         schedule_time = (datetime.now() + timedelta(hours=1)).isoformat()
         provider.chat = AsyncMock(side_effect=[
             # First response: Worker calls schedule_notification
-            {
-                "content": "I'll schedule a deadline notification.",
-                "tool_calls": [{
+            _make_response(
+                "I'll schedule a deadline notification.",
+                [{
                     "id": "call_1",
                     "name": "schedule_notification",
                     "arguments": {
@@ -122,13 +135,10 @@ class TestNotificationWorkflow:
                         "priority": "high",
                         "related_task_id": "task_001"
                     }
-                }]
-            },
+                }],
+            ),
             # Second response: Worker finishes
-            {
-                "content": "Deadline notification scheduled successfully.",
-                "tool_calls": []
-            }
+            _make_response("Deadline notification scheduled successfully."),
         ])
 
         # Create Worker Agent
@@ -219,22 +229,21 @@ class TestNotificationWorkflow:
         # Mock LLM response: Worker checks notifications and decides to skip
         provider.chat = AsyncMock(side_effect=[
             # First response: Worker calls list_notifications
-            {
-                "content": "Let me check existing notifications first.",
-                "tool_calls": [{
+            _make_response(
+                "Let me check existing notifications first.",
+                [{
                     "id": "call_1",
                     "name": "list_notifications",
                     "arguments": {
                         "related_task_id": "task_001",
                         "status": "pending"
                     }
-                }]
-            },
+                }],
+            ),
             # Second response: Worker sees existing notification and finishes
-            {
-                "content": "Deadline notification already exists for this task. No action needed.",
-                "tool_calls": []
-            }
+            _make_response(
+                "Deadline notification already exists for this task. No action needed.",
+            ),
         ])
 
         worker = LLMWorkerAgent(
@@ -293,9 +302,9 @@ class TestNotificationWorkflow:
         # Mock LLM response
         followup_time = (datetime.now() + timedelta(hours=2)).isoformat()
         provider.chat = AsyncMock(side_effect=[
-            {
-                "content": "Task blocked for 48+ hours. Scheduling follow-up.",
-                "tool_calls": [{
+            _make_response(
+                "Task blocked for 48+ hours. Scheduling follow-up.",
+                [{
                     "id": "call_1",
                     "name": "schedule_notification",
                     "arguments": {
@@ -306,12 +315,9 @@ class TestNotificationWorkflow:
                         "related_task_id": "task_002",
                         "context": "Task blocked for 49 hours"
                     }
-                }]
-            },
-            {
-                "content": "Blocker follow-up scheduled.",
-                "tool_calls": []
-            }
+                }],
+            ),
+            _make_response("Blocker follow-up scheduled."),
         ])
 
         worker = LLMWorkerAgent(
@@ -388,21 +394,18 @@ class TestNotificationWorkflow:
 
         # Mock LLM response
         provider.chat = AsyncMock(side_effect=[
-            {
-                "content": "Task completed, removing obsolete question.",
-                "tool_calls": [{
+            _make_response(
+                "Task completed, removing obsolete question.",
+                [{
                     "id": "call_1",
                     "name": "remove_question",
                     "arguments": {
                         "question_id": "q_001",
                         "reason": "Task completed - question no longer relevant"
                     }
-                }]
-            },
-            {
-                "content": "Obsolete question removed.",
-                "tool_calls": []
-            }
+                }],
+            ),
+            _make_response("Obsolete question removed."),
         ])
 
         worker = LLMWorkerAgent(
@@ -475,21 +478,18 @@ class TestNotificationWorkflow:
 
         # Mock LLM response
         provider.chat = AsyncMock(side_effect=[
-            {
-                "content": "Task completed, cancelling pending notification.",
-                "tool_calls": [{
+            _make_response(
+                "Task completed, cancelling pending notification.",
+                [{
                     "id": "call_1",
                     "name": "cancel_notification",
                     "arguments": {
                         "notification_id": "n_pending",
                         "reason": "Task task_004 completed"
                     }
-                }]
-            },
-            {
-                "content": "Notification cancelled.",
-                "tool_calls": []
-            }
+                }],
+            ),
+            _make_response("Notification cancelled."),
         ])
 
         worker = LLMWorkerAgent(

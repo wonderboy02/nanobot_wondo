@@ -1,9 +1,11 @@
 """Telegram channel implementation using python-telegram-bot."""
 
 import asyncio
+import hashlib
 import json
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
@@ -13,7 +15,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
-from nanobot.config.schema import TelegramConfig
+from nanobot.config.schema import TelegramConfig, NotificationPolicyConfig
 
 
 def _markdown_to_telegram_html(text: str) -> str:
@@ -79,6 +81,135 @@ def _markdown_to_telegram_html(text: str) -> str:
     return text
 
 
+class TelegramNotificationManager:
+    """Smart notification manager with batching, dedup, quiet hours, and daily limits.
+
+    Collects notifications and sends them intelligently:
+    - Batching: Groups notifications from same cycle into one message (max batch_max)
+    - Dedup: Blocks duplicate notifications within dedup_window
+    - Quiet Hours: Holds non-High notifications during quiet hours
+    - Daily Limit: Caps total daily notifications (High bypasses)
+
+    TODO: Wire to actual send path (Known Limitations #4 in CLAUDE.md).
+    Currently instantiated but not connected to Worker/Heartbeat notification flow.
+    """
+
+    def __init__(self, policy: NotificationPolicyConfig | None = None):
+        self._policy = policy or NotificationPolicyConfig()
+        # dedup: hash(message) → timestamp of last send
+        self._sent_hashes: dict[str, float] = {}
+        # daily count tracking: date_str → count
+        self._daily_counts: dict[str, int] = {}
+        # batch buffer
+        self._batch: list[dict] = []
+
+    def _msg_hash(self, message: str) -> str:
+        return hashlib.sha256(message.encode()).hexdigest()[:12]
+
+    def _is_quiet_hours(self) -> bool:
+        # DESIGN: Uses server local time (intentional for single-user local deployment).
+        # If deployed to UTC cloud, quiet hours won't match user timezone.
+        # See CLAUDE.md "Known Limitations #7" for improvement plan.
+        hour = datetime.now().hour
+        start = self._policy.quiet_hours_start
+        end = self._policy.quiet_hours_end
+        if start > end:  # e.g., 23:00 ~ 08:00 (wraps midnight)
+            return hour >= start or hour < end
+        # start == end → range is 0 → no quiet hours (intentional).
+        # 24h quiet mode is not supported; disable notifications entirely instead.
+        return start <= hour < end
+
+    def _is_duplicate(self, message: str) -> bool:
+        h = self._msg_hash(message)
+        last_sent = self._sent_hashes.get(h)
+        if last_sent is None:
+            return False
+        elapsed_hours = (time.time() - last_sent) / 3600
+        return elapsed_hours < self._policy.dedup_window_hours
+
+    def _record_sent(self, message: str) -> None:
+        h = self._msg_hash(message)
+        self._sent_hashes[h] = time.time()
+        # Clean old entries
+        cutoff = time.time() - (self._policy.dedup_window_hours * 3600)
+        self._sent_hashes = {
+            k: v for k, v in self._sent_hashes.items() if v > cutoff
+        }
+
+    def _get_daily_count(self) -> int:
+        today = datetime.now().strftime("%Y-%m-%d")
+        return self._daily_counts.get(today, 0)
+
+    def _increment_daily_count(self) -> None:
+        today = datetime.now().strftime("%Y-%m-%d")
+        self._daily_counts[today] = self._daily_counts.get(today, 0) + 1
+        # Clean old dates
+        self._daily_counts = {
+            k: v for k, v in self._daily_counts.items() if k >= today
+        }
+
+    def should_send(self, message: str, priority: str = "medium") -> bool:
+        """Check if a notification should be sent based on policy."""
+        is_high = priority.lower() == "high"
+
+        # High priority always bypasses quiet hours and daily limit
+        if not is_high:
+            if self._is_quiet_hours():
+                logger.debug(f"Notification suppressed (quiet hours): {message[:50]}")
+                return False
+            if self._get_daily_count() >= self._policy.daily_limit:
+                logger.debug(f"Notification suppressed (daily limit): {message[:50]}")
+                return False
+
+        if self._is_duplicate(message):
+            logger.debug(f"Notification suppressed (duplicate): {message[:50]}")
+            return False
+
+        return True
+
+    def add_to_batch(self, message: str, priority: str = "medium") -> None:
+        """Add a notification to the current batch."""
+        if self.should_send(message, priority):
+            self._batch.append({"message": message, "priority": priority})
+
+    def flush_batch(self) -> str | None:
+        """Flush the batch and return formatted message, or None if empty."""
+        if not self._batch:
+            return None
+
+        # Take up to batch_max
+        to_send = self._batch[:self._policy.batch_max]
+        self._batch = self._batch[self._policy.batch_max:]
+
+        for item in to_send:
+            self._record_sent(item["message"])
+            self._increment_daily_count()
+
+        if len(to_send) == 1:
+            return to_send[0]["message"]
+
+        # Format multiple notifications
+        lines = ["📋 <b>Notifications</b>\n"]
+        for item in to_send:
+            priority_icon = {"high": "🔴", "medium": "🟡", "low": "⚪"}.get(
+                item["priority"], "⚪"
+            )
+            lines.append(f"{priority_icon} {item['message']}")
+
+        return "\n".join(lines)
+
+    def send_immediate(self, message: str, priority: str = "medium") -> str | None:
+        """Send a single notification immediately (bypasses batching).
+
+        Returns formatted message or None if suppressed.
+        """
+        if not self.should_send(message, priority):
+            return None
+        self._record_sent(message)
+        self._increment_daily_count()
+        return message
+
+
 class TelegramChannel(BaseChannel):
     """
     Telegram channel using long polling.
@@ -106,6 +237,15 @@ class TelegramChannel(BaseChannel):
         self._chat_ids: dict[str, int] = {}  # Map sender_id to chat_id for replies
         # Question cache: {chat_id: {"mapping": {number: question_id}, "created_at": float}}
         self._question_cache: dict[int, dict] = {}
+        # Storage backend for dashboard reads (set externally after construction).
+        # DESIGN: Assigned post-construction because ChannelManager is created before
+        # AgentLoop configures the backend. Temporal coupling is acceptable here.
+        self.storage_backend: "StorageBackend | None" = None
+        # DESIGN: Notification manager is instantiated but NOT yet wired to the
+        # actual send path. The should_send/batch/dedup logic is ready but the
+        # Heartbeat → Worker → Telegram notification flow is not connected yet.
+        # See CLAUDE.md "Known Limitations #4" for the wiring plan.
+        self.notifications = TelegramNotificationManager(config.notification_policy)
     
     async def start(self) -> None:
         """Start the Telegram bot with long polling."""
@@ -168,11 +308,16 @@ class TelegramChannel(BaseChannel):
             self._app = None
     
     async def send(self, msg: OutboundMessage) -> None:
-        """Send a message through Telegram."""
+        """Send a message through Telegram.
+
+        DESIGN: Sends directly via bot.send_message, bypassing TelegramNotificationManager.
+        Notification policy (quiet hours, dedup, daily limit) is not wired yet.
+        See CLAUDE.md "Known Limitations #4".
+        """
         if not self._app:
             logger.warning("Telegram bot not running")
             return
-        
+
         try:
             # chat_id should be the Telegram chat ID (integer)
             chat_id = int(msg.chat_id)
@@ -226,16 +371,20 @@ class TelegramChannel(BaseChannel):
             await update.message.reply_text("Workspace not configured.")
             return
 
-        # Load questions.json
-        questions_path = self.workspace / "dashboard" / "questions.json"
-        if not questions_path.exists():
-            await update.message.reply_text("No questions yet.")
-            return
-
+        # Load questions via backend or local file
         try:
-            data = json.loads(questions_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as e:
-            logger.error(f"Failed to read questions.json: {e}")
+            if self.storage_backend is not None:
+                # Invalidate cache so /questions shows fresh Notion data
+                await asyncio.to_thread(self.storage_backend.invalidate_cache)
+                data = await asyncio.to_thread(self.storage_backend.load_questions)
+            else:
+                questions_path = self.workspace / "dashboard" / "questions.json"
+                if not questions_path.exists():
+                    await update.message.reply_text("No questions yet.")
+                    return
+                data = json.loads(questions_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.error(f"Failed to load questions: {e}")
             await update.message.reply_text("Failed to read questions.")
             return
 
@@ -291,16 +440,20 @@ class TelegramChannel(BaseChannel):
             await update.message.reply_text("Workspace not configured.")
             return
 
-        # Load tasks.json
-        tasks_path = self.workspace / "dashboard" / "tasks.json"
-        if not tasks_path.exists():
-            await update.message.reply_text("No tasks yet.")
-            return
-
+        # Load tasks via backend or local file
         try:
-            data = json.loads(tasks_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as e:
-            logger.error(f"Failed to read tasks.json: {e}")
+            if self.storage_backend is not None:
+                # Invalidate cache so /tasks shows fresh Notion data
+                await asyncio.to_thread(self.storage_backend.invalidate_cache)
+                data = await asyncio.to_thread(self.storage_backend.load_tasks)
+            else:
+                tasks_path = self.workspace / "dashboard" / "tasks.json"
+                if not tasks_path.exists():
+                    await update.message.reply_text("No tasks yet.")
+                    return
+                data = json.loads(tasks_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            logger.error(f"Failed to load tasks: {e}")
             await update.message.reply_text("Failed to read tasks.")
             return
 

@@ -1,7 +1,5 @@
 """Save insight tool."""
 
-import json
-from pathlib import Path
 from typing import Any
 
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
@@ -63,14 +61,8 @@ class SaveInsightTool(BaseDashboardTool):
         **kwargs: Any,
     ) -> str:
         try:
-            # Load existing insights
-            insights_path = self.workspace / "dashboard" / "knowledge" / "insights.json"
-            insights_path.parent.mkdir(parents=True, exist_ok=True)
-
-            if insights_path.exists():
-                insights_data = json.loads(insights_path.read_text(encoding="utf-8"))
-            else:
-                insights_data = {"version": "1.0", "insights": []}
+            # Load existing insights via backend
+            insights_data = await self._load_insights()
 
             # Generate new insight
             insight_id = self._generate_id("insight")
@@ -78,7 +70,7 @@ class SaveInsightTool(BaseDashboardTool):
 
             new_insight = {
                 "id": insight_id,
-                "title": title or content[:50],  # Use first 50 chars as title if not provided
+                "title": title or content[:50],
                 "content": content,
                 "category": category,
                 "source": source,
@@ -90,10 +82,10 @@ class SaveInsightTool(BaseDashboardTool):
             # Add to insights list
             insights_data["insights"].append(new_insight)
 
-            # Save
-            insights_path.write_text(
-                json.dumps(insights_data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+            # Save via backend
+            success, message = await self._validate_and_save_insights(insights_data)
+            if not success:
+                return message
 
             return f"Saved {insight_id}: {title or content[:50]}"
 

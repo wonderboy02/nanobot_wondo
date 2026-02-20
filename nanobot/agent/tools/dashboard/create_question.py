@@ -64,7 +64,7 @@ class CreateQuestionTool(BaseDashboardTool):
     ) -> str:
         try:
             # Load existing questions
-            questions_data = self._load_questions()
+            questions_data = await self._load_questions()
 
             # Generate new question
             question_id = self._generate_id("q")
@@ -90,7 +90,7 @@ class CreateQuestionTool(BaseDashboardTool):
             questions_data["questions"].append(new_question)
 
             # Validate and save
-            success, message = self._validate_and_save_questions(questions_data)
+            success, message = await self._validate_and_save_questions(questions_data)
 
             if success:
                 return f"Created {question_id}: {question}"

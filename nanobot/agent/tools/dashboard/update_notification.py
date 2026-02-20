@@ -70,7 +70,7 @@ class UpdateNotificationTool(BaseDashboardTool):
         """Update a notification."""
         try:
             # Load notifications
-            notifications_data = self._load_notifications()
+            notifications_data = await self._load_notifications()
             notifications_list = notifications_data.get("notifications", [])
 
             # Find notification
@@ -91,6 +91,10 @@ class UpdateNotificationTool(BaseDashboardTool):
             if priority is not None:
                 notification["priority"] = priority
 
+            # Track whether cron needs updating
+            old_cron_job_id = None
+            new_cron_schedule = None
+
             if scheduled_at is not None:
                 # Parse new scheduled_at
                 scheduled_dt = self._parse_datetime(scheduled_at)
@@ -102,35 +106,73 @@ class UpdateNotificationTool(BaseDashboardTool):
                     scheduled_at if not scheduled_at.startswith("20") else None
                 )
 
-                # Update cron job
-                cron_job_id = notification.get("cron_job_id")
-                if cron_job_id:
-                    # Remove old job and create new one
-                    self.cron_service.remove_job(cron_job_id)
+                old_cron_job_id = notification.get("cron_job_id")
+                new_cron_schedule = CronSchedule(
+                    kind="at", at_ms=int(scheduled_dt.timestamp() * 1000)
+                )
 
-                    schedule = CronSchedule(
-                        kind="at", at_ms=int(scheduled_dt.timestamp() * 1000)
-                    )
+            # DESIGN: Save storage FIRST, then update cron (storage-first commit).
+            # If cron update fails after save, storage state is correct and cron
+            # can be re-synced. Reverse order would leave orphaned cron jobs on
+            # save failure.
+            notifications_list[index] = notification
+            notifications_data["notifications"] = notifications_list
 
+            success, msg = await self._validate_and_save_notifications(notifications_data)
+            if not success:
+                return msg
+
+            # Now update cron (safe: storage already committed)
+            # DESIGN: Create new cron FIRST, then remove old. If creation fails,
+            # old cron remains active (stale but functional). Reverse order would
+            # leave no cron at all on creation failure.
+            # Wrapped in inner try/except: cron failure returns partial success
+            # (storage is already committed with correct scheduled_at).
+            if new_cron_schedule:
+                try:
                     new_job = self.cron_service.add_job(
                         name=f"notification_{notification_id}",
-                        schedule=schedule,
+                        schedule=new_cron_schedule,
                         message=notification["message"],
                         deliver=True,
                         channel=self._channel,
                         to=self._chat_id,
                         delete_after_run=True,
                     )
-
+                    if old_cron_job_id:
+                        removed = self.cron_service.remove_job(old_cron_job_id)
+                        if not removed:
+                            from loguru import logger
+                            logger.warning(
+                                f"Old cron job {old_cron_job_id} not found during "
+                                f"update of notification {notification_id} "
+                                f"(may cause duplicate delivery)"
+                            )
+                    # Best-effort: persist new cron_job_id back to storage.
+                    # DESIGN: If this second save fails, stale cron_job_id remains.
+                    # Acceptable because notification crons use delete_after_run=True
+                    # (one-shot), so the stale ID becomes moot after cron fires once.
                     notification["cron_job_id"] = new_job.id
-
-            # Save
-            notifications_list[index] = notification
-            notifications_data["notifications"] = notifications_list
-
-            success, msg = self._validate_and_save_notifications(notifications_data)
-            if not success:
-                return msg
+                    notifications_data["notifications"] = notifications_list
+                    ok2, msg2 = await self._validate_and_save_notifications(
+                        notifications_data
+                    )
+                    if not ok2:
+                        from loguru import logger
+                        logger.warning(
+                            f"cron_job_id update save failed for {notification_id}: "
+                            f"{msg2}"
+                        )
+                except Exception as cron_err:
+                    from loguru import logger
+                    logger.warning(
+                        f"Cron update failed for notification {notification_id}: "
+                        f"{cron_err}"
+                    )
+                    return (
+                        f"⚠️ Notification '{notification_id}' data updated, "
+                        f"but schedule registration failed: {cron_err}"
+                    )
 
             return f"\u2705 Notification '{notification_id}' updated successfully"
 

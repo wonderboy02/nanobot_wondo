@@ -130,7 +130,7 @@ class ScheduleNotificationTool(BaseDashboardTool):
             )
 
             # Create notification entry
-            notifications_data = self._load_notifications()
+            notifications_data = await self._load_notifications()
             notifications_list = notifications_data.get("notifications", [])
 
             notification = {
@@ -157,7 +157,7 @@ class ScheduleNotificationTool(BaseDashboardTool):
             notifications_data["notifications"] = notifications_list
 
             # Validate and save
-            success, msg = self._validate_and_save_notifications(notifications_data)
+            success, msg = await self._validate_and_save_notifications(notifications_data)
             if not success:
                 # Rollback cron job
                 self.cron_service.remove_job(cron_job.id)

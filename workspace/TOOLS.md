@@ -105,6 +105,9 @@ list_notifications(status: str = None, related_task_id: str = None) -> str
 ✅ **Automatic**: ID generation, timestamps, validation
 ✅ **Safe**: Pydantic schema validation, atomic writes
 ✅ **Simple**: No JSON manipulation needed
+✅ **Backend-agnostic**: Same tools work with both JSON files and Notion
 
 ❌ **Don't use**: `read_file("dashboard/tasks.json")` or `write_file(...)`
 ✅ **Use instead**: `create_task()`, `update_task()`, etc.
+
+> Storage backend (JSON or Notion) is configured at startup. Tools auto-detect — no code changes needed.

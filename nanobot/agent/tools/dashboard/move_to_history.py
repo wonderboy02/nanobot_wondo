@@ -1,7 +1,5 @@
 """Move task to history tool."""
 
-import json
-from pathlib import Path
 from typing import Any
 
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
@@ -44,8 +42,8 @@ class MoveToHistoryTool(BaseDashboardTool):
         self, task_id: str, reflection: str = "", **kwargs: Any
     ) -> str:
         try:
-            # Load existing tasks
-            tasks_data = self._load_tasks()
+            # Load existing tasks via backend
+            tasks_data = await self._load_tasks()
 
             # Find task
             task, index = self._find_task(tasks_data["tasks"], task_id)
@@ -53,14 +51,8 @@ class MoveToHistoryTool(BaseDashboardTool):
             if task is None:
                 return f"Error: Task {task_id} not found"
 
-            # Load history
-            history_path = self.workspace / "dashboard" / "knowledge" / "history.json"
-            history_path.parent.mkdir(parents=True, exist_ok=True)
-
-            if history_path.exists():
-                history_data = json.loads(history_path.read_text(encoding="utf-8"))
-            else:
-                history_data = {"version": "1.0", "completed_tasks": [], "projects": []}
+            # Load history via backend
+            history_data = await self._load_history()
 
             # Add reflection if provided
             if reflection:
@@ -76,14 +68,22 @@ class MoveToHistoryTool(BaseDashboardTool):
             # Remove from tasks
             tasks_data["tasks"].pop(index)
 
-            # Save both files
-            success, message = self._validate_and_save_tasks(tasks_data)
+            # DESIGN: Non-atomic 2-step write (intentional).
+            # Save history FIRST, then remove from tasks.
+            # If history save fails → task stays in active list (no data loss).
+            # If task removal fails → task appears in both places (recoverable,
+            # next worker cycle or manual cleanup can fix it).
+            # This is the safer failure mode compared to removing first.
+            success, message = await self._validate_and_save_history(history_data)
             if not success:
-                return message
+                return f"Error saving history (task not removed): {message}"
 
-            history_path.write_text(
-                json.dumps(history_data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+            success, message = await self._validate_and_save_tasks(tasks_data)
+            if not success:
+                # History saved but task removal failed — log warning
+                from loguru import logger
+                logger.warning(f"History saved but task removal failed: {message}")
+                return f"Warning: Task added to history but removal failed: {message}"
 
             return f"Moved {task_id} to history"
 

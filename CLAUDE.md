@@ -43,11 +43,17 @@ nanobot/
 │   └── queue.py        # 메시지 큐
 ├── cron/               # ⏰ 스케줄 작업
 │   └── scheduler.py    # Cron 스케줄러
-├── dashboard/          # 📊 Dashboard 관리 시스템 (NEW!)
-│   ├── manager.py      # Dashboard 로드/저장
-│   ├── worker.py       # Worker Agent (진행률 체크, 자동 정리)
+├── dashboard/          # 📊 Dashboard 관리 시스템
+│   ├── storage.py      # StorageBackend ABC + JsonStorageBackend
+│   ├── manager.py      # Dashboard 로드/저장 (레거시, rule worker용)
+│   ├── worker.py       # Rule-based Worker Agent
+│   ├── llm_worker.py   # LLM Worker Agent (StorageBackend 경유)
 │   ├── schema.py       # Pydantic 스키마 (데이터 검증)
 │   └── helper.py       # Dashboard 요약 헬퍼 (Context Builder용)
+├── notion/             # 🔗 Notion API 통합
+│   ├── client.py       # Sync NotionClient (httpx, rate limit, retry)
+│   ├── mapper.py       # 내부 dict ↔ Notion 프로퍼티 양방향 매핑
+│   └── storage.py      # NotionStorageBackend + MemoryCache
 ├── heartbeat/          # 💓 주기적 작업 체크 (30분마다)
 ├── session/            # 💬 대화 세션 관리
 ├── config/             # ⚙️ 설정 관리
@@ -75,7 +81,8 @@ workspace/              # 사용자 워크스페이스
 ├── USER.md             # 사용자 프로파일
 ├── TOOLS.md            # 사용 가능한 도구 설명
 ├── HEARTBEAT.md        # 주기적 작업 목록
-├── DASHBOARD.md        # Dashboard 관리 지침 (NEW!)
+├── DASHBOARD.md        # Dashboard 관리 지침
+├── NOTION_SETUP.md     # Notion DB 스키마 및 셋업 가이드
 ├── memory/             # 에이전트 메모리
 │   └── MEMORY.md       # 장기 메모리
 └── dashboard/          # Dashboard 데이터 (NEW!)
@@ -317,6 +324,43 @@ nanobot cron add --name "meeting" --message "Meeting!" --at "2026-02-07T15:00:00
 **맥락 기반 Task 관리 시스템 with Dashboard Tools**
 
 #### **핵심 설계 변경사항**
+
+**v0.1.6 (Notion 통합 + Storage Backend)**:
+- ✅ **StorageBackend 추상화** - JSON/Notion을 동일 인터페이스로 사용
+- ✅ **Notion 일원화 모드** - Notion이 Single Source of Truth (설정 시)
+- ✅ **인메모리 캐시** - 5분 TTL, 메시지/Worker 시작 시 무효화
+- ✅ **13개 Dashboard Tool 변경 없음** - Backend만 교체
+- ✅ **Fallback** - `notion.enabled=false`면 기존 JSON 방식 유지
+
+**Storage Backend 아키텍처**:
+```
+Dashboard Tools (13개, 인터페이스 변경 없음)
+       │
+  StorageBackend (추상화 레이어)
+       ├── JsonStorageBackend (기본, 로컬 JSON)
+       └── NotionStorageBackend (Notion API + MemoryCache)
+              ├── NotionClient (sync httpx, retry + rate limit)
+              └── NotionMapper (스키마 양방향 매핑)
+```
+
+**Notion 설정** (`~/.nanobot/config.json`):
+```json
+{
+  "notion": {
+    "enabled": true,
+    "token": "secret_xxx",
+    "databases": {
+      "tasks": "db_id",
+      "questions": "db_id",
+      "notifications": "db_id",
+      "insights": "db_id",
+      "history": "db_id",
+      "people": "db_id"
+    },
+    "cache_ttl_s": 300
+  }
+}
+```
 
 **v0.1.5 (Dashboard Tools System)**:
 - ✅ **6개의 전용 도구** 추가 (create_task, update_task, answer_question, etc.)
@@ -713,6 +757,9 @@ nanobot channels status   # 채널 상태 확인
 nanobot cron add          # Cron 작업 추가
 nanobot cron list         # Cron 작업 목록
 nanobot cron remove <id>  # Cron 작업 삭제
+
+# Notion 관리
+nanobot notion validate   # Notion DB 연결 검증
 ```
 
 ## 기여 가이드
@@ -774,6 +821,54 @@ chmod 700 ~/.nanobot
 - **PyPI**: https://pypi.org/project/nanobot-ai/
 - **Discord**: https://discord.gg/MnCvHqpUGB
 - **Documentation**: README.md, SECURITY.md
+
+## Known Limitations & Technical Debt (Notion 통합)
+
+Notion 통합 작업 중 발견된 알려진 제약사항/안티패턴입니다. 수정 시 참고하세요.
+
+### 1. 동기 I/O 블로킹 (의도적 설계)
+- **위치**: `nanobot/notion/client.py` — `httpx.Client` (sync)
+- **설명**: NotionClient가 동기 HTTP를 사용하여 async 이벤트 루프를 블로킹함
+- **영향**: 대량 저장 시 (20개 task → ~6초) 봇 응답성 저하 가능
+- **이유**: async/sync 브릿지 문제(`_run_async` + `ThreadPoolExecutor` → 이벤트 루프 교차 공유)를 피하기 위해 의도적으로 sync 채택. 단일 유저 환경에서 Notion ~300ms는 LLM 2-10s 대비 무시 가능
+- **개선안**: `asyncio.to_thread()` 래핑 또는 `httpx.AsyncClient`를 단일 루프에서만 사용하도록 보장
+
+### 2. 클래스 레벨 전역 상태 (`_configured_backend`)
+- **위치**: `nanobot/agent/tools/dashboard/base.py:32`
+- **설명**: `BaseDashboardTool._configured_backend`가 클래스 변수로 모든 인스턴스가 공유
+- **영향**: 테스트 병렬 실행 시 격리 위험, 동일 프로세스에서 AgentLoop 재생성 시 잠재적 오염
+- **현재 대응**: AgentLoop 초기화 시 `configure_backend(None)` 명시적 reset 추가됨
+- **개선안**: 의존성 주입 패턴으로 전환 (Tool 생성자에 backend 직접 전달)
+
+### 3. Rule Worker가 StorageBackend 미사용
+- **위치**: `nanobot/dashboard/worker.py` — `WorkerAgent`
+- **설명**: Rule-based Worker가 `DashboardManager`를 직접 사용하여 로컬 JSON만 읽기/쓰기
+- **영향**: Notion 모드에서 LLM Worker 실패 시 rule worker 폴백이 로컬 JSON과 Notion 상태를 분리시킴
+- **현재 대응**: Notion 모드 시 rule worker 폴백 건너뜀 (`heartbeat/service.py`)
+- **개선안**: `WorkerAgent`를 `StorageBackend` 경유로 리팩토링
+
+### 4. TelegramNotificationManager 미연결
+- **위치**: `nanobot/channels/telegram.py:84`
+- **설명**: 스마트 알림 매니저 (야간모드, 중복제거, 배치)가 생성만 되고 실제 전송 경로에 연결 안 됨
+- **현재 상태**: 인스턴스만 존재 (`self.notifications`), Worker/Heartbeat에서 알림 배칭 호출 미구현
+- **개선안**: Heartbeat Worker에서 알림 생성 시 `notifications.should_send()` → Telegram 전송 플로우 연결
+
+### 5. insights/history/people Pydantic 검증 없음
+- **위치**: `nanobot/dashboard/storage.py` (JsonStorageBackend), `nanobot/notion/storage.py` (NotionStorageBackend)
+- **설명**: tasks/questions/notifications는 Pydantic 검증 후 저장하지만, insights/history/people은 검증 없이 저장
+- **이유**: 기존 JSON 백엔드에서도 검증 없었고, 이 엔티티들은 스키마가 유연함
+- **개선안**: `dashboard/schema.py`에 validate_insights_file 등 추가
+
+### 6. NotificationPolicyConfig 범위 검증 없음
+- **위치**: `nanobot/config/schema.py` — `NotificationPolicyConfig`
+- **설명**: `quiet_hours_start/end`, `daily_limit` 등에 값 범위 검증 없음 (예: hour가 0-23인지)
+- **개선안**: Pydantic `Field(ge=0, le=23)` 등 validator 추가
+
+### 7. TelegramNotificationManager 서버 timezone 의존
+- **위치**: `nanobot/channels/telegram.py` — `_is_quiet_hours()`
+- **설명**: `datetime.now().hour`로 서버 로컬 시간 사용. 서버가 UTC 클라우드에 배포되면 quiet hours가 의도대로 동작하지 않음
+- **현재 대응**: 단일 사용자 + 로컬 실행 환경에서는 문제없음
+- **개선안**: timezone-aware datetime 사용 또는 config에 timezone 설정 추가
 
 ## 라이선스
 

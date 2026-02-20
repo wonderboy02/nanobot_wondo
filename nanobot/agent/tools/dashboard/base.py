@@ -1,13 +1,12 @@
 """Base class for Dashboard tools with shared utilities."""
 
 import asyncio
-import json
 import re
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+
 from nanobot.agent.tools.base import Tool
-from nanobot.dashboard.manager import DashboardManager
 
 
 def with_dashboard_lock(fn):
@@ -30,10 +29,16 @@ class BaseDashboardTool(Tool):
     """Base class for all Dashboard tools with shared utilities."""
 
     _dashboard_lock: asyncio.Lock | None = None
+    # DESIGN: Class-level shared state (intentional for single-user architecture).
+    # All tool instances share one backend so Notion config applies globally.
+    # AgentLoop resets this via configure_backend(None) on init to avoid stale state.
+    # Trade-off: not safe for multi-instance tests without manual reset.
+    # See CLAUDE.md "Known Limitations #2" for improvement plan.
+    _configured_backend = None
 
     def __init__(self, workspace: Path):
         self.workspace = workspace
-        self.manager = DashboardManager(workspace / "dashboard")
+        self._instance_backend = None  # Per-instance lazy Json backend
 
     @classmethod
     def _get_lock(cls) -> asyncio.Lock:
@@ -41,6 +46,30 @@ class BaseDashboardTool(Tool):
         if cls._dashboard_lock is None:
             cls._dashboard_lock = asyncio.Lock()
         return cls._dashboard_lock
+
+    @property
+    def _backend(self) -> "StorageBackend":
+        """Get the storage backend.
+
+        If an explicit backend was set via configure_backend() (e.g., Notion),
+        uses that shared backend. Otherwise lazily creates a per-instance
+        JsonStorageBackend from this tool's workspace path.
+        """
+        if BaseDashboardTool._configured_backend is not None:
+            return BaseDashboardTool._configured_backend
+        if self._instance_backend is None:
+            from nanobot.dashboard.storage import JsonStorageBackend
+            self._instance_backend = JsonStorageBackend(self.workspace)
+        return self._instance_backend
+
+    @classmethod
+    def configure_backend(cls, backend: "StorageBackend | None") -> None:
+        """Set the storage backend for all Dashboard tools.
+
+        Call this before processing messages to switch between JSON and Notion.
+        Pass None to reset to per-instance JsonStorageBackend (default).
+        """
+        cls._configured_backend = backend
 
     def _generate_id(self, prefix: str) -> str:
         """Generate unique ID: {prefix}_xxxxxxxx."""
@@ -96,91 +125,27 @@ class BaseDashboardTool(Tool):
         # Could not parse
         return None
 
-    def _validate_and_save_tasks(self, tasks_data: dict) -> tuple[bool, str]:
-        """
-        Validate tasks data and save if valid.
+    # ========================================================================
+    # Storage delegation — all I/O goes through _backend via asyncio.to_thread
+    # to avoid blocking the event loop when backend does sync I/O (e.g., Notion)
+    # ========================================================================
 
-        Args:
-            tasks_data: Dict with 'version' and 'tasks' keys
+    async def _validate_and_save_tasks(self, tasks_data: dict) -> tuple[bool, str]:
+        """Validate and save tasks data via the storage backend."""
+        return await asyncio.to_thread(self._backend.save_tasks, tasks_data)
 
-        Returns:
-            (success: bool, message: str)
-        """
-        try:
-            from nanobot.dashboard.schema import validate_tasks_file
+    async def _validate_and_save_questions(self, questions_data: dict) -> tuple[bool, str]:
+        """Validate and save questions data via the storage backend."""
+        return await asyncio.to_thread(self._backend.save_questions, questions_data)
 
-            validate_tasks_file(tasks_data)
-
-            tasks_path = self.workspace / "dashboard" / "tasks.json"
-            tasks_path.parent.mkdir(parents=True, exist_ok=True)
-
-            tasks_path.write_text(
-                json.dumps(tasks_data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-
-            return (True, "Tasks updated successfully")
-        except Exception as e:
-            return (False, f"Error: {str(e)}")
-
-    def _validate_and_save_questions(self, questions_data: dict) -> tuple[bool, str]:
-        """
-        Validate questions data and save if valid.
-
-        Args:
-            questions_data: Dict with 'version' and 'questions' keys
-
-        Returns:
-            (success: bool, message: str)
-        """
-        try:
-            from nanobot.dashboard.schema import validate_questions_file
-
-            validate_questions_file(questions_data)
-
-            questions_path = self.workspace / "dashboard" / "questions.json"
-            questions_path.parent.mkdir(parents=True, exist_ok=True)
-
-            questions_path.write_text(
-                json.dumps(questions_data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-
-            return (True, "Questions updated successfully")
-        except Exception as e:
-            return (False, f"Error: {str(e)}")
-
-    def _validate_and_save_notifications(self, notifications_data: dict) -> tuple[bool, str]:
-        """
-        Validate notifications data and save if valid.
-
-        Args:
-            notifications_data: Dict with 'version' and 'notifications' keys
-
-        Returns:
-            (success: bool, message: str)
-        """
-        try:
-            from nanobot.dashboard.schema import validate_notifications_file
-
-            validate_notifications_file(notifications_data)
-
-            notifications_path = self.workspace / "dashboard" / "notifications.json"
-            notifications_path.parent.mkdir(parents=True, exist_ok=True)
-
-            notifications_path.write_text(
-                json.dumps(notifications_data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
-
-            return (True, "Notifications updated successfully")
-        except Exception as e:
-            return (False, f"Error: {str(e)}")
+    async def _validate_and_save_notifications(
+        self, notifications_data: dict
+    ) -> tuple[bool, str]:
+        """Validate and save notifications data via the storage backend."""
+        return await asyncio.to_thread(self._backend.save_notifications, notifications_data)
 
     def _find_task(self, tasks: list[dict], task_id: str) -> tuple[dict | None, int]:
-        """
-        Find task by ID.
-
-        Returns:
-            (task: dict | None, index: int)
-        """
+        """Find task by ID."""
         for i, task in enumerate(tasks):
             if task.get("id") == task_id:
                 return (task, i)
@@ -189,12 +154,7 @@ class BaseDashboardTool(Tool):
     def _find_question(
         self, questions: list[dict], question_id: str
     ) -> tuple[dict | None, int]:
-        """
-        Find question by ID.
-
-        Returns:
-            (question: dict | None, index: int)
-        """
+        """Find question by ID."""
         for i, q in enumerate(questions):
             if q.get("id") == question_id:
                 return (q, i)
@@ -203,40 +163,36 @@ class BaseDashboardTool(Tool):
     def _find_notification(
         self, notifications: list[dict], notification_id: str
     ) -> tuple[dict | None, int]:
-        """
-        Find notification by ID.
-
-        Returns:
-            (notification: dict | None, index: int)
-        """
+        """Find notification by ID."""
         for i, notif in enumerate(notifications):
             if notif.get("id") == notification_id:
                 return (notif, i)
         return (None, -1)
 
-    def _load_tasks(self) -> dict:
-        """Load tasks.json file."""
-        tasks_path = self.workspace / "dashboard" / "tasks.json"
+    async def _load_tasks(self) -> dict:
+        """Load tasks via the storage backend (non-blocking)."""
+        return await asyncio.to_thread(self._backend.load_tasks)
 
-        if not tasks_path.exists():
-            return {"version": "1.0", "tasks": []}
+    async def _load_questions(self) -> dict:
+        """Load questions via the storage backend (non-blocking)."""
+        return await asyncio.to_thread(self._backend.load_questions)
 
-        return json.loads(tasks_path.read_text(encoding="utf-8"))
+    async def _load_notifications(self) -> dict:
+        """Load notifications via the storage backend (non-blocking)."""
+        return await asyncio.to_thread(self._backend.load_notifications)
 
-    def _load_questions(self) -> dict:
-        """Load questions.json file."""
-        questions_path = self.workspace / "dashboard" / "questions.json"
+    async def _load_history(self) -> dict:
+        """Load history via the storage backend (non-blocking)."""
+        return await asyncio.to_thread(self._backend.load_history)
 
-        if not questions_path.exists():
-            return {"version": "1.0", "questions": []}
+    async def _validate_and_save_history(self, history_data: dict) -> tuple[bool, str]:
+        """Save history data via the storage backend."""
+        return await asyncio.to_thread(self._backend.save_history, history_data)
 
-        return json.loads(questions_path.read_text(encoding="utf-8"))
+    async def _load_insights(self) -> dict:
+        """Load insights via the storage backend (non-blocking)."""
+        return await asyncio.to_thread(self._backend.load_insights)
 
-    def _load_notifications(self) -> dict:
-        """Load notifications.json file."""
-        notifications_path = self.workspace / "dashboard" / "notifications.json"
-
-        if not notifications_path.exists():
-            return {"version": "1.0", "notifications": []}
-
-        return json.loads(notifications_path.read_text(encoding="utf-8"))
+    async def _validate_and_save_insights(self, insights_data: dict) -> tuple[bool, str]:
+        """Save insights data via the storage backend."""
+        return await asyncio.to_thread(self._backend.save_insights, insights_data)
