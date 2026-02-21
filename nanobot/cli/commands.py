@@ -533,7 +533,8 @@ def _get_bridge_dir() -> Path:
     import subprocess
     
     # User's bridge location
-    user_bridge = Path.home() / ".nanobot" / "bridge"
+    from nanobot.utils.helpers import get_data_path
+    user_bridge = get_data_path() / "bridge"
     
     # Check if already built
     if (user_bridge / "dist" / "index.js").exists():

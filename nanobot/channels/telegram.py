@@ -16,6 +16,7 @@ from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.channels.base import BaseChannel
 from nanobot.config.schema import TelegramConfig, NotificationPolicyConfig
+from nanobot.utils.helpers import get_data_path
 
 
 def _markdown_to_telegram_html(text: str) -> str:
@@ -596,10 +597,9 @@ class TelegramChannel(BaseChannel):
                 file = await self._app.bot.get_file(media_file.file_id)
                 ext = self._get_extension(media_type, getattr(media_file, 'mime_type', None))
                 
-                # Save to workspace/media/
-                media_dir = Path.home() / ".nanobot" / "media"
+                media_dir = get_data_path() / "media"
                 media_dir.mkdir(parents=True, exist_ok=True)
-                
+
                 file_path = media_dir / f"{media_file.file_id[:16]}{ext}"
                 await file.download_to_drive(str(file_path))
                 
