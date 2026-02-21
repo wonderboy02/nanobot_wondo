@@ -26,9 +26,7 @@ def test_workspace(tmp_path):
     # Create knowledge directory
     knowledge_dir = dashboard_dir / "knowledge"
     knowledge_dir.mkdir()
-    (knowledge_dir / "history.json").write_text(json.dumps({"version": "1.0", "completed_tasks": [], "projects": []}))
     (knowledge_dir / "insights.json").write_text(json.dumps({"version": "1.0", "insights": []}))
-    (knowledge_dir / "people.json").write_text(json.dumps({"version": "1.0", "people": []}))
 
     return workspace
 
@@ -120,8 +118,8 @@ async def test_worker_check_task_progress(test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_worker_move_completed_to_history(test_workspace):
-    """Test Worker moves completed tasks to history."""
+async def test_worker_archive_completed_tasks(test_workspace):
+    """Test Worker archives completed tasks."""
     from nanobot.dashboard.manager import DashboardManager
     from nanobot.dashboard.worker import WorkerAgent
 
@@ -150,11 +148,46 @@ async def test_worker_move_completed_to_history(test_workspace):
     worker = WorkerAgent(dashboard_path)
     await worker.run_cycle()
 
-    # Check if moved to history
+    # Check if task is archived (stays in tasks list with archived status)
     dashboard2 = manager.load()
-    assert len(dashboard2["tasks"]) == 0  # Removed from tasks
-    assert len(dashboard2["knowledge"]["history"]["completed_tasks"]) == 1  # Added to history
-    assert dashboard2["knowledge"]["history"]["completed_tasks"][0]["title"] == "Completed Task"
+    assert len(dashboard2["tasks"]) == 1  # Still in tasks
+    assert dashboard2["tasks"][0]["status"] == "archived"
+    assert dashboard2["tasks"][0]["title"] == "Completed Task"
+
+
+@pytest.mark.asyncio
+async def test_worker_archive_cancelled_tasks(test_workspace):
+    """Test Worker archives cancelled tasks."""
+    from nanobot.dashboard.manager import DashboardManager
+    from nanobot.dashboard.worker import WorkerAgent
+
+    dashboard_path = test_workspace / "dashboard"
+    manager = DashboardManager(dashboard_path)
+
+    now = datetime.now()
+    dashboard = manager.load()
+    dashboard["tasks"].append({
+        "id": "task_cancelled",
+        "title": "Cancelled Task",
+        "status": "cancelled",
+        "created_at": (now - timedelta(days=1)).isoformat(),
+        "updated_at": now.isoformat(),
+        "progress": {
+            "percentage": 30,
+            "last_update": now.isoformat(),
+            "note": ""
+        }
+    })
+    manager.save(dashboard)
+
+    worker = WorkerAgent(dashboard_path)
+    await worker.run_cycle()
+
+    dashboard2 = manager.load()
+    assert len(dashboard2["tasks"]) == 1
+    assert dashboard2["tasks"][0]["status"] == "archived"
+    # Cancelled tasks preserve original progress (not forced to 100%)
+    assert dashboard2["tasks"][0]["progress"]["percentage"] == 30
 
 
 def test_worker_reevaluate_active_status(test_workspace):

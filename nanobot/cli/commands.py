@@ -170,9 +170,7 @@ This file stores important information that should persist across sessions.
     knowledge_dir.mkdir(exist_ok=True)
 
     knowledge_files = {
-        "history.json": {"version": "1.0", "completed_tasks": [], "projects": []},
         "insights.json": {"version": "1.0", "insights": []},
-        "people.json": {"version": "1.0", "people": []},
     }
 
     for filename, data in knowledge_files.items():
@@ -964,32 +962,32 @@ def dashboard_dismiss(
 
 @dashboard_app.command("history")
 def dashboard_history():
-    """Show completed tasks history."""
+    """Show archived/completed tasks."""
     manager = _get_dashboard_manager()
     dashboard = manager.load()
 
-    history = dashboard.get('knowledge', {}).get('history', {})
-    completed = history.get('completed_tasks', [])
+    tasks = dashboard.get('tasks', [])
+    archived = [t for t in tasks if t.get('status') in ('completed', 'archived')]
 
-    if not completed:
-        console.print("No completed tasks yet.")
+    if not archived:
+        console.print("No archived tasks yet.")
         return
 
     table = Table(title="History", show_header=True, header_style="bold green")
     table.add_column("ID", style="dim", width=10)
     table.add_column("Title", width=40)
     table.add_column("Completed", width=20)
-    table.add_column("Duration", width=10)
+    table.add_column("Reflection", width=30)
 
-    for task in reversed(completed[-20:]):  # Last 20
-        completed_at = task.get('completed_at', '')[:10]
-        duration = f"{task.get('duration_days', 0)}d"
+    for task in reversed(archived[-20:]):  # Last 20
+        completed_at = (task.get('completed_at') or '')[:10]
+        reflection = (task.get('reflection') or '')[:30]
 
         table.add_row(
             task['id'][:8],
             task['title'][:40],
             completed_at,
-            duration
+            reflection
         )
 
     console.print(table)
@@ -1055,8 +1053,6 @@ def notion_validate():
             "Questions": dbs.questions,
             "Notifications": dbs.notifications,
             "Insights": dbs.insights,
-            "History": dbs.history,
-            "People": dbs.people,
         }
 
         # Check that at least core DBs are configured

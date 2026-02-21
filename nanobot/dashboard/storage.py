@@ -82,24 +82,6 @@ class StorageBackend(ABC):
     def save_insights(self, data: dict) -> tuple[bool, str]:
         ...
 
-    # --- History ---
-    @abstractmethod
-    def load_history(self) -> dict:
-        ...
-
-    @abstractmethod
-    def save_history(self, data: dict) -> tuple[bool, str]:
-        ...
-
-    # --- People ---
-    @abstractmethod
-    def load_people(self) -> dict:
-        ...
-
-    @abstractmethod
-    def save_people(self, data: dict) -> tuple[bool, str]:
-        ...
-
     # --- Lifecycle ---
     def close(self) -> None:
         """Release resources (HTTP clients, etc.). No-op for stateless backends."""
@@ -199,25 +181,3 @@ class JsonStorageBackend(StorageBackend):
         # See CLAUDE.md "Known Limitations #5".
         return self._save_json(self._knowledge_dir / "insights.json", data)
 
-    # --- History ---
-
-    def load_history(self) -> dict:
-        return self._load_json(
-            self._knowledge_dir / "history.json",
-            default={"version": "1.0", "completed_tasks": [], "projects": []},
-        )
-
-    def save_history(self, data: dict) -> tuple[bool, str]:
-        # DESIGN: No Pydantic validation — same rationale as save_insights.
-        return self._save_json(self._knowledge_dir / "history.json", data)
-
-    # --- People ---
-
-    def load_people(self) -> dict:
-        return self._load_json(
-            self._knowledge_dir / "people.json",
-            default={"version": "1.0", "people": []},
-        )
-
-    def save_people(self, data: dict) -> tuple[bool, str]:
-        return self._save_json(self._knowledge_dir / "people.json", data)

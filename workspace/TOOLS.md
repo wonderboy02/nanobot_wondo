@@ -49,10 +49,10 @@ update_task(task_id: str, progress: int = None, status: str = None,
             context: str = None, deadline: str = None,
             priority: str = None, tags: list[str] = None) -> str
 
-move_to_history(task_id: str, reflection: str = "") -> str
+archive_task(task_id: str, reflection: str = "") -> str
 ```
 
-**Status values**: `active`, `completed`, `someday`, `cancelled`
+**Status values**: `active`, `completed`, `someday`, `cancelled`, `archived`
 **Priority values**: `low`, `medium`, `high`
 
 ### Question Management

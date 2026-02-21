@@ -43,15 +43,8 @@ def agent_setup(tmp_path):
 
     knowledge_dir = dashboard_path / "knowledge"
     knowledge_dir.mkdir()
-    (knowledge_dir / "history.json").write_text(
-        json.dumps({"version": "1.0", "completed_tasks": [], "projects": []}, indent=2),
-        encoding="utf-8"
-    )
     (knowledge_dir / "insights.json").write_text(
         json.dumps({"version": "1.0", "insights": []}, indent=2), encoding="utf-8"
-    )
-    (knowledge_dir / "people.json").write_text(
-        json.dumps({"version": "1.0", "people": []}, indent=2), encoding="utf-8"
     )
 
     # Use latest DASHBOARD.md (v0.1.5 - Dashboard Tools)
@@ -62,7 +55,7 @@ def agent_setup(tmp_path):
         "- create_task(title, deadline, priority, context, tags)\n"
         "- update_task(task_id, progress, status, blocked, blocker_note, ...)\n"
         "- answer_question(question_id, answer)\n"
-        "- move_to_history(task_id, reflection)\n\n"
+        "- archive_task(task_id, reflection)\n\n"
         "## Core Principles\n\n"
         "1. **Use dashboard tools, NOT read_file/write_file**\n"
         "2. **One message can contain multiple pieces of information**\n"

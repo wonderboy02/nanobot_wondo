@@ -112,7 +112,7 @@ class TestNotificationWorkflow:
                 "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
                 "context": "React Tutorial 시리즈",
                 "tags": [],
-                "links": {"projects": [], "people": [], "insights": [], "resources": []},
+                "links": {"projects": [], "insights": [], "resources": []},
                 "created_at": (datetime.now() - timedelta(days=3)).isoformat(),
                 "updated_at": (datetime.now() - timedelta(days=1)).isoformat()
             }]
@@ -200,7 +200,7 @@ class TestNotificationWorkflow:
                 "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
                 "context": "",
                 "tags": [],
-                "links": {"projects": [], "people": [], "insights": [], "resources": []},
+                "links": {"projects": [], "insights": [], "resources": []},
                 "created_at": (datetime.now() - timedelta(days=2)).isoformat(),
                 "updated_at": datetime.now().isoformat()
             }]
@@ -292,7 +292,7 @@ class TestNotificationWorkflow:
                 "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
                 "context": "유튜브 강의",
                 "tags": ["react", "study"],
-                "links": {"projects": [], "people": [], "insights": [], "resources": []},
+                "links": {"projects": [], "insights": [], "resources": []},
                 "created_at": (datetime.now() - timedelta(days=5)).isoformat(),
                 "updated_at": blocked_since
             }]
@@ -367,7 +367,7 @@ class TestNotificationWorkflow:
                 "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
                 "context": "",
                 "tags": [],
-                "links": {"projects": [], "people": [], "insights": [], "resources": []},
+                "links": {"projects": [], "insights": [], "resources": []},
                 "created_at": (datetime.now() - timedelta(days=5)).isoformat(),
                 "updated_at": datetime.now().isoformat(),
                 "completed_at": datetime.now().isoformat()
@@ -449,7 +449,7 @@ class TestNotificationWorkflow:
                 "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
                 "context": "",
                 "tags": [],
-                "links": {"projects": [], "people": [], "insights": [], "resources": []},
+                "links": {"projects": [], "insights": [], "resources": []},
                 "created_at": (datetime.now() - timedelta(days=3)).isoformat(),
                 "updated_at": datetime.now().isoformat(),
                 "completed_at": datetime.now().isoformat()

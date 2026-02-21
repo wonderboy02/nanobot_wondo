@@ -22,7 +22,7 @@ class LLMWorkerAgent:
     - Analyze task progress and schedule notifications
     - Manage question queue (create/update/remove)
     - Clean up obsolete data
-    - Move completed tasks to history
+    - Archive completed tasks
     """
 
     def __init__(
@@ -71,13 +71,13 @@ class LLMWorkerAgent:
         self.tools.register(ListNotificationsTool(self.workspace))
 
         # Task management (2 tools)
-        # Worker updates and moves tasks to history
+        # Worker updates and archives tasks
         # Note: create_task removed - Worker doesn't create tasks (Main Agent's role)
         from nanobot.agent.tools.dashboard.update_task import UpdateTaskTool
-        from nanobot.agent.tools.dashboard.move_to_history import MoveToHistoryTool
+        from nanobot.agent.tools.dashboard.archive_task import ArchiveTaskTool
 
         self.tools.register(UpdateTaskTool(self.workspace))
-        self.tools.register(MoveToHistoryTool(self.workspace))
+        self.tools.register(ArchiveTaskTool(self.workspace))
 
         # Knowledge management removed - save_insight not actively used
 
@@ -101,7 +101,7 @@ class LLMWorkerAgent:
                     "You are the Worker Agent. Analyze the Dashboard and perform maintenance tasks:\n"
                     "- Schedule notifications for deadlines and progress checks\n"
                     "- Manage question queue (create, update, remove)\n"
-                    "- Move completed tasks to history\n"
+                    "- Archive completed tasks\n"
                     "- Clean up obsolete data\n"
                     "Operate autonomously and efficiently."
                 )
@@ -131,7 +131,7 @@ class LLMWorkerAgent:
             "Analyze the Dashboard state and perform necessary maintenance actions:\n"
             "1. Check for tasks needing notifications (deadlines, stagnant progress, blockers)\n"
             "2. Manage question queue (create, update, remove as needed)\n"
-            "3. Move completed tasks to history\n"
+            "3. Archive completed tasks\n"
             "4. Schedule appropriate notifications (check existing ones first!)\n"
             "5. Clean up obsolete questions\n\n"
             "Use the available tools to make changes. Be proactive but avoid spam."

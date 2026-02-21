@@ -181,14 +181,6 @@ class BaseDashboardTool(Tool):
         """Load notifications via the storage backend (non-blocking)."""
         return await asyncio.to_thread(self._backend.load_notifications)
 
-    async def _load_history(self) -> dict:
-        """Load history via the storage backend (non-blocking)."""
-        return await asyncio.to_thread(self._backend.load_history)
-
-    async def _validate_and_save_history(self, history_data: dict) -> tuple[bool, str]:
-        """Save history data via the storage backend."""
-        return await asyncio.to_thread(self._backend.save_history, history_data)
-
     async def _load_insights(self) -> dict:
         """Load insights via the storage backend (non-blocking)."""
         return await asyncio.to_thread(self._backend.load_insights)

@@ -37,7 +37,7 @@ There are **two agents** managing the Dashboard:
 - Analyzes task progress and detects stagnation
 - Schedules notifications for deadlines and progress checks
 - Manages question queue (create, update, remove)
-- Moves completed tasks to history
+- Archives completed or cancelled tasks
 
 **Division of Labor**:
 - **Main Agent**: User-driven (messages, conversations)

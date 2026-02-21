@@ -12,7 +12,7 @@ from nanobot.agent.tools.dashboard import (
     AnswerQuestionTool,
     CreateQuestionTool,
     SaveInsightTool,
-    MoveToHistoryTool,
+    ArchiveTaskTool,
 )
 
 
@@ -173,8 +173,8 @@ async def test_save_insight_tool(temp_workspace):
 
 
 @pytest.mark.asyncio
-async def test_move_to_history_tool(temp_workspace):
-    """Test MoveToHistoryTool archives completed task."""
+async def test_archive_task_tool(temp_workspace):
+    """Test ArchiveTaskTool archives completed task."""
     # Create a task first
     create_tool = CreateTaskTool(workspace=temp_workspace)
     result = await create_tool.execute(title="Completed task", priority="medium")
@@ -182,26 +182,24 @@ async def test_move_to_history_tool(temp_workspace):
     # Extract task_id
     task_id = result.split("Created ")[1].split(":")[0]
 
-    # Move to history
-    history_tool = MoveToHistoryTool(workspace=temp_workspace)
-    result = await history_tool.execute(
+    # Archive the task
+    archive_tool = ArchiveTaskTool(workspace=temp_workspace)
+    result = await archive_tool.execute(
         task_id=task_id, reflection="Task completed successfully"
     )
 
-    assert f"Moved {task_id} to history" in result
+    assert f"Archived {task_id}" in result
 
-    # Verify task removed from tasks
+    # Verify task stays in tasks list with archived status
     tasks_path = temp_workspace / "dashboard" / "tasks.json"
     tasks_data = json.loads(tasks_path.read_text(encoding="utf-8"))
-    assert len(tasks_data["tasks"]) == 0
-
-    # Verify task in history
-    history_path = temp_workspace / "dashboard" / "knowledge" / "history.json"
-    history_data = json.loads(history_path.read_text(encoding="utf-8"))
-    assert len(history_data["completed_tasks"]) == 1
-    task = history_data["completed_tasks"][0]
+    assert len(tasks_data["tasks"]) == 1
+    task = tasks_data["tasks"][0]
     assert task["id"] == task_id
+    assert task["status"] == "archived"
     assert task["reflection"] == "Task completed successfully"
+    assert task["progress"]["percentage"] == 100
+    assert task["completed_at"] is not None
 
 
 @pytest.mark.asyncio
@@ -233,3 +231,78 @@ async def test_json_structure_validation(temp_workspace):
         assert "updated_at" in task
         assert "progress" in task
         assert "status" in task
+
+    # links should not contain "people" field
+    for task in tasks_data["tasks"]:
+        assert "people" not in task.get("links", {}), \
+            "links should not contain removed 'people' field"
+
+
+@pytest.mark.asyncio
+async def test_archive_task_preserves_existing_reflection(temp_workspace):
+    """Test ArchiveTaskTool preserves existing reflection when none provided."""
+    create_tool = CreateTaskTool(workspace=temp_workspace)
+    result = await create_tool.execute(title="Task with reflection", priority="medium")
+    task_id = result.split("Created ")[1].split(":")[0]
+
+    # Manually set reflection on the task
+    tasks_path = temp_workspace / "dashboard" / "tasks.json"
+    tasks_data = json.loads(tasks_path.read_text(encoding="utf-8"))
+    tasks_data["tasks"][0]["reflection"] = "Existing reflection"
+    tasks_path.write_text(json.dumps(tasks_data, indent=2), encoding="utf-8")
+
+    # Archive without providing reflection
+    archive_tool = ArchiveTaskTool(workspace=temp_workspace)
+    result = await archive_tool.execute(task_id=task_id)
+
+    assert f"Archived {task_id}" in result
+
+    # Existing reflection should be preserved
+    tasks_data = json.loads(tasks_path.read_text(encoding="utf-8"))
+    assert tasks_data["tasks"][0]["reflection"] == "Existing reflection"
+
+
+@pytest.mark.asyncio
+async def test_archive_task_missing_progress_key(temp_workspace):
+    """Test ArchiveTaskTool handles task with no progress key."""
+    # Create a task and remove progress key to simulate legacy data
+    tasks_path = temp_workspace / "dashboard" / "tasks.json"
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [{
+            "id": "task_legacy",
+            "title": "Legacy task",
+            "status": "completed",
+            "priority": "medium",
+            "context": "",
+            "tags": [],
+            "links": {"projects": [], "insights": [], "resources": []},
+            "created_at": "2026-02-20T00:00:00",
+            "updated_at": "2026-02-20T00:00:00",
+            "completed_at": "2026-02-20T00:00:00",
+            "reflection": "",
+            # No "progress" key
+        }],
+    }
+    tasks_path.write_text(json.dumps(tasks_data, indent=2), encoding="utf-8")
+
+    archive_tool = ArchiveTaskTool(workspace=temp_workspace)
+    result = await archive_tool.execute(task_id="task_legacy", reflection="Done")
+
+    assert "Archived task_legacy" in result
+
+    tasks_data = json.loads(tasks_path.read_text(encoding="utf-8"))
+    task = tasks_data["tasks"][0]
+    assert task["status"] == "archived"
+    assert task["progress"]["percentage"] == 100
+    assert task["reflection"] == "Done"
+
+
+@pytest.mark.asyncio
+async def test_archive_task_not_found(temp_workspace):
+    """Test ArchiveTaskTool with non-existent task ID."""
+    archive_tool = ArchiveTaskTool(workspace=temp_workspace)
+    result = await archive_tool.execute(task_id="task_nonexistent")
+
+    assert "Error" in result
+    assert "not found" in result

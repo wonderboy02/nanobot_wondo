@@ -473,9 +473,7 @@ The Worker Agent automatically:
 ├── questions.json       # Question queue
 ├── notifications.json   # Notifications
 └── knowledge/
-    ├── history.json     # Completed tasks and projects
-    ├── insights.json    # Saved knowledge
-    └── people.json      # Relationships
+    └── insights.json    # Saved knowledge
 ```
 
 ### Dashboard Tools (v0.1.5+)
@@ -488,7 +486,7 @@ The agent uses **specialized dashboard tools** instead of directly manipulating 
 - `answer_question(question_id, answer)` - Answer a question
 - `create_question(question, priority, type, related_task_id)` - Create question
 - `save_insight(content, category, title, tags)` - Save learning
-- `move_to_history(task_id, reflection)` - Archive completed task
+- `archive_task(task_id, reflection)` - Archive completed task
 
 **Benefits**:
 - ✅ Automatic ID and timestamp generation

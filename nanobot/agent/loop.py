@@ -188,7 +188,7 @@ class AgentLoop:
             CreateQuestionTool,
             UpdateQuestionTool,
             RemoveQuestionTool,
-            MoveToHistoryTool,
+            ArchiveTaskTool,
             SaveInsightTool,
             ScheduleNotificationTool,
             UpdateNotificationTool,
@@ -202,7 +202,7 @@ class AgentLoop:
         self.tools.register(CreateQuestionTool(workspace=self.workspace))
         self.tools.register(UpdateQuestionTool(workspace=self.workspace))
         self.tools.register(RemoveQuestionTool(workspace=self.workspace))
-        self.tools.register(MoveToHistoryTool(workspace=self.workspace))
+        self.tools.register(ArchiveTaskTool(workspace=self.workspace))
         self.tools.register(SaveInsightTool(workspace=self.workspace))
 
         # Notification tools (user explicit requests)

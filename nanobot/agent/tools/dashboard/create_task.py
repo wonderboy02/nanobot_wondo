@@ -94,7 +94,6 @@ class CreateTaskTool(BaseDashboardTool):
                 "tags": tags or [],
                 "links": {
                     "projects": [],
-                    "people": [],
                     "insights": [],
                     "resources": [],
                 },

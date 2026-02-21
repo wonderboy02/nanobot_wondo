@@ -22,22 +22,12 @@ from nanobot.config.loader import load_config
 
 
 def get_completed_tasks(dashboard_path: Path) -> list[dict]:
-    """Get all completed tasks from both tasks.json and history.json."""
-    completed = []
-
-    # Check tasks.json
+    """Get all completed/archived tasks from tasks.json."""
     tasks_file = dashboard_path / "tasks.json"
     if tasks_file.exists():
-        tasks_data = json.loads(tasks_file.read_text(encoding="utf-8"))
-        completed.extend([t for t in tasks_data.get("tasks", []) if t.get("status") == "completed"])
-
-    # Check history.json
-    history_file = dashboard_path / "knowledge" / "history.json"
-    if history_file.exists():
-        history_data = json.loads(history_file.read_text(encoding="utf-8"))
-        completed.extend(history_data.get("completed_tasks", []))
-
-    return completed
+        data = json.loads(tasks_file.read_text(encoding="utf-8"))
+        return [t for t in data.get("tasks", []) if t.get("status") in ("completed", "archived")]
+    return []
 
 
 @pytest.fixture
@@ -66,16 +56,8 @@ def agent_setup(tmp_path):
     # Knowledge
     knowledge_dir = dashboard_path / "knowledge"
     knowledge_dir.mkdir()
-    (knowledge_dir / "history.json").write_text(
-        json.dumps({"version": "1.0", "completed_tasks": [], "projects": []}, indent=2),
-        encoding="utf-8"
-    )
     (knowledge_dir / "insights.json").write_text(
         json.dumps({"version": "1.0", "insights": []}, indent=2),
-        encoding="utf-8"
-    )
-    (knowledge_dir / "people.json").write_text(
-        json.dumps({"version": "1.0", "people": []}, indent=2),
         encoding="utf-8"
     )
 
@@ -87,7 +69,7 @@ def agent_setup(tmp_path):
         "- create_task(title, deadline, priority, context, tags)\n"
         "- update_task(task_id, progress, status, blocked, blocker_note, ...)\n"
         "- answer_question(question_id, answer)\n"
-        "- move_to_history(task_id, reflection)\n\n"
+        "- archive_task(task_id, reflection)\n\n"
         "**IMPORTANT**: Use dashboard tools, NOT read_file/write_file for dashboard operations.\n\n"
         "**Note**: Worker Agent handles question creation and notification scheduling automatically.\n"
         "You only need to respond to user messages and update dashboard based on conversation.\n\n"
@@ -234,15 +216,15 @@ async def test_scenario_03_complete_task(agent_setup):
         tasks_data = json.load(f)
         tasks = tasks_data.get("tasks", [])
 
-    # Check if task is completed in tasks.json or moved to history.json
+    # Check if task is completed or archived in tasks.json
     blog_task = None
     for task in tasks:
         if "블로그" in task["title"] or "글" in task["title"]:
             blog_task = task
             break
 
-    # If not in tasks.json, check history.json
-    if blog_task is None or blog_task.get("status") != "completed":
+    # If not found directly, check all completed/archived tasks
+    if blog_task is None or blog_task.get("status") not in ("completed", "archived"):
         all_completed = get_completed_tasks(dashboard)
         for task in all_completed:
             if "블로그" in task["title"] or "글" in task["title"]:
@@ -250,10 +232,8 @@ async def test_scenario_03_complete_task(agent_setup):
                 break
 
     assert blog_task is not None, "Should find blog task"
-    # Task should be either completed in tasks.json or moved to history
-    if blog_task in tasks:
-        assert blog_task["status"] == "completed", \
-            f"Task should be completed, got {blog_task['status']}"
+    assert blog_task["status"] in ("completed", "archived"), \
+        f"Task should be completed or archived, got {blog_task['status']}"
     assert blog_task.get("completed_at") is not None, "Should have completed_at"
     assert blog_task["progress"]["percentage"] == 100, \
         f"Progress should be 100%, got {blog_task['progress']['percentage']}"

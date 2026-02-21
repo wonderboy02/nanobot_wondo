@@ -17,7 +17,7 @@ This guide explains how to set up Notion as the storage backend for nanobot's Da
 
 ## Step 2: Create Databases
 
-Create 6 databases in Notion with the exact property names below.
+Create 4 databases in Notion with the exact property names below.
 You can create them in a single page for organization.
 
 **Important**: After creating each database, share it with your integration:
@@ -29,7 +29,7 @@ You can create them in a single page for organization.
 |----------|------|-------|
 | Title | title | Task title |
 | NanobotID | text | `task_xxxxxxxx` (unique identifier) |
-| Status | select | Options: Active, Someday, Completed, Cancelled |
+| Status | select | Options: Active, Someday, Completed, Cancelled, Archived |
 | Priority | select | Options: Low, Medium, High |
 | Deadline | date | Due date |
 | DeadlineText | text | Natural language deadline (e.g., "next Friday") |
@@ -44,6 +44,7 @@ You can create them in a single page for organization.
 | CreatedAt | date | Creation date |
 | UpdatedAt | date | Last update date |
 | CompletedAt | date | Completion date |
+| Reflection | text | Post-completion reflection note |
 
 ### Questions DB
 
@@ -95,31 +96,6 @@ You can create them in a single page for organization.
 | Tags | multi-select | Tags |
 | CreatedAt | date | Creation date |
 
-### History DB
-
-| Property | Type | Notes |
-|----------|------|-------|
-| Title | title | Completed task title |
-| NanobotID | text | Unique identifier |
-| CompletedAt | date | Completion date |
-| DurationDays | number | Days to complete |
-| ProgressNote | text | Final progress note |
-| Reflection | text | Post-completion reflection |
-| MovedAt | date | Date moved to history |
-
-### People DB
-
-| Property | Type | Notes |
-|----------|------|-------|
-| Name | title | Person's name |
-| NanobotID | text | Unique identifier |
-| Role | text | Their role |
-| Relationship | text | Relationship type |
-| Context | text | Context/notes |
-| Contact | text | Contact info |
-| Notes | text | Additional notes |
-| LastContact | date | Last contact date |
-
 ## Step 3: Get Database IDs
 
 For each database:
@@ -141,9 +117,7 @@ Add to your `~/.nanobot/config.json`:
       "tasks": "your_tasks_db_id",
       "questions": "your_questions_db_id",
       "notifications": "your_notifications_db_id",
-      "insights": "your_insights_db_id",
-      "history": "your_history_db_id",
-      "people": "your_people_db_id"
+      "insights": "your_insights_db_id"
     },
     "cache_ttl_s": 300
   }

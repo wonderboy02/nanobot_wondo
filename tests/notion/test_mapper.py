@@ -14,12 +14,9 @@ from nanobot.notion.mapper import (
     notion_to_notification,
     insight_to_notion,
     notion_to_insight,
-    completed_task_to_notion,
-    notion_to_completed_task,
-    person_to_notion,
-    notion_to_person,
     _capitalize,
     _lower,
+    _extract_title,
 )
 
 
@@ -56,10 +53,11 @@ class TestTaskMapping:
         },
         "context": "YouTube learning",
         "tags": ["react", "study"],
-        "links": {"projects": [], "people": [], "insights": [], "resources": []},
+        "links": {"projects": [], "insights": [], "resources": []},
         "created_at": "2026-02-01",
         "updated_at": "2026-02-20",
         "completed_at": None,
+        "reflection": "",
     }
 
     def test_task_round_trip(self):
@@ -343,127 +341,6 @@ class TestInsightMapping:
         assert result["tags"] == []
 
 
-# ============================================================================
-# CompletedTask round-trip
-# ============================================================================
-
-class TestCompletedTaskMapping:
-    """Tests for completed_task_to_notion and notion_to_completed_task."""
-
-    SAMPLE_COMPLETED = {
-        "id": "task_old_001",
-        "title": "Set up dev environment",
-        "completed_at": "2026-01-15",
-        "duration_days": 3,
-        "progress_note": "Everything installed and configured",
-        "reflection": "Should have used Docker from the start",
-        "moved_at": "2026-01-16",
-    }
-
-    def test_completed_task_round_trip(self):
-        """completed_task -> Notion -> completed_task preserves data."""
-        notion_props = completed_task_to_notion(self.SAMPLE_COMPLETED)
-        page = _wrap_page(notion_props, page_id="ct-page-1")
-        result = notion_to_completed_task(page)
-
-        assert result["id"] == "task_old_001"
-        assert result["title"] == "Set up dev environment"
-        assert result["completed_at"] == "2026-01-15"
-        assert result["duration_days"] == 3
-        assert result["progress_note"] == "Everything installed and configured"
-        assert result["moved_at"] == "2026-01-16"
-        assert result["_notion_page_id"] == "ct-page-1"
-
-    def test_completed_task_zero_duration(self):
-        """Zero duration_days round-trips correctly."""
-        ct = {**self.SAMPLE_COMPLETED, "duration_days": 0}
-        notion_props = completed_task_to_notion(ct)
-        page = _wrap_page(notion_props)
-        result = notion_to_completed_task(page)
-        assert result["duration_days"] == 0
-
-    def test_completed_task_missing_properties_defaults(self):
-        """Missing properties return safe defaults."""
-        page = _wrap_page({})
-        result = notion_to_completed_task(page)
-        assert result["id"] == ""
-        assert result["title"] == ""
-        assert result["duration_days"] == 0
-
-
-# ============================================================================
-# Person round-trip
-# ============================================================================
-
-class TestPersonMapping:
-    """Tests for person_to_notion and notion_to_person."""
-
-    SAMPLE_PERSON = {
-        "id": "person_001",
-        "name": "Alice Kim",
-        "role": "Team Lead",
-        "relationship": "Colleague",
-        "context": "Works on frontend team",
-        "contact": "alice@example.com",
-        "notes": "Expert in React and TypeScript",
-        "last_contact": "2026-02-10",
-    }
-
-    def test_person_round_trip(self):
-        """person -> Notion -> person preserves data."""
-        notion_props = person_to_notion(self.SAMPLE_PERSON)
-        page = _wrap_page(notion_props, page_id="person-page-1")
-        result = notion_to_person(page)
-
-        assert result["id"] == "person_001"
-        assert result["name"] == "Alice Kim"
-        assert result["role"] == "Team Lead"
-        assert result["relationship"] == "Colleague"
-        assert result["context"] == "Works on frontend team"
-        assert result["contact"] == "alice@example.com"
-        assert result["notes"] == "Expert in React and TypeScript"
-        assert result["last_contact"] == "2026-02-10"
-        assert result["_notion_page_id"] == "person-page-1"
-
-    def test_person_no_last_contact(self):
-        """Person without last_contact."""
-        p = {**self.SAMPLE_PERSON, "last_contact": None}
-        notion_props = person_to_notion(p)
-        assert notion_props["LastContact"]["date"] is None
-
-        page = _wrap_page(notion_props)
-        result = notion_to_person(page)
-        assert result["last_contact"] is None
-
-    def test_person_empty_fields(self):
-        """Person with all optional fields empty."""
-        p = {
-            "id": "person_002",
-            "name": "Bob",
-            "role": "",
-            "relationship": "",
-            "context": "",
-            "contact": "",
-            "notes": "",
-            "last_contact": None,
-        }
-        notion_props = person_to_notion(p)
-        page = _wrap_page(notion_props)
-        result = notion_to_person(page)
-
-        assert result["name"] == "Bob"
-        assert result["role"] == ""
-        assert result["context"] == ""
-
-    def test_person_missing_properties_defaults(self):
-        """Missing properties return safe defaults."""
-        page = _wrap_page({})
-        result = notion_to_person(page)
-        assert result["id"] == ""
-        assert result["name"] == ""
-        assert result["role"] == ""
-        assert result["last_contact"] is None
-
 
 # ============================================================================
 # Edge cases: None values, empty strings
@@ -522,14 +399,26 @@ class TestEdgeCases:
 
     def test_multi_segment_rich_text(self):
         """Rich text with multiple segments is concatenated."""
-        props = {
-            "Name": {
-                "title": [
-                    {"text": {"content": "Hello "}},
-                    {"text": {"content": "World"}},
-                ]
-            }
+        prop = {
+            "title": [
+                {"text": {"content": "Hello "}},
+                {"text": {"content": "World"}},
+            ]
         }
-        page = _wrap_page(props)
-        result = notion_to_person(page)
-        assert result["name"] == "Hello World"
+        result = _extract_title(prop)
+        assert result == "Hello World"
+
+    def test_task_reflection_round_trip(self):
+        """Task reflection field survives the round trip."""
+        task = {
+            "id": "task_reflect",
+            "title": "Test reflection",
+            "status": "archived",
+            "reflection": "Learned a lot from this task",
+        }
+        notion_props = task_to_notion(task)
+        assert notion_props["Reflection"]["rich_text"][0]["text"]["content"] == "Learned a lot from this task"
+
+        page = _wrap_page(notion_props)
+        result = notion_to_task(page)
+        assert result["reflection"] == "Learned a lot from this task"

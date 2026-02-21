@@ -90,9 +90,7 @@ workspace/              # 사용자 워크스페이스
     ├── questions.json  # Question Queue
     ├── notifications.json  # 알림
     └── knowledge/      # 지식베이스
-        ├── history.json    # 완료 작업, 프로젝트
-        ├── insights.json   # 저장된 지식
-        └── people.json     # 인간관계
+        └── insights.json   # 저장된 지식
 ```
 
 ## 구현 예정 (Planned Features)
@@ -353,9 +351,7 @@ Dashboard Tools (13개, 인터페이스 변경 없음)
       "tasks": "db_id",
       "questions": "db_id",
       "notifications": "db_id",
-      "insights": "db_id",
-      "history": "db_id",
-      "people": "db_id"
+      "insights": "db_id"
     },
     "cache_ttl_s": 300
   }
@@ -443,7 +439,7 @@ Agent는 Dashboard 전용 도구를 사용하여 안전하고 검증된 방식�
 **Task 관리**:
 - `create_task(title, deadline, priority, context, tags)` - Task 생성
 - `update_task(task_id, progress, status, blocked, blocker_note, ...)` - Task 업데이트
-- `move_to_history(task_id, reflection)` - 완료 Task를 History로 이동
+- `archive_task(task_id, reflection)` - 완료 Task를 아카이브 (status='archived')
 
 **Question 관리**:
 - `answer_question(question_id, answer)` - 질문 답변
@@ -479,7 +475,7 @@ create_task(title="블로그 작성", deadline="금요일", priority="medium")
 - `IDENTITY.md`, `HEARTBEAT.md`
 - `config.json`, `.env`
 - `dashboard/*.json` (tasks, questions, notifications) - **Dashboard 도구 사용 필수**
-- `dashboard/knowledge/*.json` (history, insights, people) - **Dashboard 도구 사용 필수**
+- `dashboard/knowledge/*.json` (insights) - **Dashboard 도구 사용 필수**
 
 **허용 대상 (Read/Write)**:
 - `memory/*.md`
@@ -853,10 +849,10 @@ Notion 통합 작업 중 발견된 알려진 제약사항/안티패턴입니다.
 - **현재 상태**: 인스턴스만 존재 (`self.notifications`), Worker/Heartbeat에서 알림 배칭 호출 미구현
 - **개선안**: Heartbeat Worker에서 알림 생성 시 `notifications.should_send()` → Telegram 전송 플로우 연결
 
-### 5. insights/history/people Pydantic 검증 없음
+### 5. insights Pydantic 검증 없음
 - **위치**: `nanobot/dashboard/storage.py` (JsonStorageBackend), `nanobot/notion/storage.py` (NotionStorageBackend)
-- **설명**: tasks/questions/notifications는 Pydantic 검증 후 저장하지만, insights/history/people은 검증 없이 저장
-- **이유**: 기존 JSON 백엔드에서도 검증 없었고, 이 엔티티들은 스키마가 유연함
+- **설명**: tasks/questions/notifications는 Pydantic 검증 후 저장하지만, insights는 검증 없이 저장
+- **이유**: 기존 JSON 백엔드에서도 검증 없었고, 이 엔티티는 스키마가 유연함
 - **개선안**: `dashboard/schema.py`에 validate_insights_file 등 추가
 
 ### 6. NotificationPolicyConfig 범위 검증 없음
@@ -864,7 +860,14 @@ Notion 통합 작업 중 발견된 알려진 제약사항/안티패턴입니다.
 - **설명**: `quiet_hours_start/end`, `daily_limit` 등에 값 범위 검증 없음 (예: hour가 0-23인지)
 - **개선안**: Pydantic `Field(ge=0, le=23)` 등 validator 추가
 
-### 7. TelegramNotificationManager 서버 timezone 의존
+### 7. tasks.json 무한 증가 (Archived Tasks)
+- **위치**: `nanobot/agent/tools/dashboard/archive_task.py`, `nanobot/dashboard/worker.py`
+- **설명**: 이전 설계에서는 완료된 task가 history.json으로 이동되어 tasks.json은 active task만 유지했지만, 현재는 archived task가 tasks.json에 계속 누적됨
+- **영향**: 수백 개 task가 쌓이면 파일 크기 증가, DashboardManager.load() 메모리/성능 저하, Notion 모드에서 전체 query 비용 증가
+- **현재 대응**: Dashboard Summary는 active tasks만 필터링하므로 LLM context에는 영향 없음
+- **개선안**: 주기적 pruning (예: 3개월 이상 archived task 삭제) 또는 별도 archive 파일로 이동
+
+### 8. TelegramNotificationManager 서버 timezone 의존
 - **위치**: `nanobot/channels/telegram.py` — `_is_quiet_hours()`
 - **설명**: `datetime.now().hour`로 서버 로컬 시간 사용. 서버가 UTC 클라우드에 배포되면 quiet hours가 의도대로 동작하지 않음
 - **현재 대응**: 단일 사용자 + 로컬 실행 환경에서는 문제없음

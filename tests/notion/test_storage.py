@@ -54,13 +54,6 @@ class TestLoadDefaults:
         result = storage.load_insights()
         assert result == {"version": "1.0", "insights": []}
 
-    def test_load_history_missing_file(self, storage):
-        result = storage.load_history()
-        assert result == {"version": "1.0", "completed_tasks": [], "projects": []}
-
-    def test_load_people_missing_file(self, storage):
-        result = storage.load_people()
-        assert result == {"version": "1.0", "people": []}
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +85,7 @@ class TestRoundTrip:
                     "priority": "medium",
                     "context": "",
                     "tags": [],
-                    "links": {"projects": [], "people": [], "insights": [], "resources": []},
+                    "links": {"projects": [], "insights": [], "resources": []},
                     "created_at": "2026-02-20T00:00:00",
                     "updated_at": "2026-02-20T00:00:00",
                     "completed_at": None,

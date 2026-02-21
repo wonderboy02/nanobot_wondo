@@ -231,7 +231,7 @@ class TestNotificationTaskIntegration:
                 "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
                 "context": "",
                 "tags": [],
-                "links": {"projects": [], "people": [], "insights": [], "resources": []},
+                "links": {"projects": [], "insights": [], "resources": []},
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat()
             }]

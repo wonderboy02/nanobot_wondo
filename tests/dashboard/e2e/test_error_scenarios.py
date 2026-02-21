@@ -36,15 +36,8 @@ def agent_setup(tmp_path):
 
     knowledge_dir = dashboard_path / "knowledge"
     knowledge_dir.mkdir()
-    (knowledge_dir / "history.json").write_text(
-        json.dumps({"version": "1.0", "completed_tasks": [], "projects": []}, indent=2),
-        encoding="utf-8"
-    )
     (knowledge_dir / "insights.json").write_text(
         json.dumps({"version": "1.0", "insights": []}, indent=2), encoding="utf-8"
-    )
-    (knowledge_dir / "people.json").write_text(
-        json.dumps({"version": "1.0", "people": []}, indent=2), encoding="utf-8"
     )
 
     (workspace / "DASHBOARD.md").write_text(

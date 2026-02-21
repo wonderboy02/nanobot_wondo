@@ -91,11 +91,6 @@ def _extract_date(prop: dict) -> str | None:
     return None
 
 
-def _extract_relation(prop: dict) -> list[str]:
-    """Extract relation page IDs."""
-    return [r.get("id", "") for r in prop.get("relation", [])]
-
-
 def _get_prop(properties: dict, name: str) -> dict:
     """Safely get a property from Notion properties dict."""
     return properties.get(name, {})
@@ -134,6 +129,8 @@ def task_to_notion(task: dict) -> dict[str, Any]:
         props["EstimationHours"] = _number(estimation["hours"])
     if task.get("completed_at"):
         props["CompletedAt"] = _date(task["completed_at"])
+    if task.get("reflection"):
+        props["Reflection"] = _rich_text(task["reflection"])
 
     return props
 
@@ -165,10 +162,11 @@ def notion_to_task(page: dict) -> dict[str, Any]:
         },
         "context": _extract_rich_text(_get_prop(props, "Context")),
         "tags": _extract_multi_select(_get_prop(props, "Tags")),
-        "links": {"projects": [], "people": [], "insights": [], "resources": []},
+        "links": {"projects": [], "insights": [], "resources": []},
         "created_at": _extract_date(_get_prop(props, "CreatedAt")) or "",
         "updated_at": _extract_date(_get_prop(props, "UpdatedAt")) or "",
         "completed_at": _extract_date(_get_prop(props, "CompletedAt")),
+        "reflection": _extract_rich_text(_get_prop(props, "Reflection")),
         "_notion_page_id": page.get("id", ""),
     }
 
@@ -306,78 +304,6 @@ def notion_to_insight(page: dict) -> dict[str, Any]:
         "tags": _extract_multi_select(_get_prop(props, "Tags")),
         "links": {},
         "created_at": _extract_date(_get_prop(props, "CreatedAt")) or "",
-        "_notion_page_id": page.get("id", ""),
-    }
-
-
-# ============================================================================
-# History (CompletedTask) Mapping
-# ============================================================================
-
-def completed_task_to_notion(ct: dict) -> dict[str, Any]:
-    """Convert internal completed task dict to Notion properties."""
-    return {
-        "Title": _title(ct.get("title", "")),
-        "NanobotID": _rich_text(ct.get("id", "")),
-        "CompletedAt": _date(ct.get("completed_at")),
-        "DurationDays": _number(ct.get("duration_days", 0)),
-        "ProgressNote": _rich_text(ct.get("progress_note", "")),
-        "Reflection": _rich_text(ct.get("reflection", "")),
-        "MovedAt": _date(ct.get("moved_at")),
-    }
-
-
-def notion_to_completed_task(page: dict) -> dict[str, Any]:
-    """Convert Notion page to internal completed task dict."""
-    props = page.get("properties", {})
-
-    duration = _extract_number(_get_prop(props, "DurationDays"))
-
-    return {
-        "id": _extract_rich_text(_get_prop(props, "NanobotID")),
-        "title": _extract_title(_get_prop(props, "Title")),
-        "completed_at": _extract_date(_get_prop(props, "CompletedAt")) or "",
-        "duration_days": int(duration) if duration is not None else 0,
-        "progress_note": _extract_rich_text(_get_prop(props, "ProgressNote")),
-        "reflection": _extract_rich_text(_get_prop(props, "Reflection")),
-        "links": {},
-        "moved_at": _extract_date(_get_prop(props, "MovedAt")) or "",
-        "_notion_page_id": page.get("id", ""),
-    }
-
-
-# ============================================================================
-# Person Mapping
-# ============================================================================
-
-def person_to_notion(p: dict) -> dict[str, Any]:
-    """Convert internal person dict to Notion properties."""
-    return {
-        "Name": _title(p.get("name", "")),
-        "NanobotID": _rich_text(p.get("id", "")),
-        "Role": _rich_text(p.get("role", "")),
-        "Relationship": _rich_text(p.get("relationship", "")),
-        "Context": _rich_text(p.get("context", "")),
-        "Contact": _rich_text(p.get("contact", "")),
-        "Notes": _rich_text(p.get("notes", "")),
-        "LastContact": _date(p.get("last_contact")),
-    }
-
-
-def notion_to_person(page: dict) -> dict[str, Any]:
-    """Convert Notion page to internal person dict."""
-    props = page.get("properties", {})
-
-    return {
-        "id": _extract_rich_text(_get_prop(props, "NanobotID")),
-        "name": _extract_title(_get_prop(props, "Name")),
-        "role": _extract_rich_text(_get_prop(props, "Role")),
-        "relationship": _extract_rich_text(_get_prop(props, "Relationship")),
-        "context": _extract_rich_text(_get_prop(props, "Context")),
-        "contact": _extract_rich_text(_get_prop(props, "Contact")),
-        "links": {},
-        "notes": _extract_rich_text(_get_prop(props, "Notes")),
-        "last_contact": _extract_date(_get_prop(props, "LastContact")),
         "_notion_page_id": page.get("id", ""),
     }
 

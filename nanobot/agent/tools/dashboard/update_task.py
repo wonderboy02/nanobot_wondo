@@ -36,7 +36,7 @@ class UpdateTaskTool(BaseDashboardTool):
                 "status": {
                     "type": "string",
                     "enum": ["active", "completed", "someday", "cancelled"],
-                    "description": "Task status",
+                    "description": "Task status (use archive_task tool for archiving)",
                 },
                 "blocked": {
                     "type": "boolean",

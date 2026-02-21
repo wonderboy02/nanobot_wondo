@@ -111,8 +111,6 @@ class NotionDatabasesConfig(BaseModel):
     questions: str = ""
     notifications: str = ""
     insights: str = ""
-    history: str = ""
-    people: str = ""
 
 
 class NotionConfig(BaseModel):

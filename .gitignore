@@ -1,5 +1,6 @@
 .assets
 .env
+__verify.py
 *.pyc
 dist/
 build/

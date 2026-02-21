@@ -148,7 +148,7 @@ class NotionStorageBackend(StorageBackend):
 
         DESIGN: Returns default_data when db_id is empty (partial Notion config).
         Only tasks/questions DB IDs are required at startup (loop.py validates).
-        Other DBs (notifications, insights, history, people) are optional —
+        Other DBs (notifications, insights) are optional —
         reads return empty, writes return error message. This allows users to
         start with just tasks+questions and add more DBs later.
         """
@@ -321,39 +321,3 @@ class NotionStorageBackend(StorageBackend):
             "insights", self._dbs.insights, insights, insight_to_notion
         )
 
-    # ---- History ----
-
-    def load_history(self) -> dict:
-        from nanobot.notion.mapper import notion_to_completed_task
-        return self._load_entity(
-            "history", self._dbs.history, notion_to_completed_task,
-            "completed_tasks",
-            {"version": "1.0", "completed_tasks": [], "projects": []},
-        )
-
-    def save_history(self, data: dict) -> tuple[bool, str]:
-        # DESIGN: Only completed_tasks are saved to Notion; projects are not persisted.
-        # Notion has no projects DB — projects data exists only in JsonStorageBackend.
-        # This is acceptable: projects are rarely used and can be added as a separate
-        # Notion DB in the future if needed.
-        from nanobot.notion.mapper import completed_task_to_notion
-        completed = data.get("completed_tasks", [])
-        return self._save_entity_items(
-            "history", self._dbs.history, completed, completed_task_to_notion
-        )
-
-    # ---- People ----
-
-    def load_people(self) -> dict:
-        from nanobot.notion.mapper import notion_to_person
-        return self._load_entity(
-            "people", self._dbs.people, notion_to_person, "people",
-            {"version": "1.0", "people": []},
-        )
-
-    def save_people(self, data: dict) -> tuple[bool, str]:
-        from nanobot.notion.mapper import person_to_notion
-        people = data.get("people", [])
-        return self._save_entity_items(
-            "people", self._dbs.people, people, person_to_notion
-        )
