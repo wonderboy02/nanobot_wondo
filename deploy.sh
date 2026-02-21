@@ -3,6 +3,16 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
+# --- Detect docker compose command (V2 plugin or V1 standalone) ---
+if docker compose version &>/dev/null; then
+    DC="docker compose"
+elif command -v docker-compose &>/dev/null; then
+    DC="docker-compose"
+else
+    echo "ERROR: Neither 'docker compose' nor 'docker-compose' found."
+    exit 1
+fi
+
 # --- First run: bootstrap data directory ---
 if [ ! -d "data" ]; then
     echo "==> First run detected. Creating data/ directory..."
@@ -36,16 +46,15 @@ if ! git pull --ff-only; then
 fi
 
 echo "==> Building and starting container..."
-# Requires Docker Compose V2 plugin (docker compose, not docker-compose).
-docker compose up --build -d
+$DC up --build -d
 
 echo "==> Verifying container health..."
 sleep 3
-if docker compose ps | grep -q "Up"; then
+if $DC ps | grep -q "Up"; then
     echo "==> Deploy successful."
-    docker compose ps
+    $DC ps
 else
     echo "ERROR: Container is not running."
-    docker compose logs --tail=30
+    $DC logs --tail=30
     exit 1
 fi
