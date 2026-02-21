@@ -40,14 +40,8 @@ def test_workspace(tmp_path):
     # Create knowledge directory
     knowledge_dir = dashboard_dir / "knowledge"
     knowledge_dir.mkdir()
-    (knowledge_dir / "history.json").write_text(
-        json.dumps({"version": "1.0", "completed_tasks": [], "projects": []}, indent=2)
-    )
     (knowledge_dir / "insights.json").write_text(
         json.dumps({"version": "1.0", "insights": []}, indent=2)
-    )
-    (knowledge_dir / "people.json").write_text(
-        json.dumps({"version": "1.0", "people": []}, indent=2)
     )
 
     return workspace

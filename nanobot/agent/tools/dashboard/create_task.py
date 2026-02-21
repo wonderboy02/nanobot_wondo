@@ -61,7 +61,7 @@ class CreateTaskTool(BaseDashboardTool):
     ) -> str:
         try:
             # Load existing tasks
-            tasks_data = self._load_tasks()
+            tasks_data = await self._load_tasks()
 
             # Generate new task
             task_id = self._generate_id("task")
@@ -94,7 +94,6 @@ class CreateTaskTool(BaseDashboardTool):
                 "tags": tags or [],
                 "links": {
                     "projects": [],
-                    "people": [],
                     "insights": [],
                     "resources": [],
                 },
@@ -104,7 +103,7 @@ class CreateTaskTool(BaseDashboardTool):
             tasks_data["tasks"].append(new_task)
 
             # Validate and save
-            success, message = self._validate_and_save_tasks(tasks_data)
+            success, message = await self._validate_and_save_tasks(tasks_data)
 
             if success:
                 return f"Created {task_id}: {title}"

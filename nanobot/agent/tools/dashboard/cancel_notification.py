@@ -47,7 +47,7 @@ class CancelNotificationTool(BaseDashboardTool):
         """Cancel a notification."""
         try:
             # Load notifications
-            notifications_data = self._load_notifications()
+            notifications_data = await self._load_notifications()
             notifications_list = notifications_data.get("notifications", [])
 
             # Find notification
@@ -63,15 +63,8 @@ class CancelNotificationTool(BaseDashboardTool):
             if notification.get("status") == "delivered":
                 return f"Error: Cannot cancel delivered notification '{notification_id}'"
 
-            # Remove cron job
-            cron_job_id = notification.get("cron_job_id")
-            if cron_job_id:
-                removed = self.cron_service.remove_job(cron_job_id)
-                if not removed:
-                    # Cron job may have already fired or been removed
-                    pass
-
             # Update notification status
+            cron_job_id = notification.get("cron_job_id")
             notification["status"] = "cancelled"
             notification["cancelled_at"] = self._now()
             if reason:
@@ -79,13 +72,40 @@ class CancelNotificationTool(BaseDashboardTool):
                     f"{notification.get('context', '')}\nCancellation reason: {reason}".strip()
                 )
 
-            # Save
+            # DESIGN: Save storage FIRST, then remove cron (storage-first commit).
+            # If cron removal fails after save, the notification is correctly
+            # marked as cancelled. Orphaned one-shot cron (delete_after_run=True)
+            # will fire once through agent.process_direct but is harmless:
+            # the message is just text processed by the LLM, not a direct send
+            # that bypasses status checks. The cron self-deletes after running.
             notifications_list[index] = notification
             notifications_data["notifications"] = notifications_list
 
-            success, msg = self._validate_and_save_notifications(notifications_data)
+            success, msg = await self._validate_and_save_notifications(notifications_data)
             if not success:
                 return msg
+
+            # Now remove cron job (safe: storage already committed)
+            # remove_job returns bool (not raises), so check return value.
+            if cron_job_id:
+                try:
+                    removed = self.cron_service.remove_job(cron_job_id)
+                    if not removed:
+                        from loguru import logger
+                        logger.warning(
+                            f"Cron job {cron_job_id} not found during cancellation "
+                            f"of notification {notification_id}"
+                        )
+                except Exception as cron_err:
+                    from loguru import logger
+                    logger.warning(
+                        f"Notification {notification_id} cancelled in storage, "
+                        f"but cron removal failed: {cron_err}"
+                    )
+                    return (
+                        f"⚠️ Notification '{notification_id}' cancelled, "
+                        f"but cron job cleanup failed (will be ignored on next run)."
+                    )
 
             return f"✅ Notification '{notification_id}' cancelled successfully"
 

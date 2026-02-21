@@ -1,5 +1,6 @@
 """LLM-powered Worker Agent for autonomous Dashboard maintenance."""
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ class LLMWorkerAgent:
     - Analyze task progress and schedule notifications
     - Manage question queue (create/update/remove)
     - Clean up obsolete data
-    - Move completed tasks to history
+    - Archive completed tasks
     """
 
     def __init__(
@@ -30,13 +31,15 @@ class LLMWorkerAgent:
         provider: LLMProvider,
         model: str,
         cron_service: CronService,
-        bus: MessageBus
+        bus: MessageBus,
+        storage_backend: "StorageBackend | None" = None,
     ):
         self.workspace = workspace
         self.provider = provider
         self.model = model
         self.cron_service = cron_service
         self.bus = bus
+        self.storage_backend = storage_backend
         self.tools = ToolRegistry()
 
         # Register Worker-specific tools
@@ -68,17 +71,17 @@ class LLMWorkerAgent:
         self.tools.register(ListNotificationsTool(self.workspace))
 
         # Task management (2 tools)
-        # Worker updates and moves tasks to history
+        # Worker updates and archives tasks
         # Note: create_task removed - Worker doesn't create tasks (Main Agent's role)
         from nanobot.agent.tools.dashboard.update_task import UpdateTaskTool
-        from nanobot.agent.tools.dashboard.move_to_history import MoveToHistoryTool
+        from nanobot.agent.tools.dashboard.archive_task import ArchiveTaskTool
 
         self.tools.register(UpdateTaskTool(self.workspace))
-        self.tools.register(MoveToHistoryTool(self.workspace))
+        self.tools.register(ArchiveTaskTool(self.workspace))
 
         # Knowledge management removed - save_insight not actively used
 
-    def _build_context(self) -> list[dict]:
+    async def _build_context(self) -> list[dict]:
         """Build context messages for Worker Agent."""
         messages = []
 
@@ -98,17 +101,26 @@ class LLMWorkerAgent:
                     "You are the Worker Agent. Analyze the Dashboard and perform maintenance tasks:\n"
                     "- Schedule notifications for deadlines and progress checks\n"
                     "- Manage question queue (create, update, remove)\n"
-                    "- Move completed tasks to history\n"
+                    "- Archive completed tasks\n"
                     "- Clean up obsolete data\n"
                     "Operate autonomously and efficiently."
                 )
             })
 
-        # 2. Build Dashboard Summary (all active tasks + questions + notifications)
-        dashboard_summary = get_dashboard_summary(self.workspace / "dashboard")
-
-        # 3. Build Notifications Summary
-        notifications_summary = self._build_notifications_summary()
+        # 2. Build Dashboard Summary + Notifications Summary
+        # Use asyncio.to_thread when Notion backend is active to avoid blocking
+        if self.storage_backend is not None:
+            dashboard_summary = await asyncio.to_thread(
+                get_dashboard_summary,
+                self.workspace / "dashboard",
+                self.storage_backend,
+            )
+            notifications_summary = await asyncio.to_thread(
+                self._build_notifications_summary
+            )
+        else:
+            dashboard_summary = get_dashboard_summary(self.workspace / "dashboard")
+            notifications_summary = self._build_notifications_summary()
 
         # 4. Combine into user message
         user_message = (
@@ -119,7 +131,7 @@ class LLMWorkerAgent:
             "Analyze the Dashboard state and perform necessary maintenance actions:\n"
             "1. Check for tasks needing notifications (deadlines, stagnant progress, blockers)\n"
             "2. Manage question queue (create, update, remove as needed)\n"
-            "3. Move completed tasks to history\n"
+            "3. Archive completed tasks\n"
             "4. Schedule appropriate notifications (check existing ones first!)\n"
             "5. Clean up obsolete questions\n\n"
             "Use the available tools to make changes. Be proactive but avoid spam."
@@ -136,12 +148,14 @@ class LLMWorkerAgent:
         """Build summary of scheduled notifications."""
         from datetime import datetime
 
-        notifications_path = self.workspace / "dashboard" / "notifications.json"
-        if not notifications_path.exists():
-            return "## Scheduled Notifications\n\nNo notifications scheduled."
-
         try:
-            data = json.loads(notifications_path.read_text(encoding="utf-8"))
+            if self.storage_backend is not None:
+                data = self.storage_backend.load_notifications()
+            else:
+                notifications_path = self.workspace / "dashboard" / "notifications.json"
+                if not notifications_path.exists():
+                    return "## Scheduled Notifications\n\nNo notifications scheduled."
+                data = json.loads(notifications_path.read_text(encoding="utf-8"))
             notifications = data.get("notifications", [])
 
             if not notifications:
@@ -181,7 +195,7 @@ class LLMWorkerAgent:
 
         try:
             # Build context
-            messages = self._build_context()
+            messages = await self._build_context()
 
             # Get tool schemas
             tool_schemas = [self.tools.get(name).to_schema() for name in self.tools.tool_names]
@@ -201,29 +215,38 @@ class LLMWorkerAgent:
                     temperature=temperature
                 )
 
-                # Check for tool calls
-                tool_calls = response.get("tool_calls", [])
+                # Check for tool calls (LLMResponse is a dataclass, not a dict)
+                tool_calls = response.tool_calls
 
                 if not tool_calls:
                     # No more tool calls - Worker is done
-                    final_message = response.get("content", "")
+                    final_message = response.content or ""
                     if final_message:
                         logger.info(f"Worker Agent: {final_message}")
                     break
 
                 # Add assistant message to history
+                # Convert ToolCallRequest dataclasses to dicts for message format
+                tool_calls_dicts = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    }
+                    for tc in tool_calls
+                ]
                 messages.append({
                     "role": "assistant",
-                    "content": response.get("content") or "",
-                    "tool_calls": tool_calls
+                    "content": response.content or "",
+                    "tool_calls": tool_calls_dicts
                 })
 
-                # Execute tool calls
+                # Execute tool calls (ToolCallRequest is a dataclass)
                 tool_results = []
                 for tool_call in tool_calls:
-                    tool_name = tool_call.get("name")
-                    tool_args = tool_call.get("arguments", {})
-                    tool_id = tool_call.get("id", "")
+                    tool_name = tool_call.name
+                    tool_args = tool_call.arguments
+                    tool_id = tool_call.id
 
                     logger.debug(f"Worker Agent: Executing tool {tool_name}")
 

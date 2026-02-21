@@ -6,7 +6,7 @@ from nanobot.agent.tools.dashboard.answer_question import AnswerQuestionTool
 from nanobot.agent.tools.dashboard.create_question import CreateQuestionTool
 from nanobot.agent.tools.dashboard.update_question import UpdateQuestionTool
 from nanobot.agent.tools.dashboard.remove_question import RemoveQuestionTool
-from nanobot.agent.tools.dashboard.move_to_history import MoveToHistoryTool
+from nanobot.agent.tools.dashboard.archive_task import ArchiveTaskTool
 from nanobot.agent.tools.dashboard.save_insight import SaveInsightTool
 from nanobot.agent.tools.dashboard.schedule_notification import ScheduleNotificationTool
 from nanobot.agent.tools.dashboard.update_notification import UpdateNotificationTool
@@ -20,7 +20,7 @@ __all__ = [
     "CreateQuestionTool",
     "UpdateQuestionTool",
     "RemoveQuestionTool",
-    "MoveToHistoryTool",
+    "ArchiveTaskTool",
     "SaveInsightTool",
     "ScheduleNotificationTool",
     "UpdateNotificationTool",

@@ -31,9 +31,7 @@ class DashboardManager:
             "questions": self._load_json(self.questions_file).get("questions", []),
             "notifications": self._load_json(self.notifications_file).get("notifications", []),
             "knowledge": {
-                "history": self._load_json(self.knowledge_path / "history.json"),
                 "insights": self._load_json(self.knowledge_path / "insights.json").get("insights", []),
-                "people": self._load_json(self.knowledge_path / "people.json").get("people", []),
             }
         }
 
@@ -64,14 +62,9 @@ class DashboardManager:
 
         # Save knowledge
         knowledge = dashboard.get("knowledge", {})
-        self._save_json(self.knowledge_path / "history.json", knowledge.get("history", {"version": "1.0"}))
         self._save_json(self.knowledge_path / "insights.json", {
             "version": "1.0",
             "insights": knowledge.get("insights", [])
-        })
-        self._save_json(self.knowledge_path / "people.json", {
-            "version": "1.0",
-            "people": knowledge.get("people", [])
         })
 
     def _load_json(self, file_path: Path) -> dict[str, Any]:

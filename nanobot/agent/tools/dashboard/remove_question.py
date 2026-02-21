@@ -41,7 +41,7 @@ class RemoveQuestionTool(BaseDashboardTool):
         """Remove a question."""
         try:
             # Load questions
-            questions_data = self._load_questions()
+            questions_data = await self._load_questions()
             questions_list = questions_data.get("questions", [])
 
             # Find question
@@ -57,7 +57,7 @@ class RemoveQuestionTool(BaseDashboardTool):
             questions_data["questions"] = questions_list
 
             # Save
-            success, msg = self._validate_and_save_questions(questions_data)
+            success, msg = await self._validate_and_save_questions(questions_data)
             if not success:
                 return msg
 

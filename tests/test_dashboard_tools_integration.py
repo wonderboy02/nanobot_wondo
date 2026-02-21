@@ -58,7 +58,7 @@ def test_agent_has_dashboard_tools(temp_workspace):
     assert "answer_question" in tool_names, "answer_question tool not registered"
     assert "create_question" in tool_names, "create_question tool not registered"
     assert "save_insight" in tool_names, "save_insight tool not registered"
-    assert "move_to_history" in tool_names, "move_to_history tool not registered"
+    assert "archive_task" in tool_names, "archive_task tool not registered"
 
     print(f"✅ All 6 dashboard tools registered: {tool_names}")
 

@@ -45,7 +45,7 @@ class ListNotificationsTool(BaseDashboardTool):
         """List notifications."""
         try:
             # Load notifications
-            notifications_data = self._load_notifications()
+            notifications_data = await self._load_notifications()
             notifications_list = notifications_data.get("notifications", [])
 
             if not notifications_list:

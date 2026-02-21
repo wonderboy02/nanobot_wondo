@@ -1,5 +1,6 @@
 .assets
 .env
+__verify.py
 *.pyc
 dist/
 build/
@@ -31,6 +32,7 @@ bridge/node_modules/
 # User configuration and data
 .nanobot/
 config.json
+data/
 *.secret
 
 # Personal dashboard data

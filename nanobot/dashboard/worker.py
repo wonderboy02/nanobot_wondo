@@ -27,7 +27,7 @@ class WorkerAgent:
     Runs periodically to:
     - Check task progress
     - Generate questions
-    - Move completed tasks to history
+    - Archive completed tasks
     - Re-evaluate active status
     - Process notifications
     """
@@ -67,8 +67,8 @@ class WorkerAgent:
         # Check all tasks
         await self.check_all_tasks(dashboard)
 
-        # Move completed tasks to history
-        self.move_completed_to_history(dashboard)
+        # Archive completed tasks
+        self.archive_completed_tasks(dashboard)
 
         # Re-evaluate active status
         self.reevaluate_active_status(dashboard)
@@ -83,7 +83,7 @@ class WorkerAgent:
 
     async def check_all_tasks(self, dashboard: dict[str, Any]) -> None:
         """Check all active tasks for progress."""
-        active_tasks = [t for t in dashboard['tasks'] if t['status'] == 'active']
+        active_tasks = [t for t in dashboard.get('tasks', []) if t.get('status') == 'active']
 
         for task in active_tasks:
             await self.check_task_progress(task, dashboard)
@@ -231,7 +231,7 @@ class WorkerAgent:
         cooldown_hours: int
     ) -> None:
         """Add question to queue (with duplicate prevention)."""
-        questions = dashboard['questions']
+        questions = dashboard.get('questions', [])
 
         # Check for existing question
         existing = None
@@ -300,45 +300,32 @@ class WorkerAgent:
         priority_order = {"high": 3, "medium": 2, "low": 1}
         return priority_order.get(new_priority, 0) > priority_order.get(old_priority, 0)
 
-    def move_completed_to_history(self, dashboard: dict[str, Any]) -> None:
-        """Move completed tasks to history."""
-        tasks = dashboard['tasks']
-        history = dashboard['knowledge']['history']
+    def archive_completed_tasks(self, dashboard: dict[str, Any]) -> None:
+        """Archive completed or cancelled tasks by setting status to 'archived'."""
+        tasks = dashboard.get('tasks', [])
 
-        completed_tasks = [t for t in tasks if t.get('status') == 'completed']
+        targets = [t for t in tasks if t.get('status') in ('completed', 'cancelled')]
 
-        for task in completed_tasks:
-            # Add to history
-            history_entry = {
-                "id": task['id'],
-                "title": task['title'],
-                "completed_at": task.get('completed_at', datetime.now().isoformat()),
-                "duration_days": self._calculate_duration(task),
-                "progress_note": task.get('progress', {}).get('note', ''),
-                "links": task.get('links', {}),
-                "moved_at": datetime.now().isoformat()
-            }
+        now = datetime.now().isoformat()
+        for task in targets:
+            was_cancelled = task.get('status') == 'cancelled'
+            task['status'] = 'archived'
+            task['completed_at'] = task.get('completed_at') or now
+            progress = task.setdefault('progress', {'last_update': now})
+            if not was_cancelled:
+                progress['percentage'] = 100
+            progress.setdefault('last_update', now)
+            task['updated_at'] = now
 
-            history.setdefault('completed_tasks', []).append(history_entry)
-
-            # Remove from tasks
-            tasks.remove(task)
-
-            logger.info(f"[Worker] Task moved to history: {task['title']}")
-
-    def _calculate_duration(self, task: dict[str, Any]) -> int:
-        """Calculate task duration in days."""
-        created = parse_datetime(task['created_at'])
-        completed = parse_datetime(task.get('completed_at', datetime.now().isoformat()))
-        return (completed - created).days
+            logger.info(f"[Worker] Task archived: {task.get('title', '<unknown>')}")
 
     def reevaluate_active_status(self, dashboard: dict[str, Any]) -> None:
         """Re-evaluate active/someday status for all tasks."""
         now = datetime.now()
-        tasks = dashboard['tasks']
+        tasks = dashboard.get('tasks', [])
 
         for task in tasks:
-            if task.get('status') in ['completed', 'cancelled']:
+            if task.get('status') in ['completed', 'cancelled', 'archived']:
                 continue
 
             old_status = task.get('status', 'someday')
@@ -346,7 +333,7 @@ class WorkerAgent:
 
             if old_status != new_status:
                 task['status'] = new_status
-                logger.info(f"[Worker] Task '{task['title']}' status: {old_status} → {new_status}")
+                logger.info(f"[Worker] Task '{task.get('title', '<unknown>')}' status: {old_status} → {new_status}")
 
     def _determine_status(self, task: dict[str, Any], now: datetime) -> str:
         """Determine if task should be active or someday."""
@@ -377,7 +364,7 @@ class WorkerAgent:
 
     def cleanup_question_queue(self, dashboard: dict[str, Any]) -> None:
         """Clean up question queue - remove old/duplicate questions."""
-        questions = dashboard['questions']
+        questions = dashboard.get('questions', [])
         now = datetime.now()
 
         original_count = len(questions)

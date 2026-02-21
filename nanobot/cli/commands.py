@@ -170,9 +170,7 @@ This file stores important information that should persist across sessions.
     knowledge_dir.mkdir(exist_ok=True)
 
     knowledge_files = {
-        "history.json": {"version": "1.0", "completed_tasks": [], "projects": []},
         "insights.json": {"version": "1.0", "insights": []},
-        "people.json": {"version": "1.0", "people": []},
     }
 
     for filename, data in knowledge_files.items():
@@ -258,11 +256,58 @@ def gateway(
         exec_config=config.tools.exec,
         cron_service=cron,
         restrict_to_workspace=config.tools.restrict_to_workspace,
+        notion_config=config.notion if config.notion.enabled else None,
     )
     
     # Set cron callback (needs agent)
+    # DESIGN: Notification delivery goes through agent.process_direct (LLM turn).
+    # This means LLM failure/delay can affect notification delivery.
+    # Intentional: allows agent to enrich the notification with context.
+    # For raw passthrough, the deliver=True path below sends directly via bus.
+    async def _load_notifications_data() -> dict:
+        """Load notifications from Notion backend or JSON file."""
+        if agent.storage_backend:
+            return await asyncio.to_thread(agent.storage_backend.load_notifications)
+        notif_path = config.workspace_path / "dashboard" / "notifications.json"
+        if notif_path.exists():
+            import json
+            return json.loads(notif_path.read_text(encoding="utf-8"))
+        return {"version": "1.0", "notifications": []}
+
+    async def _save_notifications_data(data: dict) -> bool:
+        """Save notifications to Notion backend or JSON file. Returns success."""
+        if agent.storage_backend:
+            ok, _msg = await asyncio.to_thread(
+                agent.storage_backend.save_notifications, data
+            )
+            return ok
+        else:
+            notif_path = config.workspace_path / "dashboard" / "notifications.json"
+            import json
+            notif_path.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            return True
+
     async def on_cron_job(job: CronJob) -> str | None:
         """Execute a cron job through the agent."""
+        # Notification-specific: guard + mark delivered
+        is_notification = job.name.startswith("notification_")
+        notif_id = job.name.removeprefix("notification_") if is_notification else None
+
+        if is_notification:
+            data = await _load_notifications_data()
+            notifs = data.get("notifications", [])
+            notif = next((n for n in notifs if n.get("id") == notif_id), None)
+            if notif is None:
+                from loguru import logger
+                logger.warning(f"Notification {notif_id} not found, skipping cron delivery")
+                return None
+            if notif.get("status") in ("cancelled", "delivered"):
+                from loguru import logger
+                logger.info(f"Skipping {notif['status']} notification cron: {notif_id}")
+                return None
+
         response = await agent.process_direct(
             job.payload.message,
             session_key=f"cron:{job.id}",
@@ -276,6 +321,28 @@ def gateway(
                 chat_id=job.payload.to,
                 content=response or ""
             ))
+
+        # Mark notification as delivered (prevents duplicate from orphan crons)
+        if is_notification:
+            try:
+                from datetime import datetime
+                data = await _load_notifications_data()
+                notifs = data.get("notifications", [])
+                for n in notifs:
+                    if n.get("id") == notif_id:
+                        n["status"] = "delivered"
+                        n["delivered_at"] = datetime.now().isoformat()
+                        break
+                ok = await _save_notifications_data(data)
+                if not ok:
+                    from loguru import logger
+                    logger.warning(
+                        f"Failed to persist delivered status for notification {notif_id}"
+                    )
+            except Exception:
+                from loguru import logger
+                logger.warning(f"Failed to mark notification {notif_id} as delivered")
+
         return response
     cron.on_job = on_cron_job
     
@@ -299,11 +366,17 @@ def gateway(
         cron_service=cron,
         bus=bus,
         use_llm_worker=use_llm_worker,
+        storage_backend=agent.storage_backend,
     )
     
     # Create channel manager
     channels = ChannelManager(config, bus)
-    
+
+    # Wire storage backend to Telegram channel for /questions, /tasks commands
+    telegram_ch = channels.get_channel("telegram")
+    if telegram_ch and agent.storage_backend:
+        telegram_ch.storage_backend = agent.storage_backend
+
     if channels.enabled_channels:
         console.print(f"[green]✓[/green] Channels enabled: {', '.join(channels.enabled_channels)}")
     else:
@@ -376,6 +449,7 @@ def agent(
         brave_api_key=config.tools.web.search.api_key or None,
         exec_config=config.tools.exec,
         restrict_to_workspace=config.tools.restrict_to_workspace,
+        notion_config=config.notion if config.notion.enabled else None,
     )
     
     if message:
@@ -459,7 +533,8 @@ def _get_bridge_dir() -> Path:
     import subprocess
     
     # User's bridge location
-    user_bridge = Path.home() / ".nanobot" / "bridge"
+    from nanobot.utils.helpers import get_data_path
+    user_bridge = get_data_path() / "bridge"
     
     # Check if already built
     if (user_bridge / "dist" / "index.js").exists():
@@ -888,32 +963,32 @@ def dashboard_dismiss(
 
 @dashboard_app.command("history")
 def dashboard_history():
-    """Show completed tasks history."""
+    """Show archived/completed tasks."""
     manager = _get_dashboard_manager()
     dashboard = manager.load()
 
-    history = dashboard.get('knowledge', {}).get('history', {})
-    completed = history.get('completed_tasks', [])
+    tasks = dashboard.get('tasks', [])
+    archived = [t for t in tasks if t.get('status') in ('completed', 'archived')]
 
-    if not completed:
-        console.print("No completed tasks yet.")
+    if not archived:
+        console.print("No archived tasks yet.")
         return
 
     table = Table(title="History", show_header=True, header_style="bold green")
     table.add_column("ID", style="dim", width=10)
     table.add_column("Title", width=40)
     table.add_column("Completed", width=20)
-    table.add_column("Duration", width=10)
+    table.add_column("Reflection", width=30)
 
-    for task in reversed(completed[-20:]):  # Last 20
-        completed_at = task.get('completed_at', '')[:10]
-        duration = f"{task.get('duration_days', 0)}d"
+    for task in reversed(archived[-20:]):  # Last 20
+        completed_at = (task.get('completed_at') or '')[:10]
+        reflection = (task.get('reflection') or '')[:30]
 
         table.add_row(
             task['id'][:8],
             task['title'][:40],
             completed_at,
-            duration
+            reflection
         )
 
     console.print(table)
@@ -938,6 +1013,92 @@ def dashboard_worker():
     asyncio.run(run())
 
     console.print("[green]✓[/green] Worker cycle complete")
+
+
+# ============================================================================
+# Notion Commands
+# ============================================================================
+
+notion_app = typer.Typer(help="Notion integration management")
+app.add_typer(notion_app, name="notion")
+
+
+@notion_app.command("validate")
+def notion_validate():
+    """Validate Notion database configuration and connectivity."""
+    from nanobot.config.loader import load_config
+
+    config = load_config()
+
+    if not config.notion.enabled:
+        console.print("[yellow]Notion integration is not enabled.[/yellow]")
+        console.print("Set notion.enabled=true in ~/.nanobot/config.json")
+        raise typer.Exit(1)
+
+    if not config.notion.token:
+        console.print("[red]Notion token not configured.[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"{__logo__} Validating Notion configuration...\n")
+
+    from nanobot.notion.client import NotionClient, NotionAPIError
+
+    client = NotionClient(token=config.notion.token)
+
+    all_ok = True
+
+    try:
+        dbs = config.notion.databases
+        db_map = {
+            "Tasks": dbs.tasks,
+            "Questions": dbs.questions,
+            "Notifications": dbs.notifications,
+            "Insights": dbs.insights,
+        }
+
+        # Check that at least core DBs are configured
+        configured_count = sum(1 for db_id in db_map.values() if db_id)
+        if configured_count == 0:
+            console.print("[red]No database IDs configured at all.[/red]")
+            console.print("Add database IDs to notion.databases in ~/.nanobot/config.json")
+            raise typer.Exit(1)
+
+        core_missing = []
+        if not dbs.tasks:
+            core_missing.append("tasks")
+        if not dbs.questions:
+            core_missing.append("questions")
+        if core_missing:
+            console.print(
+                f"  [red]✗ Core databases missing:[/red] {', '.join(core_missing)}"
+            )
+
+        all_ok = not core_missing
+        for name, db_id in db_map.items():
+            if not db_id:
+                console.print(f"  [yellow]⚠ {name}:[/yellow] No database ID configured")
+                continue
+
+            try:
+                # Try querying to check access (NotionClient is synchronous)
+                pages = client.query_database(db_id, filter=None, sorts=None)
+                count = len(pages)
+                console.print(f"  [green]✓ {name}:[/green] OK ({count} pages)")
+            except NotionAPIError as e:
+                console.print(f"  [red]✗ {name}:[/red] {e}")
+                all_ok = False
+            except Exception as e:
+                console.print(f"  [red]✗ {name}:[/red] Connection error: {e}")
+                all_ok = False
+    finally:
+        client.close()
+
+    if all_ok:
+        console.print("\n[green]✓ All configured databases are accessible![/green]")
+    else:
+        console.print("\n[red]Some databases failed validation.[/red]")
+        console.print("Check your database IDs and integration permissions.")
+        raise typer.Exit(1)
 
 
 # ============================================================================

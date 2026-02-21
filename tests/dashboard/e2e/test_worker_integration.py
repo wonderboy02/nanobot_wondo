@@ -42,15 +42,8 @@ def integration_setup(tmp_path):
 
     knowledge_dir = dashboard_path / "knowledge"
     knowledge_dir.mkdir()
-    (knowledge_dir / "history.json").write_text(
-        json.dumps({"version": "1.0", "completed_tasks": [], "projects": []}, indent=2),
-        encoding="utf-8"
-    )
     (knowledge_dir / "insights.json").write_text(
         json.dumps({"version": "1.0", "insights": []}, indent=2), encoding="utf-8"
-    )
-    (knowledge_dir / "people.json").write_text(
-        json.dumps({"version": "1.0", "people": []}, indent=2), encoding="utf-8"
     )
 
     (workspace / "DASHBOARD.md").write_text(
@@ -197,14 +190,14 @@ async def test_integration_02_worker_ask_agent_answer(integration_setup):
 
 @pytest.mark.asyncio
 @pytest.mark.e2e
-async def test_integration_03_complete_then_history(integration_setup):
-    """Integration 3: Agent completes task → Worker moves to history
+async def test_integration_03_complete_then_archive(integration_setup):
+    """Integration 3: Agent completes task → Worker archives it
 
     Flow:
       1. Agent marks task as completed
       2. Worker runs
-      3. Worker moves completed task to history
-      4. Verify task in history, removed from active
+      3. Worker archives the completed task (status → archived)
+      4. Verify task is archived in tasks.json
     """
     setup = integration_setup
     agent = setup["agent"]
@@ -228,17 +221,14 @@ async def test_integration_03_complete_then_history(integration_setup):
     # Step 2: Worker runs
     await worker.run_cycle()
 
-    # Step 3: Verify moved to history
+    # Step 3: Verify task is archived in tasks.json
     dashboard2 = manager.load()
 
-    # Task should be removed from active tasks
-    active_tasks = [t for t in dashboard2["tasks"] if t["id"] == task_id]
-    assert len(active_tasks) == 0, "Completed task should be removed from active tasks"
-
-    # Task should be in history
-    history_tasks = dashboard2["knowledge"]["history"]["completed_tasks"]
-    history_task_ids = [t["id"] for t in history_tasks]
-    assert task_id in history_task_ids, "Completed task should be in history"
+    # Task should still be in tasks list but with archived status
+    task = next((t for t in dashboard2["tasks"] if t["id"] == task_id), None)
+    assert task is not None, "Task should still exist in tasks.json"
+    assert task["status"] == "archived", \
+        f"Task should be archived by worker, got {task['status']}"
 
 
 @pytest.mark.asyncio
@@ -253,7 +243,7 @@ async def test_integration_04_full_lifecycle(integration_setup):
       4. Worker checks progress (slightly behind)
       5. User updates (60%)
       6. User completes
-      7. Worker moves to history
+      7. Worker archives the task
     """
     setup = integration_setup
     agent = setup["agent"]
@@ -295,19 +285,17 @@ async def test_integration_04_full_lifecycle(integration_setup):
     await agent.process_direct("발표 준비 다 끝났어", session_key="test:int04")
     await asyncio.sleep(1)
 
-    # Step 6: Worker moves to history
+    # Step 6: Worker archives the task
     await worker.run_cycle()
 
     # Verify final state
     dashboard_final = manager.load()
 
-    # Task should be in history
-    history_ids = [t["id"] for t in dashboard_final["knowledge"]["history"]["completed_tasks"]]
-    assert task_id in history_ids, "Task should be in history"
-
-    # Task should NOT be in active tasks
-    active_ids = [t["id"] for t in dashboard_final["tasks"]]
-    assert task_id not in active_ids, "Task should be removed from active"
+    # Task should still be in tasks.json but archived
+    task = next((t for t in dashboard_final["tasks"] if t["id"] == task_id), None)
+    assert task is not None, "Task should still exist in tasks.json"
+    assert task["status"] == "archived", \
+        f"Task should be archived by worker, got {task['status']}"
 
 
 @pytest.mark.asyncio
@@ -370,12 +358,11 @@ async def test_integration_05_multiple_workers_cycles(integration_setup):
     questions = dashboard2["questions"]
     assert len(questions) >= 1, "Should generate questions for problematic tasks"
 
-    # Task 3 should be moved to history
-    active_ids = [t["id"] for t in dashboard2["tasks"]]
-    assert "task_multi_3" not in active_ids, "Completed task should be removed"
-
-    history_ids = [t["id"] for t in dashboard2["knowledge"]["history"]["completed_tasks"]]
-    assert "task_multi_3" in history_ids, "Completed task should be in history"
+    # Task 3 should be archived (still in tasks.json with archived status)
+    task_3 = next((t for t in dashboard2["tasks"] if t["id"] == "task_multi_3"), None)
+    assert task_3 is not None, "Completed task should still exist in tasks.json"
+    assert task_3["status"] == "archived", \
+        f"Task should be archived by worker, got {task_3['status']}"
 
     # Run worker cycle 2 (shouldn't duplicate questions due to cooldown)
     await worker.run_cycle()

@@ -1,6 +1,7 @@
 """Configuration schema using Pydantic."""
 
 from pathlib import Path
+
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
 
@@ -12,12 +13,27 @@ class WhatsAppConfig(BaseModel):
     allow_from: list[str] = Field(default_factory=list)  # Allowed phone numbers
 
 
+class NotificationPolicyConfig(BaseModel):
+    """Smart notification policy configuration.
+
+    DESIGN: No Pydantic range validators (e.g., ge=0, le=23) applied intentionally.
+    Config is written by the user in config.json — invalid values cause no crash,
+    just unexpected quiet-hours behavior. See CLAUDE.md "Known Limitations #6".
+    """
+    quiet_hours_start: int = 23  # 23:00
+    quiet_hours_end: int = 8    # 08:00
+    daily_limit: int = 10       # Max notifications per day (High bypasses)
+    dedup_window_hours: int = 24  # Block duplicate notifications within this window
+    batch_max: int = 5           # Max notifications per batch message
+
+
 class TelegramConfig(BaseModel):
     """Telegram channel configuration."""
     enabled: bool = False
     token: str = ""  # Bot token from @BotFather
     allow_from: list[str] = Field(default_factory=list)  # Allowed user IDs or usernames
     proxy: str | None = None  # HTTP/SOCKS5 proxy URL, e.g. "http://127.0.0.1:7890" or "socks5://127.0.0.1:1080"
+    notification_policy: NotificationPolicyConfig = Field(default_factory=NotificationPolicyConfig)
 
 
 class FeishuConfig(BaseModel):
@@ -89,6 +105,22 @@ class ProvidersConfig(BaseModel):
     moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
 
 
+class NotionDatabasesConfig(BaseModel):
+    """Notion database IDs for each Dashboard entity."""
+    tasks: str = ""
+    questions: str = ""
+    notifications: str = ""
+    insights: str = ""
+
+
+class NotionConfig(BaseModel):
+    """Notion integration configuration."""
+    enabled: bool = False
+    token: str = ""  # Notion integration token (secret_xxx)
+    databases: NotionDatabasesConfig = Field(default_factory=NotionDatabasesConfig)
+    cache_ttl_s: int = 300  # In-memory cache TTL (5 minutes)
+
+
 class GatewayConfig(BaseModel):
     """Gateway/server configuration."""
     host: str = "0.0.0.0"
@@ -125,6 +157,7 @@ class Config(BaseSettings):
     providers: ProvidersConfig = Field(default_factory=ProvidersConfig)
     gateway: GatewayConfig = Field(default_factory=GatewayConfig)
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
+    notion: NotionConfig = Field(default_factory=NotionConfig)
     
     @property
     def workspace_path(self) -> Path:

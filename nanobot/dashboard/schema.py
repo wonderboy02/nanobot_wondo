@@ -1,6 +1,5 @@
 """Pydantic schemas for Dashboard data validation."""
 
-from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -29,7 +28,6 @@ class TaskProgress(BaseModel):
 class TaskLinks(BaseModel):
     """Task links to other entities."""
     projects: list[str] = Field(default_factory=list)
-    people: list[str] = Field(default_factory=list)
     insights: list[str] = Field(default_factory=list)
     resources: list[str] = Field(default_factory=list)
 
@@ -43,7 +41,7 @@ class Task(BaseModel):
     deadline_text: Optional[str] = None
     estimation: TaskEstimation = Field(default_factory=TaskEstimation)
     progress: TaskProgress
-    status: Literal["active", "someday", "completed", "cancelled"] = "active"
+    status: Literal["active", "someday", "completed", "cancelled", "archived"] = "active"
     priority: Literal["low", "medium", "high"] = "medium"
     context: str = ""
     tags: list[str] = Field(default_factory=list)
@@ -51,6 +49,7 @@ class Task(BaseModel):
     created_at: str  # ISO datetime
     updated_at: str  # ISO datetime
     completed_at: Optional[str] = None  # ISO datetime
+    reflection: str = ""
 
 
 class TasksFile(BaseModel):
@@ -128,34 +127,6 @@ class NotificationsFile(BaseModel):
 # Knowledge Schemas
 # ============================================================================
 
-class CompletedTask(BaseModel):
-    """Completed task in history."""
-    id: str
-    title: str
-    completed_at: str  # ISO datetime
-    duration_days: int
-    progress_note: str = ""
-    links: dict = Field(default_factory=dict)
-    moved_at: str  # ISO datetime
-
-
-class Project(BaseModel):
-    """Project schema."""
-    id: str
-    name: str
-    description: str = ""
-    status: Literal["active", "completed", "cancelled"] = "active"
-    task_ids: list[str] = Field(default_factory=list)
-    created_at: str  # ISO datetime
-    updated_at: str  # ISO datetime
-
-
-class HistoryFile(BaseModel):
-    """history.json schema."""
-    version: str = "1.0"
-    completed_tasks: list[CompletedTask] = Field(default_factory=list)
-    projects: list[Project] = Field(default_factory=list)
-
 
 class Insight(BaseModel):
     """Insight schema."""
@@ -175,25 +146,6 @@ class InsightsFile(BaseModel):
     insights: list[Insight] = Field(default_factory=list)
 
 
-class Person(BaseModel):
-    """Person schema."""
-    id: str
-    name: str
-    role: str = ""
-    relationship: str = ""
-    context: str = ""
-    contact: str = ""
-    links: dict = Field(default_factory=dict)
-    notes: str = ""
-    last_contact: Optional[str] = None
-
-
-class PeopleFile(BaseModel):
-    """people.json schema."""
-    version: str = "1.0"
-    people: list[Person] = Field(default_factory=list)
-
-
 # ============================================================================
 # Complete Dashboard Schema
 # ============================================================================
@@ -203,7 +155,7 @@ class Dashboard(BaseModel):
     tasks: list[Task]
     questions: list[Question]
     notifications: list[Notification] = Field(default_factory=list)
-    knowledge: dict  # Contains history, insights, people
+    knowledge: dict  # Contains insights
 
 
 # ============================================================================
@@ -225,19 +177,9 @@ def validate_notifications_file(data: dict) -> NotificationsFile:
     return NotificationsFile(**data)
 
 
-def validate_history_file(data: dict) -> HistoryFile:
-    """Validate history.json."""
-    return HistoryFile(**data)
-
-
 def validate_insights_file(data: dict) -> InsightsFile:
     """Validate insights.json."""
     return InsightsFile(**data)
-
-
-def validate_people_file(data: dict) -> PeopleFile:
-    """Validate people.json."""
-    return PeopleFile(**data)
 
 
 def validate_dashboard(dashboard: dict) -> Dashboard:

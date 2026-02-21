@@ -18,12 +18,14 @@ class ContextBuilder:
     into a coherent prompt for the LLM.
     """
     
-    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "IDENTITY.md", "DASHBOARD.md"]
+    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "DASHBOARD.md"]
     
-    def __init__(self, workspace: Path):
+    def __init__(self, workspace: Path, storage_backend: "StorageBackend | None" = None):
         self.workspace = workspace
+        self.storage_backend = storage_backend
         self.memory = MemoryStore(workspace)
         self.skills = SkillsLoader(workspace)
+        self._precomputed_dashboard: str | None = None
     
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
         """
@@ -83,14 +85,7 @@ Skills with available="false" need dependencies installed first - you can try in
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
         
-        return f"""# nanobot 🐈
-
-You are nanobot, a helpful AI assistant. You have access to tools that allow you to:
-- Read, write, and edit files
-- Execute shell commands
-- Search the web and fetch web pages
-- Send messages to users on chat channels
-- Spawn subagents for complex background tasks
+        return f"""# nanobot
 
 ## Current Time
 {now}
@@ -99,17 +94,11 @@ You are nanobot, a helpful AI assistant. You have access to tools that allow you
 {runtime}
 
 ## Workspace
-Your workspace is at: {workspace_path}
-- Memory files: {workspace_path}/memory/MEMORY.md
+{workspace_path}
+- Memory: {workspace_path}/memory/MEMORY.md
 - Daily notes: {workspace_path}/memory/YYYY-MM-DD.md
-- Custom skills: {workspace_path}/skills/{{skill-name}}/SKILL.md
 
-IMPORTANT: When responding to direct questions or conversations, reply directly with your text response.
-Only use the 'message' tool when you need to send a message to a specific chat channel (like WhatsApp).
-For normal conversation, just respond with text - do not call the message tool.
-
-Always be helpful, accurate, and concise. When using tools, explain what you're doing.
-When remembering something, write to {workspace_path}/memory/MEMORY.md"""
+Reply directly with text for conversations. Only use the 'message' tool for chat channel delivery."""
     
     def _load_bootstrap_files(self) -> str:
         """Load all bootstrap files from workspace."""
@@ -123,32 +112,56 @@ When remembering something, write to {workspace_path}/memory/MEMORY.md"""
 
         return "\n\n".join(parts) if parts else ""
 
+    def set_dashboard_summary(self, summary: str) -> None:
+        """Set pre-fetched dashboard summary to avoid blocking sync I/O.
+
+        Call this from async code (via asyncio.to_thread) before build_messages()
+        when the storage backend does blocking I/O (e.g., Notion).
+        """
+        self._precomputed_dashboard = summary
+
     def _get_dashboard_context(self) -> str:
         """
         Get current Dashboard state for context.
 
+        If a precomputed summary was set via set_dashboard_summary(),
+        uses that (one-time) to avoid blocking the event loop.
+        Otherwise falls back to synchronous loading (fine for JSON backend / CLI).
+
         Returns:
             Dashboard summary (active tasks + unanswered questions).
         """
+        if self._precomputed_dashboard is not None:
+            summary = self._precomputed_dashboard
+            self._precomputed_dashboard = None
+            return summary
+
+        # Sync fallback — fine for JsonStorageBackend / CLI, but warns if Notion
+        # backend is active without precomputed summary (potential event loop block).
         try:
             from nanobot.dashboard.helper import get_dashboard_summary
             dashboard_path = self.workspace / "dashboard"
 
-            # Dashboard directory doesn't exist yet - silent skip
-            if not dashboard_path.exists():
+            if not dashboard_path.exists() and self.storage_backend is None:
                 return ""
 
-            return get_dashboard_summary(dashboard_path)
+            if self.storage_backend is not None:
+                from loguru import logger
+                logger.warning(
+                    "Dashboard sync fallback with Notion backend — "
+                    "event loop will block during Notion I/O. "
+                    "Call set_dashboard_summary() before build_messages() to avoid this."
+                )
+
+            return get_dashboard_summary(dashboard_path, storage_backend=self.storage_backend)
 
         except ImportError:
-            # Dashboard module not installed - silent skip
             return ""
         except Exception as e:
-            # Unexpected error - log but don't break context building
             try:
                 from loguru import logger
                 logger.debug(f"Dashboard context skipped: {e}")
-            except:
+            except Exception:
                 pass
             return ""
     

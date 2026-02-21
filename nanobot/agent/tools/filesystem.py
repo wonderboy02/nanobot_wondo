@@ -31,9 +31,7 @@ def _is_read_only(path: Path, workspace: Path | None = None) -> bool:
         "tasks.json",
         "questions.json",
         "notifications.json",
-        "history.json",
         "insights.json",
-        "people.json",
     ]
 
     if workspace:
@@ -82,7 +80,7 @@ def _resolve_path(path: str, allowed_dir: Path | None = None,
     # Read-only file check (only when writing)
     if check_write and _is_read_only(resolved, allowed_dir):
         # Check if it's a dashboard data file
-        if any(pattern in str(resolved) for pattern in ["tasks.json", "questions.json", "notifications.json", "history.json", "insights.json", "people.json"]):
+        if any(pattern in str(resolved) for pattern in ["tasks.json", "questions.json", "notifications.json", "insights.json"]):
             raise PermissionError(
                 f"Path {path} is a dashboard data file. "
                 f"Use dashboard tools (create_task, update_task, answer_question, etc.) instead of write_file."

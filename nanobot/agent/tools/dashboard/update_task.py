@@ -36,7 +36,7 @@ class UpdateTaskTool(BaseDashboardTool):
                 "status": {
                     "type": "string",
                     "enum": ["active", "completed", "someday", "cancelled"],
-                    "description": "Task status",
+                    "description": "Task status (use archive_task tool for archiving)",
                 },
                 "blocked": {
                     "type": "boolean",
@@ -84,7 +84,7 @@ class UpdateTaskTool(BaseDashboardTool):
     ) -> str:
         try:
             # Load existing tasks
-            tasks_data = self._load_tasks()
+            tasks_data = await self._load_tasks()
 
             # Find task
             task, index = self._find_task(tasks_data["tasks"], task_id)
@@ -128,7 +128,7 @@ class UpdateTaskTool(BaseDashboardTool):
             tasks_data["tasks"][index] = task
 
             # Validate and save
-            success, message = self._validate_and_save_tasks(tasks_data)
+            success, message = await self._validate_and_save_tasks(tasks_data)
 
             if success:
                 return f"Updated {task_id}"

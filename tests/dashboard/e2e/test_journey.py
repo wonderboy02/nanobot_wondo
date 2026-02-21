@@ -26,30 +26,12 @@ from nanobot.config.loader import load_config
 
 
 def get_completed_tasks(dashboard_path: Path) -> list[dict]:
-    """
-    Get all completed tasks from both tasks.json and history.json.
-
-    Agent may:
-    1. Mark task as completed in tasks.json (status="completed")
-    2. Move task to history.json using move_to_history tool
-
-    This helper checks both locations.
-    """
-    completed = []
-
-    # Check tasks.json for status="completed"
+    """Get all completed/archived tasks from tasks.json."""
     tasks_file = dashboard_path / "tasks.json"
     if tasks_file.exists():
-        tasks_data = json.loads(tasks_file.read_text(encoding="utf-8"))
-        completed.extend([t for t in tasks_data.get("tasks", []) if t.get("status") == "completed"])
-
-    # Check history.json for moved tasks
-    history_file = dashboard_path / "knowledge" / "history.json"
-    if history_file.exists():
-        history_data = json.loads(history_file.read_text(encoding="utf-8"))
-        completed.extend(history_data.get("completed_tasks", []))
-
-    return completed
+        data = json.loads(tasks_file.read_text(encoding="utf-8"))
+        return [t for t in data.get("tasks", []) if t.get("status") in ("completed", "archived")]
+    return []
 
 
 @pytest.fixture(scope="function")
@@ -76,16 +58,8 @@ def agent_setup(tmp_path):
 
     knowledge_dir = dashboard_path / "knowledge"
     knowledge_dir.mkdir()
-    (knowledge_dir / "history.json").write_text(
-        json.dumps({"version": "1.0", "completed_tasks": [], "projects": []}, indent=2),
-        encoding="utf-8"
-    )
     (knowledge_dir / "insights.json").write_text(
         json.dumps({"version": "1.0", "insights": []}, indent=2),
-        encoding="utf-8"
-    )
-    (knowledge_dir / "people.json").write_text(
-        json.dumps({"version": "1.0", "people": []}, indent=2),
         encoding="utf-8"
     )
 
@@ -99,7 +73,7 @@ def agent_setup(tmp_path):
         "- answer_question(question_id, answer)\n"
         "- create_question(question, priority, type, related_task_id)\n"
         "- save_insight(content, category, title, tags)\n"
-        "- move_to_history(task_id, reflection)\n\n"
+        "- archive_task(task_id, reflection)\n\n"
         "## Core Principles\n\n"
         "1. **Use dashboard tools, NOT read_file/write_file for dashboard operations**\n"
         "2. **One message can contain multiple pieces of information**\n"
@@ -116,7 +90,7 @@ def agent_setup(tmp_path):
         "→ create_question(question='Hook 자료 찾아봤어?', related_task_id='task_xxx')\n\n"
         "User: '완료했어요!'\n"
         "→ update_task(task_id='task_xxx', status='completed', progress=100)\n"
-        "→ move_to_history(task_id='task_xxx', reflection='Successfully completed')\n",
+        "→ archive_task(task_id='task_xxx', reflection='Successfully completed')\n",
         encoding="utf-8"
     )
 
@@ -172,7 +146,7 @@ def test_journey_01_one_week_lifecycle(agent_setup):
     Day 5 (금요일): 완료 및 회고
       - React 완료
       - 블로그 2개 완료
-      - Worker가 completed tasks를 History로 이동
+      - Worker가 completed tasks를 archived로 변경
 
     총 10-15턴의 대화, 실제 사용 패턴 검증
     """
@@ -228,11 +202,11 @@ def test_journey_01_one_week_lifecycle(agent_setup):
     print(f"Agent: {response[:100] if response else 'SILENT'}...")
     time.sleep(2)
 
-    # Verify: 블로그 1개 completed (or moved to history), React blocker 추가
+    # Verify: 블로그 1개 completed (or archived), React blocker 추가
     with open(dashboard / "tasks.json", "r", encoding="utf-8") as f:
         tasks = json.load(f).get("tasks", [])
 
-    # Check both tasks.json and history.json for completed tasks
+    # Check tasks.json for completed/archived tasks
     completed_tasks = get_completed_tasks(dashboard)
     completed_count = len(completed_tasks)
 
@@ -345,17 +319,17 @@ def test_journey_01_one_week_lifecycle(agent_setup):
     print(f"Agent: {response[:100] if response else 'SILENT'}...")
     time.sleep(2)
 
-    # Verify: Multiple tasks completed (check both tasks.json and history.json)
+    # Verify: Multiple tasks completed (check tasks.json for completed/archived)
     with open(dashboard / "tasks.json", "r", encoding="utf-8") as f:
         final_tasks = json.load(f).get("tasks", [])
 
-    # Get all completed tasks from both locations
+    # Get all completed/archived tasks
     all_completed_tasks = get_completed_tasks(dashboard)
     active_tasks = [t for t in final_tasks if t["status"] == "active"]
 
     print(f"\n=== Final Summary ===")
     print(f"[OK] Active tasks in tasks.json: {len(final_tasks)}")
-    print(f"[OK] Completed (tasks.json + history.json): {len(all_completed_tasks)}")
+    print(f"[OK] Completed/Archived (tasks.json): {len(all_completed_tasks)}")
     print(f"[OK] Active (not completed): {len(active_tasks)}")
 
     # At least 1 task should be completed
@@ -679,11 +653,11 @@ def test_journey_03_multitasking_priorities(agent_setup):
     print(f"Agent: {response[:100] if response else 'SILENT'}...")
     time.sleep(2)
 
-    # Verify: Final state (check both tasks.json and history.json)
+    # Verify: Final state (check tasks.json for completed/archived)
     with open(dashboard / "tasks.json", "r", encoding="utf-8") as f:
         final_tasks = json.load(f).get("tasks", [])
 
-    # Get all completed tasks from both locations
+    # Get all completed/archived tasks
     all_completed = get_completed_tasks(dashboard)
     completed = len(all_completed)
     active = sum(1 for t in final_tasks if t["status"] == "active")

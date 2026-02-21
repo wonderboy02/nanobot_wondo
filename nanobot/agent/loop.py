@@ -3,7 +3,6 @@
 import asyncio
 import json
 from pathlib import Path
-from typing import Any
 
 from loguru import logger
 
@@ -51,9 +50,9 @@ class AgentLoop:
         exec_config: "ExecToolConfig | None" = None,
         cron_service: "CronService | None" = None,
         restrict_to_workspace: bool = False,
+        notion_config: "NotionConfig | None" = None,
     ):
         from nanobot.config.schema import ExecToolConfig
-        from nanobot.cron.service import CronService
         self.bus = bus
         self.provider = provider
         self.workspace = workspace
@@ -63,7 +62,8 @@ class AgentLoop:
         self.exec_config = exec_config or ExecToolConfig()
         self.cron_service = cron_service
         self.restrict_to_workspace = restrict_to_workspace
-        
+        self.notion_config = notion_config
+
         self.context = ContextBuilder(workspace)
         self.sessions = SessionManager(workspace)
         self.tools = ToolRegistry()
@@ -76,10 +76,80 @@ class AgentLoop:
             exec_config=self.exec_config,
             restrict_to_workspace=restrict_to_workspace,
         )
-        
+
         self._running = False
+        self._storage_backend = None
+        self._notion_setup_warning: str | None = None  # One-time warning for user
+        self._configure_storage_backend()
+        # Wire storage backend to context builder so dashboard summary uses Notion
+        self.context.storage_backend = self._storage_backend
         self._register_default_tools()
-    
+
+    @property
+    def storage_backend(self):
+        """Public access to the configured storage backend (or None for JSON fallback)."""
+        return self._storage_backend
+
+    async def _precompute_dashboard(self) -> None:
+        """Precompute dashboard summary off the event loop when Notion backend is active."""
+        if self._storage_backend:
+            from nanobot.dashboard.helper import get_dashboard_summary
+            dashboard_summary = await asyncio.to_thread(
+                get_dashboard_summary,
+                self.workspace / "dashboard",
+                self._storage_backend,
+            )
+            self.context.set_dashboard_summary(dashboard_summary)
+
+    def _configure_storage_backend(self) -> None:
+        """Configure the storage backend based on Notion config.
+
+        If Notion is enabled and configured, uses NotionStorageBackend.
+        Otherwise falls back to JsonStorageBackend (default).
+        """
+        from nanobot.agent.tools.dashboard.base import BaseDashboardTool
+
+        if self.notion_config and self.notion_config.enabled and self.notion_config.token:
+            # Validate that core DB IDs are configured
+            dbs = self.notion_config.databases
+            if not dbs.tasks or not dbs.questions:
+                logger.warning(
+                    "Notion enabled but core DB IDs (tasks/questions) missing, "
+                    "using JSON fallback"
+                )
+                BaseDashboardTool.configure_backend(None)
+                self._notion_setup_warning = (
+                    "⚠️ Notion enabled but tasks/questions DB IDs are missing. "
+                    "Run `nanobot notion validate` to check your config. "
+                    "Using local JSON fallback."
+                )
+                return
+
+            try:
+                from nanobot.notion.client import NotionClient
+                from nanobot.notion.storage import NotionStorageBackend
+
+                client = NotionClient(token=self.notion_config.token)
+                backend = NotionStorageBackend(
+                    client=client,
+                    databases=self.notion_config.databases,
+                    cache_ttl_s=self.notion_config.cache_ttl_s,
+                )
+                BaseDashboardTool.configure_backend(backend)
+                self._storage_backend = backend
+                logger.info("Notion storage backend configured")
+            except Exception as e:
+                logger.error(f"Failed to configure Notion backend: {e}, using JSON fallback")
+                BaseDashboardTool.configure_backend(None)
+                self._notion_setup_warning = (
+                    "⚠️ Notion backend failed to initialize. "
+                    "Using local JSON fallback. Check your Notion config."
+                )
+        else:
+            # Explicitly reset to avoid stale backend from previous AgentLoop instance
+            BaseDashboardTool.configure_backend(None)
+            logger.debug("Using JSON storage backend (Notion not configured)")
+
     def _register_default_tools(self) -> None:
         """Register the default set of tools."""
         # File tools (restrict to workspace if configured)
@@ -118,7 +188,7 @@ class AgentLoop:
             CreateQuestionTool,
             UpdateQuestionTool,
             RemoveQuestionTool,
-            MoveToHistoryTool,
+            ArchiveTaskTool,
             SaveInsightTool,
             ScheduleNotificationTool,
             UpdateNotificationTool,
@@ -132,7 +202,7 @@ class AgentLoop:
         self.tools.register(CreateQuestionTool(workspace=self.workspace))
         self.tools.register(UpdateQuestionTool(workspace=self.workspace))
         self.tools.register(RemoveQuestionTool(workspace=self.workspace))
-        self.tools.register(MoveToHistoryTool(workspace=self.workspace))
+        self.tools.register(ArchiveTaskTool(workspace=self.workspace))
         self.tools.register(SaveInsightTool(workspace=self.workspace))
 
         # Notification tools (user explicit requests)
@@ -173,8 +243,13 @@ class AgentLoop:
                 continue
     
     def stop(self) -> None:
-        """Stop the agent loop."""
+        """Stop the agent loop and clean up resources."""
         self._running = False
+        if self._storage_backend:
+            try:
+                self._storage_backend.close()
+            except Exception:
+                pass
         logger.info("Agent loop stopping")
     
     async def _process_message(self, msg: InboundMessage) -> OutboundMessage | None:
@@ -194,7 +269,19 @@ class AgentLoop:
         # The chat_id contains the original "channel:chat_id" to route back to
         if msg.channel == "system":
             return await self._process_system_message(msg)
-        
+
+        # Invalidate Notion cache at message start so user edits are picked up
+        if self._storage_backend:
+            self._storage_backend.invalidate_cache()
+
+        # Send one-time Notion setup warning to user (first message only)
+        if self._notion_setup_warning:
+            warning = self._notion_setup_warning
+            self._notion_setup_warning = None
+            await self.bus.publish_outbound(OutboundMessage(
+                channel=msg.channel, chat_id=msg.chat_id, content=warning,
+            ))
+
         logger.info(f"Processing message from {msg.channel}:{msg.sender_id}")
         
         # Get or create session
@@ -248,6 +335,8 @@ class AgentLoop:
                 effective_content = f"{prefix}\n\n{effective_content}"
             else:
                 effective_content = prefix
+
+        await self._precompute_dashboard()
 
         # Build initial messages (use get_history for LLM-formatted messages)
         messages = self.context.build_messages(
@@ -371,6 +460,8 @@ class AgentLoop:
         update_notif_tool = self.tools.get("update_notification")
         if isinstance(update_notif_tool, UpdateNotificationTool):
             update_notif_tool.set_context(origin_channel, origin_chat_id)
+
+        await self._precompute_dashboard()
 
         # Build messages with the announce content
         messages = self.context.build_messages(

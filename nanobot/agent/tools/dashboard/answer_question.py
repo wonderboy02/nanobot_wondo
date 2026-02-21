@@ -41,7 +41,7 @@ class AnswerQuestionTool(BaseDashboardTool):
     ) -> str:
         try:
             # Load existing questions
-            questions_data = self._load_questions()
+            questions_data = await self._load_questions()
 
             # Find question
             question, index = self._find_question(
@@ -61,7 +61,7 @@ class AnswerQuestionTool(BaseDashboardTool):
             questions_data["questions"][index] = question
 
             # Validate and save
-            success, message = self._validate_and_save_questions(questions_data)
+            success, message = await self._validate_and_save_questions(questions_data)
 
             if success:
                 return f"Answered {question_id}"

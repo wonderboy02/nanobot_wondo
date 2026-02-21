@@ -1,7 +1,8 @@
 """Utility functions for nanobot."""
 
-from pathlib import Path
+import os
 from datetime import datetime
+from pathlib import Path
 
 
 def ensure_dir(path: Path) -> Path:
@@ -11,8 +12,11 @@ def ensure_dir(path: Path) -> Path:
 
 
 def get_data_path() -> Path:
-    """Get the nanobot data directory (~/.nanobot)."""
-    return ensure_dir(Path.home() / ".nanobot")
+    """Get the nanobot data directory (~/.nanobot or NANOBOT_DATA_DIR)."""
+    # NOTE: ensure_dir runs Path.mkdir(exist_ok=True) on every call.
+    # Acceptable — it's a cheap no-op syscall when the directory already exists.
+    override = (os.environ.get("NANOBOT_DATA_DIR") or "").strip() or None
+    return ensure_dir(Path(override) if override else Path.home() / ".nanobot")
 
 
 def get_workspace_path(workspace: str | None = None) -> Path:
@@ -28,7 +32,9 @@ def get_workspace_path(workspace: str | None = None) -> Path:
     if workspace:
         path = Path(workspace).expanduser()
     else:
-        path = Path.home() / ".nanobot" / "workspace"
+        # Docker: resolves to /app/data/workspace, but config.json always provides
+        # an explicit workspace path (/app/workspace), so this default is not reached.
+        path = get_data_path() / "workspace"
     return ensure_dir(path)
 
 

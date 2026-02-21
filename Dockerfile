@@ -30,8 +30,8 @@ WORKDIR /app/bridge
 RUN npm install && npm run build
 WORKDIR /app
 
-# Create config directory
-RUN mkdir -p /root/.nanobot
+# Default data directory (overridable via docker-compose.yml environment)
+ENV NANOBOT_DATA_DIR=/app/data
 
 # Gateway default port
 EXPOSE 18790
