@@ -5,8 +5,12 @@ import re
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from nanobot.agent.tools.base import Tool
+
+if TYPE_CHECKING:
+    from nanobot.dashboard.storage import StorageBackend
 
 
 def with_dashboard_lock(fn):

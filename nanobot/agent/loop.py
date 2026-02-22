@@ -3,8 +3,13 @@
 import asyncio
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger
+
+if TYPE_CHECKING:
+    from nanobot.config.schema import ExecToolConfig, NotionConfig
+    from nanobot.cron.service import CronService
 
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus

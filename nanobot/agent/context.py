@@ -4,9 +4,13 @@ import base64
 import mimetypes
 import platform
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from nanobot.agent.memory import MemoryStore
+
+if TYPE_CHECKING:
+    from nanobot.dashboard.storage import StorageBackend
+
 from nanobot.agent.skills import SkillsLoader
 
 

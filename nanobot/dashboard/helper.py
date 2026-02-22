@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from nanobot.dashboard.storage import StorageBackend
 
 
 def get_dashboard_summary(
