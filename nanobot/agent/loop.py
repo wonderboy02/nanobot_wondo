@@ -334,7 +334,13 @@ class AgentLoop:
             if effective_content:
                 effective_content = f"{prefix}\n\n{effective_content}"
             else:
-                effective_content = prefix
+                # All content was numbered answers — no remaining user message.
+                # Skip LLM call entirely (saves tokens, prevents spurious messages).
+                logger.info(f"All answers auto-processed, skipping LLM call")
+                session.add_message("user", msg.content or "[numbered answers]")
+                session.add_message("assistant", "[Dashboard updated silently]")
+                self.sessions.save(session)
+                return None
 
         await self._precompute_dashboard()
 
