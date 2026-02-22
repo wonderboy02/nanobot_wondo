@@ -46,7 +46,7 @@ if ! git pull --ff-only; then
 fi
 
 echo "==> Building and starting container..."
-$DC up --build -d
+$DC up --build --force-recreate -d
 
 echo "==> Verifying container health..."
 sleep 3
