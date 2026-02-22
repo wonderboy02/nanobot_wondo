@@ -88,9 +88,11 @@ def get_dashboard_summary(
         parts.append("\n".join(task_lines))
 
     # Format questions
+    # Treat as answered if flag is set OR answer text is present
+    # (matches Worker's detection logic in _extract_answered_questions)
     unanswered = [
         q for q in questions_data.get("questions", [])
-        if not q.get("answered", False)
+        if not q.get("answered", False) and not (q.get("answer") or "").strip()
     ]
 
     if unanswered:

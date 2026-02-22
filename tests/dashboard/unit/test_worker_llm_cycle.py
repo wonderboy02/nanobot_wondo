@@ -573,14 +573,14 @@ async def test_maintenance_task_error_does_not_block_questions(test_workspace, m
     backend = JsonStorageBackend(test_workspace)
     now = datetime.now()
 
-    # Add an answered question (should be cleaned up)
+    # Add a stale question (14+ days old, should be cleaned up regardless of LLM)
     questions_data = backend.load_questions()
     questions_data["questions"].append(
         {
-            "id": "q_answered",
-            "question": "Done?",
-            "answered": True,
-            "created_at": now.isoformat(),
+            "id": "q_stale",
+            "question": "Old?",
+            "answered": False,
+            "created_at": (now - timedelta(days=20)).isoformat(),
         }
     )
     backend.save_questions(questions_data)
@@ -724,6 +724,174 @@ async def test_context_uses_fallback_when_worker_md_missing(test_workspace, mock
     assert system_msg is not None
     assert "Worker Agent" in system_msg["content"]
     assert "Phase 1" in system_msg["content"]
+
+
+# ============================================================================
+# Answered questions context tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_context_includes_answered_questions(test_workspace, mock_cron_service):
+    """LLM context should include answered questions summary."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    mock_provider = AsyncMock()
+    mock_bus = Mock()
+    now = datetime.now()
+
+    # Set up an answered question
+    questions_data = backend.load_questions()
+    questions_data["questions"] = [
+        {
+            "id": "q_ans",
+            "question": "React Hook 어디까지?",
+            "answered": True,
+            "answer": "Chapter 5까지 완료",
+            "related_task_id": "task_001",
+            "type": "progress_check",
+            "created_at": now.isoformat(),
+        },
+    ]
+    backend.save_questions(questions_data)
+
+    mock_provider.chat = AsyncMock(return_value=_make_response("Processed answers."))
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=mock_provider,
+        model="test-model",
+        cron_service=mock_cron_service,
+        bus=mock_bus,
+    )
+
+    await worker.run_cycle()
+
+    # Check LLM context includes answered question details
+    call_args = mock_provider.chat.call_args
+    messages = call_args.kwargs.get("messages", call_args[1].get("messages", []))
+    user_msg = next((m for m in messages if m["role"] == "user"), None)
+    assert user_msg is not None
+    assert "Recently Answered Questions" in user_msg["content"]
+    assert "Chapter 5까지 완료" in user_msg["content"]
+    assert "task_001" in user_msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_answered_questions_summary_empty(test_workspace):
+    """_build_answered_questions_summary returns empty string for empty list."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+
+    result = worker._build_answered_questions_summary([])
+    assert result == ""
+
+
+@pytest.mark.asyncio
+async def test_answered_questions_summary_handles_none_answer(test_workspace):
+    """_build_answered_questions_summary should not crash when answer is None."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+
+    # Simulates answered=True but answer=None (checkbox checked, no text)
+    result = worker._build_answered_questions_summary(
+        [{"id": "q_1", "question": "Done?", "answered": True, "answer": None}]
+    )
+    assert "Recently Answered Questions" in result
+    assert "체크만 됨" in result
+
+
+@pytest.mark.asyncio
+async def test_answer_without_checkbox_excluded_from_unanswered_summary(
+    test_workspace, mock_cron_service
+):
+    """Question with answer text but answered=False should NOT appear in Unanswered section."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    mock_provider = AsyncMock()
+    mock_bus = Mock()
+    now = datetime.now()
+
+    # answer filled but checkbox not checked
+    questions_data = backend.load_questions()
+    questions_data["questions"] = [
+        {
+            "id": "q_text_only",
+            "question": "블로그 진행?",
+            "answered": False,
+            "answer": "70% 완료",
+            "type": "progress_check",
+            "created_at": now.isoformat(),
+        },
+    ]
+    backend.save_questions(questions_data)
+
+    mock_provider.chat = AsyncMock(return_value=_make_response("Done."))
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=mock_provider,
+        model="test-model",
+        cron_service=mock_cron_service,
+        bus=mock_bus,
+    )
+
+    await worker.run_cycle()
+
+    call_args = mock_provider.chat.call_args
+    messages = call_args.kwargs.get("messages", call_args[1].get("messages", []))
+    user_msg = next((m for m in messages if m["role"] == "user"), None)
+    content = user_msg["content"]
+
+    # Should appear in Recently Answered section
+    assert "Recently Answered Questions" in content
+    assert "70% 완료" in content
+
+    # Question ID must NOT appear in the Unanswered section.
+    # Split on "Recently Answered" to isolate the dashboard summary portion;
+    # the question ID should only appear after that boundary.
+    before_answered = content.split("Recently Answered Questions")[0]
+    assert "q_text_only" not in before_answered, (
+        "Question q_text_only should not appear in dashboard summary (unanswered)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_worker_registers_save_insight_tool(test_workspace, mock_cron_service):
+    """Worker should register save_insight tool for processing answered questions."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    mock_provider = AsyncMock()
+    mock_bus = Mock()
+
+    mock_provider.chat = AsyncMock(return_value=_make_response("Done."))
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=mock_provider,
+        model="test-model",
+        cron_service=mock_cron_service,
+        bus=mock_bus,
+    )
+
+    await worker.run_cycle()
+
+    assert "save_insight" in worker.tools.tool_names
 
 
 if __name__ == "__main__":

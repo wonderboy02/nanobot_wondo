@@ -47,19 +47,27 @@ class WorkerAgent:
     Phase 1 — Deterministic maintenance (always runs):
       - Archive completed/cancelled tasks
       - Re-evaluate active/someday status
-      - Clean up answered + stale questions
+
+    Extract — Read-only snapshot (always runs):
+      - Extract answered questions for Phase 2 context
 
     Phase 2 — LLM-powered analysis (requires provider and model):
       - Analyze task progress, schedule notifications
+      - Process answered questions (update tasks, save insights)
       - Manage question queue (create/update/remove)
-      - Clean up obsolete data
       NOTE: Skipped when provider/model are not configured.
-      This means question generation and notification scheduling only happen
-      when the LLM is available (e.g. gateway mode, not CLI manual run).
+
+    Cleanup — Question cleanup (always runs, after Phase 2):
+      - Remove stale (14+ day) unanswered questions
+      - Remove answered questions only if Phase 2 succeeded
+        (preserved for retry when Phase 2 was skipped/failed)
     """
 
     # Status evaluation thresholds
     DEADLINE_APPROACHING_DAYS = 7
+    # Max answered questions to include in LLM context (prevents prompt blowup
+    # after extended LLM downtime). Oldest beyond this cap are still cleaned up.
+    MAX_ANSWERED_IN_CONTEXT = 20
 
     def __init__(
         self,
@@ -84,20 +92,58 @@ class WorkerAgent:
     # =========================================================================
 
     async def run_cycle(self) -> None:
-        """Run a full worker cycle: maintenance first, then LLM analysis."""
+        """Run a full worker cycle.
+
+        Order: maintenance → extract answers → LLM analysis → question cleanup.
+        Question cleanup is deferred until after Phase 2 so that the LLM can
+        see answered questions and take action (update tasks, save insights).
+
+        If Phase 2 is skipped or fails while there are pending answers,
+        cleanup preserves answered questions so the next cycle can retry.
+        """
         logger.info("[Worker] Starting cycle...")
 
-        # Phase 1: Deterministic maintenance (always runs, no LLM needed)
+        # Phase 1: Deterministic maintenance — tasks only (always runs)
         await self._run_maintenance()
+
+        # Extract answered questions before cleanup (read-only snapshot)
+        pending_answers = self._extract_answered_questions()
 
         # Phase 2: LLM-powered analysis (requires provider + model).
         # When unavailable (e.g. `nanobot dashboard worker` CLI), only Phase 1
         # runs — question generation and notification scheduling are skipped.
         # This is an intentional trade-off: see module docstring for rationale.
+        phase2_ok = False
         if self.provider is not None and self.model is not None:
-            await self._run_llm_cycle()
+            phase2_ok = await self._run_llm_cycle(pending_answers)
         else:
             logger.debug("[Worker] LLM not configured; skipping Phase 2")
+
+        # Cleanup: remove answered + stale questions (after Phase 2 processed them).
+        # If Phase 2 was skipped/failed AND there were pending answers, preserve
+        # answered questions so they can be retried in the next cycle.
+        # NOTE: Partial Phase 2 success (some tool calls ran before crash) may
+        # cause duplicate side effects on retry. Accepted trade-off: the LLM sees
+        # fresh dashboard state each cycle, so already-saved insights / updated
+        # tasks are visible and the LLM should avoid re-doing them. For a
+        # single-user 30-min-interval system, this is preferable to the
+        # complexity of partial-success tracking.
+        # Compute which answered question IDs were actually shown to the LLM
+        # (capped at MAX_ANSWERED_IN_CONTEXT). Questions beyond the cap are
+        # preserved for the next cycle to avoid unprocessed data loss.
+        processed_ids: set[str] | None = None
+        if pending_answers:
+            processed_ids = {
+                q.get("id", "") for q in pending_answers[: self.MAX_ANSWERED_IN_CONTEXT]
+            }
+
+        skip_answered = bool(pending_answers) and not phase2_ok
+        await self._cleanup_questions(skip_answered=skip_answered, processed_ids=processed_ids)
+        if skip_answered:
+            logger.info(
+                "[Worker] Preserved {} answered question(s) for next cycle",
+                len(pending_answers),
+            )
 
         logger.info("[Worker] Cycle complete.")
 
@@ -106,8 +152,11 @@ class WorkerAgent:
     # =========================================================================
 
     async def _run_maintenance(self) -> None:
-        """Run deterministic maintenance tasks."""
-        # --- Tasks ---
+        """Run deterministic maintenance tasks (tasks only).
+
+        Question cleanup is handled separately by _cleanup_questions()
+        after Phase 2, so the LLM can process answered questions first.
+        """
         try:
             tasks_data = self.storage_backend.load_tasks()
             changed = self._archive_completed_tasks(tasks_data)
@@ -118,16 +167,6 @@ class WorkerAgent:
                     logger.error(f"[Worker] Failed to save tasks: {msg}")
         except Exception:
             logger.exception("[Worker] Task maintenance error")
-
-        # --- Questions ---
-        try:
-            questions_data = self.storage_backend.load_questions()
-            if self._cleanup_answered_questions(questions_data):
-                ok, msg = self.storage_backend.save_questions(questions_data)
-                if not ok:
-                    logger.error(f"[Worker] Failed to save questions: {msg}")
-        except Exception:
-            logger.exception("[Worker] Question maintenance error")
 
     def _archive_completed_tasks(self, tasks_data: dict) -> bool:
         """Archive completed or cancelled tasks by setting status to 'archived'."""
@@ -205,24 +244,48 @@ class WorkerAgent:
 
         return "someday"
 
-    def _cleanup_answered_questions(self, questions_data: dict) -> bool:
-        """Remove answered questions and questions older than 14 days."""
+    def _cleanup_answered_questions(
+        self,
+        questions_data: dict,
+        *,
+        skip_answered: bool = False,
+        processed_ids: set[str] | None = None,
+    ) -> bool:
+        """Remove answered questions and questions older than 14 days.
+
+        Args:
+            skip_answered: When True, keep answered questions (they haven't
+                been processed by Phase 2 yet). Stale questions still removed.
+            processed_ids: When provided, only remove answered questions whose
+                ID is in this set (the ones actually shown to the LLM).
+                Questions beyond the MAX_ANSWERED_IN_CONTEXT cap are preserved.
+        """
         questions = questions_data.get("questions", [])
         now = datetime.now()
         original_count = len(questions)
 
         filtered = []
         for q in questions:
-            # Remove answered questions
-            if q.get("answered", False):
+            is_answered = q.get("answered", False) or (q.get("answer") or "").strip()
+
+            # Remove answered questions (flag or non-empty answer field)
+            if not skip_answered and is_answered:
+                # If processed_ids is set, only remove questions the LLM actually saw;
+                # overflow beyond MAX_ANSWERED_IN_CONTEXT is preserved for next cycle.
+                if processed_ids is not None and q.get("id") not in processed_ids:
+                    filtered.append(q)
                 continue
-            # Remove very old questions (14+ days)
-            try:
-                created = parse_datetime(q["created_at"])
-                if (now - created).days > 14:
-                    continue
-            except (KeyError, ValueError):
-                pass
+
+            # Remove very old questions (14+ days) — but not answered ones
+            # when skip_answered is set (they need to survive for next cycle)
+            if not (skip_answered and is_answered):
+                try:
+                    created = parse_datetime(q["created_at"])
+                    if (now - created).days > 14:
+                        continue
+                except (KeyError, ValueError):
+                    pass
+
             filtered.append(q)
 
         if len(filtered) == original_count:
@@ -232,12 +295,98 @@ class WorkerAgent:
         logger.info(f"[Worker] Question queue cleaned: {original_count} → {len(filtered)}")
         return True
 
+    def _extract_answered_questions(self) -> list[dict]:
+        """Extract answered questions from storage (read-only).
+
+        Detects both ``answered=True`` and non-empty ``answer`` field
+        (covers case where user fills Answer but forgets the checkbox).
+        """
+        try:
+            questions_data = self.storage_backend.load_questions()
+            questions = questions_data.get("questions", [])
+            answered = [
+                q for q in questions if q.get("answered", False) or (q.get("answer") or "").strip()
+            ]
+            if answered:
+                logger.info(f"[Worker] Found {len(answered)} answered question(s)")
+            return answered
+        except Exception:
+            logger.exception("[Worker] Error extracting answered questions")
+            return []
+
+    def _build_answered_questions_summary(self, pending_answers: list[dict]) -> str:
+        """Build LLM context section for recently answered questions.
+
+        Caps output at MAX_ANSWERED_IN_CONTEXT to prevent prompt blowup
+        after extended LLM downtime.
+        """
+        if not pending_answers:
+            return ""
+
+        # Cap to first N items (by storage order)
+        capped = pending_answers[: self.MAX_ANSWERED_IN_CONTEXT]
+        overflow = len(pending_answers) - len(capped)
+
+        lines = ["## Recently Answered Questions\n"]
+        if overflow > 0:
+            lines.append(
+                f"(Showing {len(capped)} of {len(pending_answers)}; "
+                f"{overflow} older answered question(s) omitted)\n"
+            )
+        for q in capped:
+            qid = q.get("id", "?")
+            question_text = q.get("question", "")
+            answer_text = (q.get("answer") or "").strip() or "(체크만 됨, 답변 내용 없음)"
+            lines.append(f"**{qid}**: {question_text}")
+            lines.append(f'  - Answer: "{answer_text}"')
+            if q.get("related_task_id"):
+                lines.append(f"  - Related Task: {q['related_task_id']}")
+            if q.get("type"):
+                lines.append(f"  - Question Type: {q['type']}")
+            lines.append("")
+
+        lines.append(
+            "이 답변을 분석하고 관련 Task 업데이트, 인사이트 저장 등 필요한 조치를 수행하라."
+        )
+        return "\n".join(lines)
+
+    async def _cleanup_questions(
+        self,
+        *,
+        skip_answered: bool = False,
+        processed_ids: set[str] | None = None,
+    ) -> None:
+        """Remove stale questions (and answered questions unless skipped).
+
+        Args:
+            skip_answered: When True, preserve all answered questions
+                (including old ones) because Phase 2 hasn't processed them.
+                Only stale *unanswered* questions are removed in this mode.
+            processed_ids: Forwarded to _cleanup_answered_questions to limit
+                deletion to questions the LLM actually processed.
+        """
+        try:
+            questions_data = self.storage_backend.load_questions()
+            if self._cleanup_answered_questions(
+                questions_data,
+                skip_answered=skip_answered,
+                processed_ids=processed_ids,
+            ):
+                ok, msg = self.storage_backend.save_questions(questions_data)
+                if not ok:
+                    logger.error(f"[Worker] Failed to save questions: {msg}")
+        except Exception:
+            logger.exception("[Worker] Question cleanup error")
+
     # =========================================================================
     # Phase 2: LLM-Powered Analysis
     # =========================================================================
 
-    async def _run_llm_cycle(self) -> None:
-        """Run LLM-powered analysis cycle."""
+    async def _run_llm_cycle(self, pending_answers: list[dict] | None = None) -> bool:
+        """Run LLM-powered analysis cycle.
+
+        Returns True if the cycle completed without exception, False otherwise.
+        """
         logger.info("[Worker] Starting LLM-powered analysis")
 
         try:
@@ -248,8 +397,8 @@ class WorkerAgent:
             self.tools = ToolRegistry()
             self._register_worker_tools()
 
-            # Build context
-            messages = await self._build_context()
+            # Build context (includes answered questions if any)
+            messages = await self._build_context(pending_answers)
 
             # Get tool schemas
             tool_schemas = [self.tools.get(name).to_schema() for name in self.tools.tool_names]
@@ -331,11 +480,13 @@ class WorkerAgent:
                 messages.extend(tool_results)
 
             logger.info("[Worker] LLM analysis completed")
+            return True
 
         except Exception:
             logger.exception("[Worker] LLM analysis error")
+            return False
 
-    async def _build_context(self) -> list[dict]:
+    async def _build_context(self, pending_answers: list[dict] | None = None) -> list[dict]:
         """Build context messages for the LLM cycle."""
         from nanobot.dashboard.helper import get_dashboard_summary
 
@@ -355,6 +506,8 @@ class WorkerAgent:
                         "and perform maintenance tasks:\n"
                         "- Schedule notifications for deadlines and progress checks\n"
                         "- Manage question queue (create, update, remove)\n"
+                        "- Process answered questions: update related tasks, "
+                        "save useful insights (save_insight tool)\n"
                         "- Clean up obsolete data\n"
                         "Note: Task archiving is handled by Phase 1.\n"
                         "Operate autonomously and efficiently."
@@ -373,15 +526,19 @@ class WorkerAgent:
             self.storage_backend,
         )
         notifications_summary = await asyncio.to_thread(self._build_notifications_summary)
+        answered_summary = self._build_answered_questions_summary(pending_answers or [])
 
         # 3. Combine into user message
-        user_message = (
-            "## Current Dashboard State\n\n"
-            f"{dashboard_summary}\n\n"
-            f"{notifications_summary}\n\n"
-            "위 상태를 분석하고 필요한 유지보수를 수행하라."
-        )
-        messages.append({"role": "user", "content": user_message})
+        parts = [
+            "## Current Dashboard State\n\n",
+            f"{dashboard_summary}\n\n",
+            f"{notifications_summary}\n\n",
+        ]
+        if answered_summary:
+            parts.append(f"{answered_summary}\n\n")
+        parts.append("위 상태를 분석하고 필요한 유지보수를 수행하라.")
+
+        messages.append({"role": "user", "content": "".join(parts)})
 
         return messages
 
@@ -458,3 +615,8 @@ class WorkerAgent:
 
         self.tools.register(UpdateTaskTool(self.workspace))
         self.tools.register(ArchiveTaskTool(self.workspace))
+
+        # Insight management (for saving insights from answered questions)
+        from nanobot.agent.tools.dashboard.save_insight import SaveInsightTool
+
+        self.tools.register(SaveInsightTool(self.workspace))

@@ -338,7 +338,7 @@ class AgentLoop:
                 session.add_message("user", msg.content or "[numbered answers]")
                 session.add_message("assistant", "[Dashboard updated silently]")
                 self.sessions.save(session)
-                return self._reaction_message(msg, "✅")
+                return self._reaction_message(msg, "👍")
 
         await self._precompute_dashboard()
 
@@ -413,7 +413,7 @@ class AgentLoop:
         # Silent mode: send ✅ reaction instead of a text message
         if is_silent:
             logger.debug(f"Silent mode: Dashboard updated without response")
-            return self._reaction_message(msg, "✅")
+            return self._reaction_message(msg, "👍")
 
         return OutboundMessage(
             channel=msg.channel,
