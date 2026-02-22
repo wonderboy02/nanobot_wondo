@@ -1,412 +1,460 @@
-"""Worker agent for dashboard maintenance and progress tracking."""
+"""Unified Worker Agent for dashboard maintenance.
 
-import uuid
-from datetime import datetime, timedelta
+Combines deterministic maintenance (always runs) with LLM-powered analysis
+(runs when provider/model are available). Replaces the old split between
+rule-based WorkerAgent and LLMWorkerAgent.
+
+DESIGN: Question generation is intentionally LLM-only (Phase 2).
+The old rule-based worker had 7 progress check cases with cooldown and
+priority escalation, but these were brittle and produced generic questions.
+The LLM approach trades deterministic guarantees for context-aware analysis:
+  - Pro: richer, context-aware questions; fewer false positives
+  - Con: no questions when provider/model unavailable (e.g. CLI manual run)
+  - Mitigation: Phase 1 still handles all deterministic maintenance
+    (archive, status reevaluation, cleanup), so dashboard integrity is safe.
+    Question generation is a "nice to have" — missing a cycle is harmless.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nanobot.agent.tools.registry import ToolRegistry
+    from nanobot.dashboard.storage import StorageBackend
 
 from loguru import logger
 
-from nanobot.dashboard.manager import DashboardManager
-
 
 def parse_datetime(dt_str: str) -> datetime:
-    """Parse ISO datetime string."""
-    return datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+    """Parse ISO datetime string to naive datetime.
 
-
-def generate_id() -> str:
-    """Generate unique ID."""
-    return str(uuid.uuid4())[:8]
+    Strips timezone info to avoid naive/aware comparison TypeError
+    with datetime.now(). Acceptable for single-user, single-timezone usage.
+    """
+    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+    return dt.replace(tzinfo=None)
 
 
 class WorkerAgent:
     """
-    Dashboard management worker agent.
+    Unified Dashboard Worker Agent.
 
-    Runs periodically to:
-    - Check task progress
-    - Generate questions
-    - Archive completed tasks
-    - Re-evaluate active status
-    - Process notifications
+    Phase 1 — Deterministic maintenance (always runs):
+      - Archive completed/cancelled tasks
+      - Re-evaluate active/someday status
+      - Clean up answered + stale questions
+
+    Phase 2 — LLM-powered analysis (requires provider and model):
+      - Analyze task progress, schedule notifications
+      - Manage question queue (create/update/remove)
+      - Clean up obsolete data
+      NOTE: Skipped when provider/model are not configured.
+      This means question generation and notification scheduling only happen
+      when the LLM is available (e.g. gateway mode, not CLI manual run).
     """
 
-    # Configuration
-    PROGRESS_GAP_CRITICAL = 20  # % gap to trigger urgent question
-    PROGRESS_GAP_WARNING = 10   # % gap to trigger check
-
-    UPDATE_STALE_HOURS = 48     # Hours without update → check
-    UPDATE_VERY_STALE_HOURS = 96
-
-    DEADLINE_URGENT_DAYS = 1
-    DEADLINE_SOON_DAYS = 3
+    # Status evaluation thresholds
     DEADLINE_APPROACHING_DAYS = 7
 
-    COOLDOWN_HOURS = {
-        "start_check": 24,
-        "blocker_check": 12,
-        "progress_check": 24,
-        "status_check": 72,
-        "deadline_check": 12,
-        "completion_check": 6,
-        "routine_check": 168,
-    }
+    def __init__(
+        self,
+        workspace: Path,
+        storage_backend: StorageBackend,
+        provider: Any | None = None,
+        model: str | None = None,
+        cron_service: Any | None = None,
+        bus: Any | None = None,
+    ):
+        self.workspace = workspace
+        self.storage_backend = storage_backend
+        self.provider = provider
+        self.model = model
+        self.cron_service = cron_service
+        self.bus = bus  # Reserved for future event bus integration
+        # Recreated each _run_llm_cycle(); None when Phase 2 never runs.
+        self.tools: ToolRegistry | None = None
 
-    def __init__(self, dashboard_path: Path):
-        self.dashboard_path = Path(dashboard_path)
-        self.manager = DashboardManager(dashboard_path)
+    # =========================================================================
+    # Public API
+    # =========================================================================
 
     async def run_cycle(self) -> None:
-        """Run a full worker cycle."""
+        """Run a full worker cycle: maintenance first, then LLM analysis."""
         logger.info("[Worker] Starting cycle...")
 
-        # Load dashboard
-        dashboard = self.manager.load()
+        # Phase 1: Deterministic maintenance (always runs, no LLM needed)
+        await self._run_maintenance()
 
-        # Check all tasks
-        await self.check_all_tasks(dashboard)
-
-        # Archive completed tasks
-        self.archive_completed_tasks(dashboard)
-
-        # Re-evaluate active status
-        self.reevaluate_active_status(dashboard)
-
-        # Clean up question queue
-        self.cleanup_question_queue(dashboard)
-
-        # Save dashboard
-        self.manager.save(dashboard)
+        # Phase 2: LLM-powered analysis (requires provider + model).
+        # When unavailable (e.g. `nanobot dashboard worker` CLI), only Phase 1
+        # runs — question generation and notification scheduling are skipped.
+        # This is an intentional trade-off: see module docstring for rationale.
+        if self.provider is not None and self.model is not None:
+            await self._run_llm_cycle()
+        else:
+            logger.debug("[Worker] LLM not configured; skipping Phase 2")
 
         logger.info("[Worker] Cycle complete.")
 
-    async def check_all_tasks(self, dashboard: dict[str, Any]) -> None:
-        """Check all active tasks for progress."""
-        active_tasks = [t for t in dashboard.get('tasks', []) if t.get('status') == 'active']
+    # =========================================================================
+    # Phase 1: Deterministic Maintenance
+    # =========================================================================
 
-        for task in active_tasks:
-            await self.check_task_progress(task, dashboard)
+    async def _run_maintenance(self) -> None:
+        """Run deterministic maintenance tasks."""
+        # --- Tasks ---
+        try:
+            tasks_data = self.storage_backend.load_tasks()
+            changed = self._archive_completed_tasks(tasks_data)
+            changed |= self._reevaluate_active_status(tasks_data)
+            if changed:
+                ok, msg = self.storage_backend.save_tasks(tasks_data)
+                if not ok:
+                    logger.error(f"[Worker] Failed to save tasks: {msg}")
+        except Exception:
+            logger.exception("[Worker] Task maintenance error")
 
-    async def check_task_progress(self, task: dict[str, Any], dashboard: dict[str, Any]) -> None:
-        """Check individual task progress and generate questions if needed."""
-        now = datetime.now()
+        # --- Questions ---
+        try:
+            questions_data = self.storage_backend.load_questions()
+            if self._cleanup_answered_questions(questions_data):
+                ok, msg = self.storage_backend.save_questions(questions_data)
+                if not ok:
+                    logger.error(f"[Worker] Failed to save questions: {msg}")
+        except Exception:
+            logger.exception("[Worker] Question maintenance error")
 
-        # Last update check (모든 task에 적용, deadline 불필요)
-        last_update = parse_datetime(task['progress']['last_update'])
-        hours_since_update = (now - last_update).total_seconds() / 3600
-
-        # Case 4: Stale (no update for 48h) - deadline과 무관하게 체크
-        if hours_since_update > self.UPDATE_STALE_HOURS:
-            self.add_question(
-                dashboard,
-                question=f"'{task['title']}' 요즘 어떻게 되고 있어?",
-                task_id=task['id'],
-                priority="low",
-                type="status_check",
-                cooldown_hours=self.COOLDOWN_HOURS["status_check"]
-            )
-            return
-
-        # Case 7: Very stale (96h+) - deadline과 무관하게 체크
-        if hours_since_update > self.UPDATE_VERY_STALE_HOURS:
-            self.add_question(
-                dashboard,
-                question=f"'{task['title']}' 잘 진행되고 있어?",
-                task_id=task['id'],
-                priority="low",
-                type="routine_check",
-                cooldown_hours=self.COOLDOWN_HOURS["routine_check"]
-            )
-            return
-
-        # Deadline-based checks (deadline 필요)
-        deadline = parse_datetime(task['deadline']) if task.get('deadline') else None
-
-        if not deadline:
-            # No deadline - skip progress-based checks
-            return
-
-        # Time-based calculation
-        created = parse_datetime(task['created_at'])
-        time_elapsed = now - created
-        time_total = deadline - created
-
-        if time_total.total_seconds() <= 0:
-            # Already past deadline
-            return
-
-        time_progress_ratio = time_elapsed / time_total
-        expected_progress = time_progress_ratio * 100
-
-        # Actual progress
-        actual_progress = task['progress']['percentage']
-        progress_gap = expected_progress - actual_progress
-
-        # Deadline proximity
-        time_until_deadline = deadline - now
-        days_left = time_until_deadline.days
-
-        # Decision logic (deadline 기반 checks)
-
-        # Case 1: Not started (0% & time passed)
-        if actual_progress == 0 and time_progress_ratio > 0.2:
-            self.add_question(
-                dashboard,
-                question=f"'{task['title']}' 시작했어?",
-                task_id=task['id'],
-                priority=self._calculate_priority(progress_gap, days_left),
-                type="start_check",
-                cooldown_hours=self.COOLDOWN_HOURS["start_check"]
-            )
-            return
-
-        # Case 2: Very behind (20%+ gap)
-        if progress_gap > self.PROGRESS_GAP_CRITICAL:
-            if days_left <= self.DEADLINE_SOON_DAYS:
-                self.add_question(
-                    dashboard,
-                    question=f"'{task['title']}' {days_left}일 남았는데 {actual_progress:.0f}%밖에 안 됐어. 막히는 부분 있어?",
-                    task_id=task['id'],
-                    priority="high",
-                    type="blocker_check",
-                    cooldown_hours=self.COOLDOWN_HOURS["blocker_check"]
-                )
-            else:
-                self.add_question(
-                    dashboard,
-                    question=f"'{task['title']}' 진행이 좀 느린데 괜찮아?",
-                    task_id=task['id'],
-                    priority="medium",
-                    type="progress_check",
-                    cooldown_hours=self.COOLDOWN_HOURS["progress_check"]
-                )
-            return
-
-        # Case 3: Somewhat behind (10-20% gap)
-        if progress_gap > self.PROGRESS_GAP_WARNING:
-            if days_left <= self.DEADLINE_SOON_DAYS:
-                self.add_question(
-                    dashboard,
-                    question=f"'{task['title']}' 어디까지 했어?",
-                    task_id=task['id'],
-                    priority="medium",
-                    type="progress_check",
-                    cooldown_hours=self.COOLDOWN_HOURS["progress_check"]
-                )
-            return
-
-        # Case 5: Deadline imminent (2 days) & incomplete
-        if days_left <= self.DEADLINE_SOON_DAYS and actual_progress < 90:
-            self.add_question(
-                dashboard,
-                question=f"'{task['title']}' {days_left}일 남았는데 마무리 가능해?",
-                task_id=task['id'],
-                priority="high",
-                type="deadline_check",
-                cooldown_hours=self.COOLDOWN_HOURS["deadline_check"]
-            )
-            return
-
-        # Case 6: Almost done (80%+) but not complete
-        if actual_progress >= 80 and actual_progress < 100:
-            if days_left <= self.DEADLINE_URGENT_DAYS:
-                self.add_question(
-                    dashboard,
-                    question=f"'{task['title']}' 거의 다 된 것 같은데 완료했어?",
-                    task_id=task['id'],
-                    priority="medium",
-                    type="completion_check",
-                    cooldown_hours=self.COOLDOWN_HOURS["completion_check"]
-                )
-            return
-
-    def add_question(
-        self,
-        dashboard: dict[str, Any],
-        question: str,
-        task_id: str,
-        priority: str,
-        type: str,
-        cooldown_hours: int
-    ) -> None:
-        """Add question to queue (with duplicate prevention)."""
-        questions = dashboard.get('questions', [])
-
-        # Check for existing question
-        existing = None
-        for q in questions:
-            if (q.get('related_task_id') == task_id and
-                q.get('type') == type and
-                not q.get('answered', False)):
-                existing = q
-                break
-
-        if existing:
-            # Check cooldown
-            if existing.get('last_asked_at'):
-                last_asked = parse_datetime(existing['last_asked_at'])
-                cooldown_until = last_asked + timedelta(hours=existing.get('cooldown_hours', 24))
-
-                if datetime.now() < cooldown_until:
-                    logger.debug(f"[Worker] Question skipped (cooldown): {question}")
-                    return
-                else:
-                    # Update priority if higher
-                    if self._is_higher_priority(priority, existing.get('priority', 'low')):
-                        existing['priority'] = priority
-                    existing['asked_count'] = existing.get('asked_count', 0) + 1
-                    logger.debug(f"[Worker] Question priority updated: {question}")
-                    return
-            else:
-                # Not asked yet, just update priority
-                if self._is_higher_priority(priority, existing.get('priority', 'low')):
-                    existing['priority'] = priority
-                return
-
-        # Add new question
-        new_question = {
-            "id": f"q_{generate_id()}",
-            "question": question,
-            "context": f"Task progress check for {task_id}",
-            "priority": priority,
-            "type": type,
-            "related_task_id": task_id,
-            "asked_count": 0,
-            "last_asked_at": None,
-            "created_at": datetime.now().isoformat(),
-            "cooldown_hours": cooldown_hours,
-            "answered": False,
-            "answer": None,
-            "answered_at": None
-        }
-
-        questions.append(new_question)
-        logger.info(f"[Worker] Question added: {question}")
-
-    def _calculate_priority(self, progress_gap: float, days_left: int) -> str:
-        """Calculate priority based on gap and deadline."""
-        if days_left <= self.DEADLINE_URGENT_DAYS:
-            return "high"
-        elif days_left <= self.DEADLINE_SOON_DAYS and progress_gap > 20:
-            return "high"
-        elif days_left <= self.DEADLINE_APPROACHING_DAYS and progress_gap > 30:
-            return "medium"
-        else:
-            return "low"
-
-    def _is_higher_priority(self, new_priority: str, old_priority: str) -> bool:
-        """Check if new priority is higher."""
-        priority_order = {"high": 3, "medium": 2, "low": 1}
-        return priority_order.get(new_priority, 0) > priority_order.get(old_priority, 0)
-
-    def archive_completed_tasks(self, dashboard: dict[str, Any]) -> None:
+    def _archive_completed_tasks(self, tasks_data: dict) -> bool:
         """Archive completed or cancelled tasks by setting status to 'archived'."""
-        tasks = dashboard.get('tasks', [])
+        tasks = tasks_data.get("tasks", [])
+        targets = [t for t in tasks if t.get("status") in ("completed", "cancelled")]
 
-        targets = [t for t in tasks if t.get('status') in ('completed', 'cancelled')]
+        if not targets:
+            return False
 
         now = datetime.now().isoformat()
         for task in targets:
-            was_cancelled = task.get('status') == 'cancelled'
-            task['status'] = 'archived'
-            task['completed_at'] = task.get('completed_at') or now
-            progress = task.setdefault('progress', {'last_update': now})
+            was_cancelled = task.get("status") == "cancelled"
+            task["status"] = "archived"
+            task["completed_at"] = task.get("completed_at") or now
+            progress = task.setdefault("progress", {"last_update": now})
             if not was_cancelled:
-                progress['percentage'] = 100
-            progress.setdefault('last_update', now)
-            task['updated_at'] = now
-
+                progress["percentage"] = 100
+            progress.setdefault("last_update", now)
+            task["updated_at"] = now
             logger.info(f"[Worker] Task archived: {task.get('title', '<unknown>')}")
 
-    def reevaluate_active_status(self, dashboard: dict[str, Any]) -> None:
-        """Re-evaluate active/someday status for all tasks."""
+        return True
+
+    def _reevaluate_active_status(self, tasks_data: dict) -> bool:
+        """Re-evaluate active/someday status for non-terminal tasks."""
         now = datetime.now()
-        tasks = dashboard.get('tasks', [])
+        tasks = tasks_data.get("tasks", [])
+        changed = False
 
         for task in tasks:
-            if task.get('status') in ['completed', 'cancelled', 'archived']:
+            if task.get("status") in ("completed", "cancelled", "archived"):
                 continue
 
-            old_status = task.get('status', 'someday')
-            new_status = self._determine_status(task, now)
+            old_status = task.get("status", "someday")
+            try:
+                new_status = self._determine_status(task, now)
+            except (ValueError, TypeError, KeyError) as e:
+                logger.warning(f"[Worker] Skipping status eval for {task.get('id', '?')}: {e}")
+                continue
 
             if old_status != new_status:
-                task['status'] = new_status
-                logger.info(f"[Worker] Task '{task.get('title', '<unknown>')}' status: {old_status} → {new_status}")
+                task["status"] = new_status
+                changed = True
+                logger.info(
+                    f"[Worker] Task '{task.get('title', '<unknown>')}' "
+                    f"status: {old_status} → {new_status}"
+                )
 
-    def _determine_status(self, task: dict[str, Any], now: datetime) -> str:
+        return changed
+
+    def _determine_status(self, task: dict, now: datetime) -> str:
         """Determine if task should be active or someday."""
         # Has deadline and it's close → active
-        if task.get('deadline'):
-            deadline = parse_datetime(task['deadline'])
+        if task.get("deadline"):
+            deadline = parse_datetime(task["deadline"])
             days_until = (deadline - now).days
-
             if days_until <= self.DEADLINE_APPROACHING_DAYS:
-                return 'active'
+                return "active"
 
         # High priority → active
-        if task.get('priority') == 'high':
-            return 'active'
+        if task.get("priority") == "high":
+            return "active"
 
         # Has progress → active
-        if task.get('progress', {}).get('percentage', 0) > 0:
-            return 'active'
+        if task.get("progress", {}).get("percentage", 0) > 0:
+            return "active"
 
         # Recent update → active
-        last_update = parse_datetime(task.get('progress', {}).get('last_update', task['created_at']))
+        last_update = parse_datetime(
+            task.get("progress", {}).get("last_update", task.get("created_at", now.isoformat()))
+        )
         days_since_update = (now - last_update).days
         if days_since_update <= 7:
-            return 'active'
+            return "active"
 
-        # Otherwise → someday
-        return 'someday'
+        return "someday"
 
-    def cleanup_question_queue(self, dashboard: dict[str, Any]) -> None:
-        """Clean up question queue - remove old/duplicate questions."""
-        questions = dashboard.get('questions', [])
+    def _cleanup_answered_questions(self, questions_data: dict) -> bool:
+        """Remove answered questions and questions older than 14 days."""
+        questions = questions_data.get("questions", [])
         now = datetime.now()
-
         original_count = len(questions)
 
-        # Remove answered questions
-        questions[:] = [q for q in questions if not q.get('answered', False)]
-
-        # Remove very old questions (2 weeks+)
-        questions[:] = [
-            q for q in questions
-            if (now - parse_datetime(q['created_at'])).days <= 14
-        ]
-
-        # Group by task
-        task_questions = {}
+        filtered = []
         for q in questions:
-            task_id = q.get('related_task_id')
-            if task_id:
-                if task_id not in task_questions:
-                    task_questions[task_id] = []
-                task_questions[task_id].append(q)
+            # Remove answered questions
+            if q.get("answered", False):
+                continue
+            # Remove very old questions (14+ days)
+            try:
+                created = parse_datetime(q["created_at"])
+                if (now - created).days > 14:
+                    continue
+            except (KeyError, ValueError):
+                pass
+            filtered.append(q)
 
-        # Keep only highest priority per task
-        to_keep = []
-        for task_id, qs in task_questions.items():
-            if len(qs) == 1:
-                to_keep.extend(qs)
-            else:
-                # Sort by priority, then by asked_count (lower is better)
-                qs_sorted = sorted(
-                    qs,
-                    key=lambda x: (
-                        {"high": 3, "medium": 2, "low": 1}.get(x.get('priority', 'low'), 0),
-                        -x.get('asked_count', 0)
-                    ),
-                    reverse=True
+        if len(filtered) == original_count:
+            return False
+
+        questions_data["questions"] = filtered
+        logger.info(f"[Worker] Question queue cleaned: {original_count} → {len(filtered)}")
+        return True
+
+    # =========================================================================
+    # Phase 2: LLM-Powered Analysis
+    # =========================================================================
+
+    async def _run_llm_cycle(self) -> None:
+        """Run LLM-powered analysis cycle."""
+        logger.info("[Worker] Starting LLM-powered analysis")
+
+        try:
+            from nanobot.agent.tools.registry import ToolRegistry
+
+            # Recreated each cycle (not cached across cycles).
+            # Stored on self so tests can inspect registered tools after run_cycle().
+            self.tools = ToolRegistry()
+            self._register_worker_tools()
+
+            # Build context
+            messages = await self._build_context()
+
+            # Get tool schemas
+            tool_schemas = [self.tools.get(name).to_schema() for name in self.tools.tool_names]
+
+            # Run LLM loop with tool calls (max 10 iterations)
+            max_iterations = 10
+            temperature = 0.3
+
+            for iteration in range(max_iterations):
+                logger.debug(f"[Worker] LLM iteration {iteration + 1}/{max_iterations}")
+
+                response = await self.provider.chat(
+                    model=self.model,
+                    messages=messages,
+                    tools=tool_schemas,
+                    temperature=temperature,
                 )
-                to_keep.append(qs_sorted[0])
 
-        # Add questions without task_id
-        to_keep.extend([q for q in questions if not q.get('related_task_id')])
+                tool_calls = response.tool_calls
 
-        dashboard['questions'] = to_keep
+                if not tool_calls:
+                    final_message = response.content or ""
+                    if final_message:
+                        logger.info(f"[Worker] LLM: {final_message}")
+                    break
 
-        logger.info(f"[Worker] Question queue cleaned: {original_count} → {len(to_keep)}")
+                # Add assistant message to history
+                tool_calls_dicts = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.arguments),
+                        },
+                    }
+                    for tc in tool_calls
+                ]
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": response.content or "",
+                        "tool_calls": tool_calls_dicts,
+                    }
+                )
+
+                # Execute tool calls
+                tool_results = []
+                for tool_call in tool_calls:
+                    tool_name = tool_call.name
+                    tool_args = tool_call.arguments
+                    tool_id = tool_call.id
+
+                    logger.debug(f"[Worker] Executing tool {tool_name}")
+
+                    try:
+                        result = await self.tools.execute(tool_name, tool_args)
+                        tool_results.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_id,
+                                "name": tool_name,
+                                "content": result,
+                            }
+                        )
+                        logger.debug(f"[Worker] Tool {tool_name} result: {result[:200]}")
+                    except Exception as e:
+                        error_msg = f"Error: {str(e)}"
+                        tool_results.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": tool_id,
+                                "name": tool_name,
+                                "content": error_msg,
+                            }
+                        )
+                        logger.exception(f"[Worker] Tool {tool_name} error")
+
+                messages.extend(tool_results)
+
+            logger.info("[Worker] LLM analysis completed")
+
+        except Exception:
+            logger.exception("[Worker] LLM analysis error")
+
+    async def _build_context(self) -> list[dict]:
+        """Build context messages for the LLM cycle."""
+        from nanobot.dashboard.helper import get_dashboard_summary
+
+        messages = []
+
+        # 1. Load WORKER.md instructions
+        worker_instructions_path = self.workspace / "WORKER.md"
+        if worker_instructions_path.exists():
+            worker_instructions = worker_instructions_path.read_text(encoding="utf-8")
+            messages.append({"role": "system", "content": worker_instructions})
+        else:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "You are the Worker Agent. Analyze the Dashboard "
+                        "and perform maintenance tasks:\n"
+                        "- Schedule notifications for deadlines and progress checks\n"
+                        "- Manage question queue (create, update, remove)\n"
+                        "- Clean up obsolete data\n"
+                        "Note: Task archiving is handled by Phase 1.\n"
+                        "Operate autonomously and efficiently."
+                    ),
+                }
+            )
+
+        # 2. Build Dashboard Summary + Notifications Summary
+        # DESIGN: Always use asyncio.to_thread even for JsonStorageBackend.
+        # Negligible overhead for JSON but keeps the code path uniform
+        # with NotionStorageBackend (sync httpx, ~300ms).
+        # Simplicity over micro-optimization for a 30-minute-interval task.
+        dashboard_summary = await asyncio.to_thread(
+            get_dashboard_summary,
+            self.workspace / "dashboard",
+            self.storage_backend,
+        )
+        notifications_summary = await asyncio.to_thread(self._build_notifications_summary)
+
+        # 3. Combine into user message
+        user_message = (
+            "## Current Dashboard State\n\n"
+            f"{dashboard_summary}\n\n"
+            f"{notifications_summary}\n\n"
+            "위 상태를 분석하고 필요한 유지보수를 수행하라."
+        )
+        messages.append({"role": "user", "content": user_message})
+
+        return messages
+
+    def _build_notifications_summary(self) -> str:
+        """Build summary of scheduled notifications."""
+        try:
+            data = self.storage_backend.load_notifications()
+            notifications = data.get("notifications", [])
+
+            if not notifications:
+                return "## Scheduled Notifications\n\nNo notifications scheduled."
+
+            pending = [n for n in notifications if n.get("status") == "pending"]
+
+            if not pending:
+                return "## Scheduled Notifications\n\nNo pending notifications."
+
+            lines = ["## Scheduled Notifications\n"]
+            for notif in pending:
+                scheduled_at = notif.get("scheduled_at", "")
+                try:
+                    dt = datetime.fromisoformat(scheduled_at)
+                    time_str = dt.strftime("%Y-%m-%d %H:%M")
+                except (ValueError, TypeError):
+                    time_str = scheduled_at
+
+                lines.append(
+                    f"- **{notif.get('id', '?')}** "
+                    f"({notif.get('type', '?')}, {notif.get('priority', '?')}): "
+                    f"{notif.get('message', '')} [Scheduled: {time_str}]"
+                )
+                if notif.get("related_task_id"):
+                    lines.append(f"  Related Task: {notif['related_task_id']}")
+
+            return "\n".join(lines)
+
+        except Exception:
+            logger.exception("[Worker] Error building notifications summary")
+            return "## Scheduled Notifications\n\nError loading notifications."
+
+    def _register_worker_tools(self) -> None:
+        """Register all tools available to the Worker Agent."""
+        # Question management
+        from nanobot.agent.tools.dashboard.create_question import CreateQuestionTool
+        from nanobot.agent.tools.dashboard.remove_question import RemoveQuestionTool
+        from nanobot.agent.tools.dashboard.update_question import UpdateQuestionTool
+
+        self.tools.register(CreateQuestionTool(self.workspace))
+        self.tools.register(UpdateQuestionTool(self.workspace))
+        self.tools.register(RemoveQuestionTool(self.workspace))
+
+        # Notification management
+        from nanobot.agent.tools.dashboard.cancel_notification import (
+            CancelNotificationTool,
+        )
+        from nanobot.agent.tools.dashboard.list_notifications import (
+            ListNotificationsTool,
+        )
+        from nanobot.agent.tools.dashboard.schedule_notification import (
+            ScheduleNotificationTool,
+        )
+        from nanobot.agent.tools.dashboard.update_notification import (
+            UpdateNotificationTool,
+        )
+
+        self.tools.register(ScheduleNotificationTool(self.workspace, self.cron_service))
+        self.tools.register(UpdateNotificationTool(self.workspace, self.cron_service))
+        self.tools.register(CancelNotificationTool(self.workspace, self.cron_service))
+        self.tools.register(ListNotificationsTool(self.workspace))
+
+        # Task management
+        from nanobot.agent.tools.dashboard.archive_task import ArchiveTaskTool
+        from nanobot.agent.tools.dashboard.update_task import UpdateTaskTool
+
+        self.tools.register(UpdateTaskTool(self.workspace))
+        self.tools.register(ArchiveTaskTool(self.workspace))

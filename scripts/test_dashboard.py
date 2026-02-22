@@ -5,24 +5,21 @@ Comprehensive testing of dashboard functionality
 """
 
 import json
-import os
 import sys
 import tempfile
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from nanobot.dashboard.manager import DashboardManager
-from nanobot.dashboard.worker import WorkerAgent
 from nanobot.dashboard.schema import (
-    validate_tasks_file,
     validate_questions_file,
-    validate_history_file,
-    validate_insights_file,
-    validate_people_file,
+    validate_tasks_file,
 )
+from nanobot.dashboard.storage import JsonStorageBackend
+from nanobot.dashboard.worker import WorkerAgent
 
 
 class TestRunner:
@@ -35,9 +32,11 @@ class TestRunner:
 
     def test(self, name):
         """Decorator for test functions."""
+
         def decorator(func):
             self.tests.append((name, func))
             return func
+
         return decorator
 
     def run(self):
@@ -89,13 +88,13 @@ def test_create_workspace():
     # Create structure
     (dashboard_path / "tasks.json").write_text(json.dumps({"version": "1.0", "tasks": []}))
     (dashboard_path / "questions.json").write_text(json.dumps({"version": "1.0", "questions": []}))
-    (dashboard_path / "notifications.json").write_text(json.dumps({"version": "1.0", "notifications": []}))
+    (dashboard_path / "notifications.json").write_text(
+        json.dumps({"version": "1.0", "notifications": []})
+    )
 
     knowledge_dir = dashboard_path / "knowledge"
     knowledge_dir.mkdir()
-    (knowledge_dir / "history.json").write_text(json.dumps({"version": "1.0", "completed_tasks": [], "projects": []}))
     (knowledge_dir / "insights.json").write_text(json.dumps({"version": "1.0", "insights": []}))
-    (knowledge_dir / "people.json").write_text(json.dumps({"version": "1.0", "people": []}))
 
     manager = DashboardManager(dashboard_path)
     assert dashboard_path.exists()
@@ -119,13 +118,9 @@ def test_add_task():
         "id": "task_001",
         "title": "Test Task",
         "status": "active",
-        "progress": {
-            "percentage": 0,
-            "last_update": datetime.now().isoformat(),
-            "note": ""
-        },
+        "progress": {"percentage": 0, "last_update": datetime.now().isoformat(), "note": ""},
         "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat()
+        "updated_at": datetime.now().isoformat(),
     }
 
     dashboard["tasks"].append(task)
@@ -153,72 +148,69 @@ def test_schema_questions():
     validate_questions_file(questions_data)  # Should not raise
 
 
-@runner.test("Worker - Add question for unstarted task")
-async def test_worker_question():
-    """Test worker generates question for unstarted task."""
-    # Create task with deadline but no progress
-    now = datetime.now()
-    deadline = now + timedelta(days=2)
-    created = now - timedelta(days=1)
-
-    dashboard = manager.load()
-    dashboard["tasks"] = [{
-        "id": "task_002",
-        "title": "Unstarted Task",
-        "status": "active",
-        "deadline": deadline.isoformat(),
-        "progress": {
-            "percentage": 0,
-            "last_update": created.isoformat(),
-            "note": "",
-            "blocked": False
-        },
-        "priority": "medium",
-        "created_at": created.isoformat(),
-        "updated_at": created.isoformat()
-    }]
-    manager.save(dashboard)
-
-    # Run worker
-    worker = WorkerAgent(dashboard_path)
-    import asyncio
-    await worker.run_cycle()
-
-    # Check questions
-    dashboard2 = manager.load()
-    assert len(dashboard2["questions"]) > 0, "Worker should add question for unstarted task"
-
-
-@runner.test("Worker - Move completed task to history")
-async def test_worker_history():
-    """Test worker moves completed tasks to history."""
+@runner.test("Worker - Maintenance runs without LLM")
+async def test_worker_maintenance():
+    """Test worker runs deterministic maintenance without LLM provider."""
     now = datetime.now()
 
     dashboard = manager.load()
-    dashboard["tasks"] = [{
-        "id": "task_003",
-        "title": "Completed Task",
-        "status": "completed",
-        "completed_at": now.isoformat(),
-        "progress": {
-            "percentage": 100,
-            "last_update": now.isoformat(),
-            "note": "Done"
-        },
-        "created_at": (now - timedelta(days=1)).isoformat(),
-        "updated_at": now.isoformat()
-    }]
+    dashboard["tasks"] = [
+        {
+            "id": "task_002",
+            "title": "Active Task",
+            "status": "active",
+            "deadline": (now + timedelta(days=2)).isoformat(),
+            "progress": {
+                "percentage": 50,
+                "last_update": now.isoformat(),
+                "note": "",
+            },
+            "priority": "medium",
+            "created_at": (now - timedelta(days=1)).isoformat(),
+            "updated_at": now.isoformat(),
+        }
+    ]
+    manager.save(dashboard)
+
+    # Run worker (no LLM → maintenance only)
+    backend = JsonStorageBackend(test_workspace)
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    await worker.run_cycle()
+
+    # Should not crash, task stays active
+    dashboard2 = manager.load()
+    assert len(dashboard2["tasks"]) == 1
+    assert dashboard2["tasks"][0]["status"] == "active"
+
+
+@runner.test("Worker - Archive completed task")
+async def test_worker_archive():
+    """Test worker archives completed tasks (status → archived)."""
+    now = datetime.now()
+
+    dashboard = manager.load()
+    dashboard["tasks"] = [
+        {
+            "id": "task_003",
+            "title": "Completed Task",
+            "status": "completed",
+            "completed_at": now.isoformat(),
+            "progress": {"percentage": 100, "last_update": now.isoformat(), "note": "Done"},
+            "created_at": (now - timedelta(days=1)).isoformat(),
+            "updated_at": now.isoformat(),
+        }
+    ]
     manager.save(dashboard)
 
     # Run worker
-    worker = WorkerAgent(dashboard_path)
-    import asyncio
+    backend = JsonStorageBackend(test_workspace)
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
     await worker.run_cycle()
 
-    # Check history
+    # Task should be archived (not removed)
     dashboard2 = manager.load()
-    assert len(dashboard2["tasks"]) == 0, "Completed task should be removed"
-    assert len(dashboard2["knowledge"]["history"]["completed_tasks"]) > 0, "Task should be in history"
+    assert len(dashboard2["tasks"]) == 1, "Task should still exist in tasks.json"
+    assert dashboard2["tasks"][0]["status"] == "archived", "Task should be archived"
 
 
 @runner.test("Load example data")
@@ -244,6 +236,7 @@ def test_example_data():
 def test_cleanup():
     """Cleanup test workspace."""
     import shutil
+
     if test_workspace.exists():
         shutil.rmtree(test_workspace)
     assert not test_workspace.exists()
@@ -263,6 +256,7 @@ if __name__ == "__main__":
             def make_sync_test(async_func):
                 def sync_test():
                     asyncio.run(async_func())
+
                 return sync_test
 
             runner.tests.append((name, make_sync_test(func)))

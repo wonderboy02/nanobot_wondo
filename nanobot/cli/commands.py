@@ -354,7 +354,6 @@ def gateway(
     # Determine worker model (from config or fallback to fast model)
     worker_config = getattr(config.agents, 'worker', None)
     worker_model = worker_config.model if worker_config else "google/gemini-2.0-flash-exp"
-    use_llm_worker = worker_config.use_llm if worker_config else True
 
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
@@ -365,7 +364,6 @@ def gateway(
         model=worker_model,
         cron_service=cron,
         bus=bus,
-        use_llm_worker=use_llm_worker,
         storage_backend=agent.storage_backend,
     )
     
@@ -998,16 +996,17 @@ def dashboard_history():
 def dashboard_worker():
     """Manually run the worker agent."""
     from nanobot.config.loader import load_config
+    from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     config = load_config()
     workspace = config.workspace_path
-    dashboard_path = workspace / "dashboard"
 
     console.print(f"{__logo__} Running worker agent...")
 
     async def run():
-        worker = WorkerAgent(dashboard_path)
+        backend = JsonStorageBackend(workspace)
+        worker = WorkerAgent(workspace=workspace, storage_backend=backend)
         await worker.run_cycle()
 
     asyncio.run(run())

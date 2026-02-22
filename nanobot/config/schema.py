@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import BaseSettings
 
 
@@ -73,10 +73,14 @@ class AgentDefaults(BaseModel):
 
 
 class WorkerConfig(BaseModel):
-    """Worker Agent configuration."""
+    """Worker Agent configuration.
+
+    COMPAT: extra='ignore' so existing config.json with removed fields
+    (use_llm, fallback_to_rules) won't cause Pydantic validation errors.
+    """
+    model_config = ConfigDict(extra="ignore")
+
     enabled: bool = True
-    use_llm: bool = True
-    fallback_to_rules: bool = True
     model: str = "google/gemini-2.0-flash-exp"
 
 

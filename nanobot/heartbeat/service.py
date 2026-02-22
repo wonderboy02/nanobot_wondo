@@ -1,8 +1,13 @@
 """Heartbeat service - periodic agent wake-up to check for tasks."""
 
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
-from typing import Any, Callable, Coroutine, Optional
+from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
+
+if TYPE_CHECKING:
+    from nanobot.dashboard.storage import StorageBackend
 
 from loguru import logger
 
@@ -53,7 +58,6 @@ class HeartbeatService:
         model: Optional[str] = None,
         cron_service: Optional[Any] = None,  # CronService
         bus: Optional[Any] = None,  # MessageBus
-        use_llm_worker: bool = True,
         storage_backend: "StorageBackend | None" = None,
     ):
         self.workspace = workspace
@@ -64,7 +68,6 @@ class HeartbeatService:
         self.model = model
         self.cron_service = cron_service
         self.bus = bus
-        self.use_llm_worker = use_llm_worker
         self.storage_backend = storage_backend
         self._running = False
         self._task: asyncio.Task | None = None
@@ -140,7 +143,7 @@ class HeartbeatService:
                 logger.error(f"Heartbeat execution failed: {e}")
 
     async def _run_worker(self) -> None:
-        """Run the Worker Agent to check dashboard."""
+        """Run the unified Worker Agent to check dashboard."""
         dashboard_path = self.workspace / "dashboard"
 
         # Dashboard not initialized - skip worker
@@ -152,56 +155,26 @@ class HeartbeatService:
             self.storage_backend.invalidate_cache()
 
         try:
-            # Use LLM Worker if enabled and dependencies available
-            if (
-                self.use_llm_worker
-                and self.provider is not None
-                and self.model is not None
-                and self.cron_service is not None
-                and self.bus is not None
-            ):
-                try:
-                    from nanobot.dashboard.llm_worker import LLMWorkerAgent
+            from nanobot.dashboard.storage import JsonStorageBackend
+            from nanobot.dashboard.worker import WorkerAgent
 
-                    worker = LLMWorkerAgent(
-                        workspace=self.workspace,
-                        provider=self.provider,
-                        model=self.model,
-                        cron_service=self.cron_service,
-                        bus=self.bus,
-                        storage_backend=self.storage_backend,
-                    )
-                    await worker.run_cycle()
-                    logger.debug("LLM Worker cycle completed successfully")
-                    return
-                except ImportError:
-                    logger.warning("LLM Worker not available, falling back to rule-based worker")
-                except Exception as e:
-                    logger.error(f"LLM Worker execution failed: {e}, falling back to rule-based worker")
-
-            # DESIGN: Rule worker is intentionally SKIPPED in Notion mode.
-            # Rule worker uses DashboardManager (local JSON files directly),
-            # which would create split-brain state with Notion as source of truth.
-            # Trade-off: LLM worker failure → no automatic maintenance until next cycle.
-            # This is safer than running rule worker on stale local JSON.
-            # See CLAUDE.md "Known Limitations #3".
-            if self.storage_backend is not None:
-                logger.warning("LLM Worker unavailable and Notion mode active; skipping rule worker")
-            else:
-                from nanobot.dashboard.worker import WorkerAgent
-
-                worker = WorkerAgent(dashboard_path)
-                await worker.run_cycle()
-                logger.debug("Rule-based Worker cycle completed successfully")
+            backend = self.storage_backend or JsonStorageBackend(self.workspace)
+            worker = WorkerAgent(
+                workspace=self.workspace,
+                storage_backend=backend,
+                provider=self.provider,
+                model=self.model,
+                cron_service=self.cron_service,
+                bus=self.bus,
+            )
+            await worker.run_cycle()
+            logger.debug("Worker cycle completed successfully")
 
         except ImportError:
-            # Dashboard module not available - log once
             logger.debug("Dashboard worker not available")
         except FileNotFoundError as e:
-            # Dashboard files missing
             logger.warning(f"Dashboard files missing: {e}")
         except Exception as e:
-            # Other errors - log and continue
             logger.error(f"Worker execution failed: {e}")
     
     async def trigger_now(self) -> str | None:
