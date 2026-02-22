@@ -1,5 +1,31 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Notion Integration (StorageBackend)**: `StorageBackend` ABC with `JsonStorageBackend` (default) and `NotionStorageBackend` (Notion API + 5-min TTL memory cache). Dashboard tools unchanged — backend swap only.
+- **Notification Tools (4)**: `schedule_notification`, `update_notification`, `cancel_notification`, `list_notifications` — conditional on `cron_service` availability. Dashboard tools: 6 -> 12.
+- **Numbered Answer System**: Telegram `/questions` returns numbered list; user replies `"1. answer\n2. answer"` format. Full auto-process skips LLM call (token savings). Cache: TTL 1h, max 100.
+- **Reaction Mode**: Replaces plain SILENT — sends emoji reaction to original message on dashboard updates. Implementation in `loop.py` `_reaction_message()` and each channel's reaction guard.
+- **CI/CD Pipeline**: GH Actions (`deploy.yml`) -> SSH -> `deploy.sh` with first-run config bootstrap and `docker compose up --build --force-recreate -d`.
+- **Dashboard Lock**: `@with_dashboard_lock` decorator (asyncio.Lock) on all 12 dashboard tools to prevent race conditions.
+- **Question Management Tools (2)**: `update_question`, `remove_question` — completes CRUD for question queue.
+
+### Changed
+
+- **Worker Unification**: Merged `worker.py` (rule-based) + `llm_worker.py` into single `WorkerAgent` with Phase 1 (deterministic) + Phase 2 (LLM). Removed `llm_worker.py`.
+- **TYPE_CHECKING Guards**: Type-hint-only imports moved inside `if TYPE_CHECKING:` blocks. Relaxed ruff lint rules to critical only (`E9, F63, F7, F82`).
+- **CLAUDE.md Overhaul**: 884 lines -> ~220 lines. Converted from general project guide to fork operation snapshot + enforced rules document. Previous version archived in `CLAUDE.archive.md`.
+- **Copilot Instructions**: Moved from `.github/workflows/copilot-instruction.md` to `.github/copilot-instructions.md` (correct GitHub path).
+
+### Removed
+
+- `nanobot/dashboard/llm_worker.py` — merged into `worker.py`
+- Dead code, unused files, and stale references (commit `37e3e8d`)
+
+---
+
 ## [0.1.5] - 2026-02-08
 
 ### Added - Dashboard Tools System
