@@ -18,13 +18,15 @@ class LiteLLMProvider(LLMProvider):
     """
     
     def __init__(
-        self, 
-        api_key: str | None = None, 
+        self,
+        api_key: str | None = None,
         api_base: str | None = None,
-        default_model: str = "anthropic/claude-opus-4-5"
+        default_model: str = "anthropic/claude-opus-4-5",
+        num_retries: int = 3,
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
+        self.num_retries = num_retries
         
         # Detect OpenRouter by api_key prefix or explicit api_base
         self.is_openrouter = (
@@ -125,6 +127,7 @@ class LiteLLMProvider(LLMProvider):
             "messages": messages,
             "max_tokens": max_tokens,
             "temperature": temperature,
+            "num_retries": self.num_retries,
         }
         
         # Pass api_base directly for custom endpoints (vLLM, etc.)

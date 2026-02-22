@@ -161,7 +161,11 @@ class FeishuChannel(BaseChannel):
         if not self._client:
             logger.warning("Feishu client not initialized")
             return
-        
+
+        # Skip reaction-only messages (not supported on Feishu yet)
+        if not msg.content and msg.metadata.get("reaction"):
+            return
+
         try:
             # Determine receive_id_type based on chat_id format
             # open_id starts with "ou_", chat_id starts with "oc_"

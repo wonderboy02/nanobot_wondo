@@ -324,6 +324,21 @@ class TelegramChannel(BaseChannel):
             logger.warning("Telegram bot not running")
             return
 
+        # Handle reaction-only messages (SILENT mode acknowledgment)
+        if not msg.content and msg.metadata.get("reaction"):
+            message_id = msg.metadata.get("message_id")
+            if message_id:
+                try:
+                    from telegram import ReactionTypeEmoji
+                    await self._app.bot.set_message_reaction(
+                        chat_id=int(msg.chat_id),
+                        message_id=int(message_id),
+                        reaction=[ReactionTypeEmoji(emoji=msg.metadata["reaction"])],
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to set reaction: {e}")
+            return
+
         try:
             # chat_id should be the Telegram chat ID (integer)
             chat_id = int(msg.chat_id)

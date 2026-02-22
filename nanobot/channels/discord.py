@@ -79,6 +79,10 @@ class DiscordChannel(BaseChannel):
             logger.warning("Discord HTTP client not initialized")
             return
 
+        # Skip reaction-only messages (not supported on Discord yet)
+        if not msg.content and msg.metadata.get("reaction"):
+            return
+
         url = f"{DISCORD_API_BASE}/channels/{msg.chat_id}/messages"
         payload: dict[str, Any] = {"content": msg.content}
 

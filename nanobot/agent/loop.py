@@ -338,7 +338,7 @@ class AgentLoop:
                 session.add_message("user", msg.content or "[numbered answers]")
                 session.add_message("assistant", "[Dashboard updated silently]")
                 self.sessions.save(session)
-                return None
+                return self._reaction_message(msg, "✅")
 
         await self._precompute_dashboard()
 
@@ -410,10 +410,10 @@ class AgentLoop:
             session.add_message("assistant", final_content)
         self.sessions.save(session)
 
-        # Return None for Silent mode (no response sent)
+        # Silent mode: send ✅ reaction instead of a text message
         if is_silent:
             logger.debug(f"Silent mode: Dashboard updated without response")
-            return None
+            return self._reaction_message(msg, "✅")
 
         return OutboundMessage(
             channel=msg.channel,
@@ -421,6 +421,22 @@ class AgentLoop:
             content=final_content
         )
     
+    @staticmethod
+    def _reaction_message(msg: InboundMessage, emoji: str) -> OutboundMessage | None:
+        """Create a reaction-only OutboundMessage (no text, just an emoji reaction).
+
+        Returns None if the inbound message has no message_id (e.g. CLI).
+        """
+        msg_id = msg.metadata.get("message_id")
+        if not msg_id:
+            return None
+        return OutboundMessage(
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            content="",
+            metadata={"reaction": emoji, "message_id": msg_id},
+        )
+
     async def _process_system_message(self, msg: InboundMessage) -> OutboundMessage | None:
         """
         Process a system message (e.g., subagent announce).

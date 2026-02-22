@@ -873,6 +873,12 @@ Notion 통합 작업 중 발견된 알려진 제약사항/안티패턴입니다.
 - **현재 대응**: 단일 사용자 + 로컬 실행 환경에서는 문제없음
 - **개선안**: timezone-aware datetime 사용 또는 config에 timezone 설정 추가
 
+### 9. OutboundMessage에 명시적 type 필드 없음
+- **위치**: `nanobot/bus/events.py` — `OutboundMessage`
+- **설명**: reaction 기능 추가로 `OutboundMessage`가 텍스트 외 메시지 타입(reaction)도 전달하게 되었으나, 메시지 종류를 `metadata` 딕셔너리의 convention(`"reaction"` 키 존재 여부)으로 구분하고 있음
+- **현재 대응**: 각 채널 `send()`에서 `not msg.content and msg.metadata.get("reaction")` guard로 처리. 현재 reaction 하나뿐이므로 충분함
+- **개선안**: 메시지 타입이 늘어나면 (edit, button, image 등) `OutboundMessage`에 `type: str = "text"` 필드를 추가하여 명시적으로 구분
+
 ## 라이선스
 
 MIT License - 자세한 내용은 LICENSE 파일 참조

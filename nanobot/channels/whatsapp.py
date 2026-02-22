@@ -77,7 +77,11 @@ class WhatsAppChannel(BaseChannel):
         if not self._ws or not self._connected:
             logger.warning("WhatsApp bridge not connected")
             return
-        
+
+        # Skip reaction-only messages (not supported on WhatsApp yet)
+        if not msg.content and msg.metadata.get("reaction"):
+            return
+
         try:
             payload = {
                 "type": "send",
