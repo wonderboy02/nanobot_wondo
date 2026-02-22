@@ -7,7 +7,27 @@ cd "$(dirname "$0")"
 if docker compose version &>/dev/null; then
     DC="docker compose"
 elif command -v docker-compose &>/dev/null; then
-    DC="docker-compose"
+    echo "WARNING: docker-compose V1 detected. V1 is incompatible with Docker Engine 25+."
+    echo "==> Attempting to install Docker Compose V2 plugin..."
+    mkdir -p ~/.docker/cli-plugins
+    ARCH=$(uname -m)
+    case "$ARCH" in
+        x86_64)  ARCH="x86_64" ;;
+        aarch64) ARCH="aarch64" ;;
+        armv7l)  ARCH="armv7" ;;
+        *)       echo "ERROR: Unsupported architecture: $ARCH"; exit 1 ;;
+    esac
+    COMPOSE_URL="https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${ARCH}"
+    if curl -fsSL "$COMPOSE_URL" -o ~/.docker/cli-plugins/docker-compose; then
+        chmod +x ~/.docker/cli-plugins/docker-compose
+        echo "==> Docker Compose V2 installed successfully."
+        DC="docker compose"
+    else
+        echo "ERROR: Failed to install Docker Compose V2."
+        echo "  Install manually: https://docs.docker.com/compose/install/linux/"
+        echo "  Or upgrade docker-compose V1: pip install docker-compose --upgrade"
+        exit 1
+    fi
 else
     echo "ERROR: Neither 'docker compose' nor 'docker-compose' found."
     exit 1
