@@ -106,8 +106,11 @@ class WorkerAgent:
         # Phase 1: Deterministic maintenance — tasks only (always runs)
         await self._run_maintenance()
 
-        # Extract answered questions before cleanup (read-only snapshot)
+        # Extract answered questions before cleanup (read-only snapshot).
+        # None means extraction itself failed — treat as "answers may exist"
+        # so cleanup preserves them rather than risking data loss.
         pending_answers = self._extract_answered_questions()
+        extraction_failed = pending_answers is None
 
         # Phase 2: LLM-powered analysis (requires provider + model).
         # When unavailable (e.g. `nanobot dashboard worker` CLI), only Phase 1
@@ -115,13 +118,15 @@ class WorkerAgent:
         # This is an intentional trade-off: see module docstring for rationale.
         phase2_ok = False
         if self.provider is not None and self.model is not None:
-            phase2_ok = await self._run_llm_cycle(pending_answers)
+            phase2_ok = await self._run_llm_cycle(pending_answers or [])
         else:
             logger.debug("[Worker] LLM not configured; skipping Phase 2")
 
         # Cleanup: remove answered + stale questions (after Phase 2 processed them).
         # If Phase 2 was skipped/failed AND there were pending answers, preserve
         # answered questions so they can be retried in the next cycle.
+        # Also preserve if extraction itself failed (answered questions may
+        # exist in storage but we couldn't read them — don't blindly delete).
         # NOTE: Partial Phase 2 success (some tool calls ran before crash) may
         # cause duplicate side effects on retry. Accepted trade-off: the LLM sees
         # fresh dashboard state each cycle, so already-saved insights / updated
@@ -137,12 +142,12 @@ class WorkerAgent:
                 q.get("id", "") for q in pending_answers[: self.MAX_ANSWERED_IN_CONTEXT]
             }
 
-        skip_answered = bool(pending_answers) and not phase2_ok
+        skip_answered = extraction_failed or (bool(pending_answers) and not phase2_ok)
         await self._cleanup_questions(skip_answered=skip_answered, processed_ids=processed_ids)
         if skip_answered:
+            reason = "extraction failed" if extraction_failed else "Phase 2 incomplete"
             logger.info(
-                "[Worker] Preserved {} answered question(s) for next cycle",
-                len(pending_answers),
+                "[Worker] Preserved answered question(s) for next cycle ({})", reason
             )
 
         logger.info("[Worker] Cycle complete.")
@@ -295,11 +300,15 @@ class WorkerAgent:
         logger.info(f"[Worker] Question queue cleaned: {original_count} → {len(filtered)}")
         return True
 
-    def _extract_answered_questions(self) -> list[dict]:
+    def _extract_answered_questions(self) -> list[dict] | None:
         """Extract answered questions from storage (read-only).
 
         Detects both ``answered=True`` and non-empty ``answer`` field
         (covers case where user fills Answer but forgets the checkbox).
+
+        Returns None on failure so callers can distinguish "no answered
+        questions" (empty list) from "extraction failed" (None) and
+        preserve answered questions in storage accordingly.
         """
         try:
             questions_data = self.storage_backend.load_questions()
@@ -312,7 +321,7 @@ class WorkerAgent:
             return answered
         except Exception:
             logger.exception("[Worker] Error extracting answered questions")
-            return []
+            return None
 
     def _build_answered_questions_summary(self, pending_answers: list[dict]) -> str:
         """Build LLM context section for recently answered questions.

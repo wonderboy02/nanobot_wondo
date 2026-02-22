@@ -410,7 +410,7 @@ class AgentLoop:
             session.add_message("assistant", final_content)
         self.sessions.save(session)
 
-        # Silent mode: send ✅ reaction instead of a text message
+        # Silent mode: send 👍 reaction instead of a text message
         if is_silent:
             logger.debug(f"Silent mode: Dashboard updated without response")
             return self._reaction_message(msg, "👍")
