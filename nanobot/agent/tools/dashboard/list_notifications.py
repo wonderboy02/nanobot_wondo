@@ -1,6 +1,5 @@
 """List notifications tool."""
 
-from pathlib import Path
 from typing import Optional
 
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool

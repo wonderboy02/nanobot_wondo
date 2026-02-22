@@ -250,9 +250,8 @@ System Prompt + Dashboard Summary (전체 상태) + Current Message
   - `nanobot dashboard worker` - Worker 수동 실행
 
 - **Testing Infrastructure**:
-  - `tests/test_dashboard.py` - Pytest 단위 테스트
-  - `scripts/test_dashboard.sh` - Bash 통합 테스트
-  - `scripts/test_dashboard.py` - Python 통합 테스트
+  - `tests/dashboard/unit/` - Pytest 단위 테스트
+  - `tests/dashboard/e2e/` - E2E 통합 테스트
   - `scripts/test_context_dashboard.py` - Context 통합 테스트
   - `scripts/test_agent_dashboard.py` - Agent 통합 테스트
   - `tests/fixtures/example_dashboard.json` - 예제 데이터

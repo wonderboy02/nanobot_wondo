@@ -1,40 +1,49 @@
 ---
 name: cron
-description: Schedule reminders and recurring tasks.
+description: Schedule reminders and notifications.
 ---
 
 # Cron
 
-Use the `cron` tool to schedule reminders or recurring tasks.
+Use the `schedule_notification` tool to schedule reminders and notifications.
 
-## Two Modes
+> **Note**: Notification tools are available only in gateway mode (when cron_service is active).
+> In CLI agent mode (`nanobot agent`), these tools are not registered.
 
-1. **Reminder** - message is sent directly to user
-2. **Task** - message is a task description, agent executes and sends result
+## Tools
+
+- `schedule_notification(message, scheduled_at, ...)` - Schedule a notification
+- `update_notification(notification_id, ...)` - Update a scheduled notification
+- `cancel_notification(notification_id)` - Cancel a notification
+- `list_notifications(status, related_task_id)` - List notifications
 
 ## Examples
 
-Fixed reminder:
+Remind user tomorrow morning:
 ```
-cron(action="add", message="Time to take a break!", every_seconds=1200)
-```
-
-Dynamic task (agent executes each time):
-```
-cron(action="add", message="Check HKUDS/nanobot GitHub stars and report", every_seconds=600)
+schedule_notification(message="Time to take a break!", scheduled_at="tomorrow 9am")
 ```
 
-List/remove:
+Deadline alert:
 ```
-cron(action="list")
-cron(action="remove", job_id="abc123")
+schedule_notification(message="React 공부 deadline!", scheduled_at="2026-02-15T18:00:00", type="deadline_alert", related_task_id="task_001")
+```
+
+List pending notifications:
+```
+list_notifications(status="pending")
+```
+
+Cancel a notification:
+```
+cancel_notification(notification_id="n_12345678")
 ```
 
 ## Time Expressions
 
-| User says | Parameters |
+| User says | scheduled_at |
 |-----------|------------|
-| every 20 minutes | every_seconds: 1200 |
-| every hour | every_seconds: 3600 |
-| every day at 8am | cron_expr: "0 8 * * *" |
-| weekdays at 5pm | cron_expr: "0 17 * * 1-5" |
+| in 2 hours | "in 2 hours" |
+| tomorrow 9am | "tomorrow 9am" |
+| 2026-02-15 at 3pm | "2026-02-15T15:00:00" |
+| next Monday | "next Monday 9am" |

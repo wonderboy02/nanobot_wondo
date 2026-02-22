@@ -177,8 +177,3 @@ class HeartbeatService:
         except Exception as e:
             logger.error(f"Worker execution failed: {e}")
     
-    async def trigger_now(self) -> str | None:
-        """Manually trigger a heartbeat."""
-        if self.on_heartbeat:
-            return await self.on_heartbeat(HEARTBEAT_PROMPT)
-        return None

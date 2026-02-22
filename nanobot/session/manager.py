@@ -52,10 +52,6 @@ class Session:
         # Convert to LLM format (just role and content)
         return [{"role": m["role"], "content": m["content"]} for m in recent]
     
-    def clear(self) -> None:
-        """Clear all messages in the session."""
-        self.messages = []
-        self.updated_at = datetime.now()
 
 
 class SessionManager:
@@ -153,50 +149,3 @@ class SessionManager:
         
         self._cache[session.key] = session
     
-    def delete(self, key: str) -> bool:
-        """
-        Delete a session.
-        
-        Args:
-            key: Session key.
-        
-        Returns:
-            True if deleted, False if not found.
-        """
-        # Remove from cache
-        self._cache.pop(key, None)
-        
-        # Remove file
-        path = self._get_session_path(key)
-        if path.exists():
-            path.unlink()
-            return True
-        return False
-    
-    def list_sessions(self) -> list[dict[str, Any]]:
-        """
-        List all sessions.
-        
-        Returns:
-            List of session info dicts.
-        """
-        sessions = []
-        
-        for path in self.sessions_dir.glob("*.jsonl"):
-            try:
-                # Read just the metadata line
-                with open(path) as f:
-                    first_line = f.readline().strip()
-                    if first_line:
-                        data = json.loads(first_line)
-                        if data.get("_type") == "metadata":
-                            sessions.append({
-                                "key": path.stem.replace("_", ":"),
-                                "created_at": data.get("created_at"),
-                                "updated_at": data.get("updated_at"),
-                                "path": str(path)
-                            })
-            except Exception:
-                continue
-        
-        return sorted(sessions, key=lambda x: x.get("updated_at", ""), reverse=True)

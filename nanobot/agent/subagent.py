@@ -239,6 +239,3 @@ Your workspace is at: {self.workspace}
 
 When you have completed the task, provide a clear summary of your findings or actions."""
     
-    def get_running_count(self) -> int:
-        """Return the number of currently running subagents."""
-        return len(self._running_tasks)

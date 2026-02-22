@@ -16,7 +16,6 @@ from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.spawn import SpawnTool
-from nanobot.agent.tools.cron import CronTool
 from nanobot.agent.tools.dashboard.schedule_notification import ScheduleNotificationTool
 from nanobot.agent.tools.dashboard.update_notification import UpdateNotificationTool
 from nanobot.agent.subagent import SubagentManager
@@ -178,8 +177,6 @@ class AgentLoop:
         spawn_tool = SpawnTool(manager=self.subagents)
         self.tools.register(spawn_tool)
         
-        # Cron tool (REMOVED - use recurring tasks instead)
-
         # Dashboard tools
         from nanobot.agent.tools.dashboard import (
             CreateTaskTool,
@@ -296,10 +293,6 @@ class AgentLoop:
         if isinstance(spawn_tool, SpawnTool):
             spawn_tool.set_context(msg.channel, msg.chat_id)
         
-        cron_tool = self.tools.get("cron")
-        if isinstance(cron_tool, CronTool):
-            cron_tool.set_context(msg.channel, msg.chat_id)
-
         # Set context for notification tools (so they know where to deliver)
         schedule_tool = self.tools.get("schedule_notification")
         if isinstance(schedule_tool, ScheduleNotificationTool):
@@ -455,10 +448,6 @@ class AgentLoop:
         if isinstance(spawn_tool, SpawnTool):
             spawn_tool.set_context(origin_channel, origin_chat_id)
         
-        cron_tool = self.tools.get("cron")
-        if isinstance(cron_tool, CronTool):
-            cron_tool.set_context(origin_channel, origin_chat_id)
-
         schedule_tool = self.tools.get("schedule_notification")
         if isinstance(schedule_tool, ScheduleNotificationTool):
             schedule_tool.set_context(origin_channel, origin_chat_id)

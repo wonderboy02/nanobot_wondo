@@ -147,18 +147,6 @@ class InsightsFile(BaseModel):
 
 
 # ============================================================================
-# Complete Dashboard Schema
-# ============================================================================
-
-class Dashboard(BaseModel):
-    """Complete dashboard schema."""
-    tasks: list[Task]
-    questions: list[Question]
-    notifications: list[Notification] = Field(default_factory=list)
-    knowledge: dict  # Contains insights
-
-
-# ============================================================================
 # Validation Functions
 # ============================================================================
 
@@ -177,11 +165,3 @@ def validate_notifications_file(data: dict) -> NotificationsFile:
     return NotificationsFile(**data)
 
 
-def validate_insights_file(data: dict) -> InsightsFile:
-    """Validate insights.json."""
-    return InsightsFile(**data)
-
-
-def validate_dashboard(dashboard: dict) -> Dashboard:
-    """Validate complete dashboard."""
-    return Dashboard(**dashboard)

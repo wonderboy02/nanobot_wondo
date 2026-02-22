@@ -188,9 +188,6 @@ class NotionClient:
         body = {"archived": True}
         return self._request("PATCH", f"/pages/{page_id}", json_body=body)
 
-    def get_page(self, page_id: str) -> dict[str, Any]:
-        """Retrieve a single page by ID."""
-        return self._request("GET", f"/pages/{page_id}")
 
 
 class NotionAPIError(Exception):

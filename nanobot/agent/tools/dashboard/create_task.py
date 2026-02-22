@@ -1,6 +1,5 @@
 """Create new task tool."""
 
-from pathlib import Path
 from typing import Any
 
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock

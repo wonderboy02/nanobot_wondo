@@ -5,7 +5,8 @@ Dashboard Sync Manager의 상세 테스트 계획입니다.
 ## 📊 현재 상태 (2026-02-08)
 
 ### 기존 테스트
-- ✅ `tests/test_dashboard.py` - 5개 기본 테스트
+- ✅ `tests/dashboard/unit/` - 단위 테스트
+- ✅ `tests/dashboard/e2e/` - E2E 시나리오
 - ✅ `scripts/test_agent_e2e.py` - 1개 E2E 시나리오
 - ✅ `scripts/test_context_dashboard.py` - Context 통합
 - ✅ `scripts/test_agent_dashboard.py` - Agent 통합

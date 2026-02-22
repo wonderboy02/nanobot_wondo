@@ -184,46 +184,20 @@ nanobot dashboard tasks
 
 ## 자동 테스트 실행
 
-### 방법 1: Bash 스크립트 (빠르고 직관적)
+### Pytest (단위 테스트 + E2E)
 
 ```bash
-./scripts/test_dashboard.sh
-```
+# Dashboard 전체 테스트
+pytest tests/dashboard/ -v
 
-**포함된 테스트:**
-- Dashboard 구조 확인
-- 예제 데이터 로드
-- CLI 명령어 (show, tasks, questions, history)
-- Worker 실행
-- 스키마 검증 (Pydantic)
-- Question 답변
+# 단위 테스트만
+pytest tests/dashboard/unit/ -v
 
-### 방법 2: Python 스크립트 (상세하고 확장 가능)
-
-```bash
-python scripts/test_dashboard.py
-```
-
-**포함된 테스트:**
-- Workspace 생성
-- DashboardManager 로드/저장
-- Task 추가
-- 스키마 검증
-- Worker - Question 생성
-- Worker - History 이동
-- 예제 데이터 검증
-
-### 방법 3: Pytest (단위 테스트)
-
-```bash
-# 모든 테스트 실행
-pytest tests/test_dashboard.py -v
-
-# 특정 테스트만
-pytest tests/test_dashboard.py::test_dashboard_manager_load -v
+# E2E 테스트만
+pytest tests/dashboard/e2e/ -v
 
 # Coverage와 함께
-pytest tests/test_dashboard.py --cov=nanobot.dashboard --cov-report=html
+pytest tests/dashboard/ --cov=nanobot.dashboard --cov-report=html
 ```
 
 ### 스키마 검증
