@@ -53,3 +53,22 @@ User: "Hook이 어려워서 막힘"
 - **Main Agent**: 사용자가 명시적으로 요청할 때만 ("내일 9시에 알림 보내줘")
 - **Worker Agent**: 자동 deadline/progress 알림 담당
 - 중복 방지: `list_notifications(status="pending")` 먼저 확인
+
+### Notification → Task 연결 (필수)
+
+Notification은 반드시 Task와 연결되어야 한다:
+
+1. 관련 기존 Task가 있으면 → `related_task_id`에 해당 task ID 연결
+2. 관련 Task가 없으면 → `create_task()` 먼저 호출 후 → `schedule_notification(related_task_id=새_task_id)`
+
+```
+User: "내일 오후 3시에 회의 알림 보내줘"
+→ create_task("회의 참석")  # task_xxx 생성
+→ schedule_notification("회의 시작", scheduled_at="...", related_task_id=task_xxx)
+→ SILENT
+
+User: "리포트 마감 내일이야, 리마인더 해줘"
+→ update_task(task_xxx, deadline="내일")  # 기존 리포트 task에 마감 설정
+→ schedule_notification("리포트 마감 리마인더", scheduled_at="...", related_task_id=task_xxx)
+→ SILENT
+```
