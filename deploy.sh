@@ -45,14 +45,26 @@ if [ ! -d "data" ]; then
 
     echo "==> Copying config.example.json -> data/config.json"
     # Write to temp file first — if sed fails, we don't leave an empty config.
-    sed 's|~/.nanobot/workspace|/app/workspace|g' config.example.json > data/config.json.tmp
+    sed -e 's|~/.nanobot/workspace|/app/workspace|g' \
+        -e 's|~/.nanobot/google|/app/data/google|g' \
+        config.example.json > data/config.json.tmp
     mv data/config.json.tmp data/config.json
+
+    # Create google credentials directory
+    mkdir -p data/google
 
     echo ""
     echo "============================================"
     echo "  Setup complete!"
     echo "  Edit data/config.json with your API keys,"
     echo "  then run ./deploy.sh again to start."
+    echo ""
+    echo "  Google Calendar (optional):"
+    echo "    1. Put client_secret.json in data/google/"
+    echo "    2. Run locally to get token.json first"
+    echo "       (Docker can't open a browser for OAuth)"
+    echo "    3. Copy token.json to data/google/"
+    echo "    4. Set google.calendar.enabled=true in config"
     echo "============================================"
     exit 0
 fi

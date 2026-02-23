@@ -26,9 +26,7 @@ def version_callback(value: bool):
 
 @app.callback()
 def main(
-    version: bool = typer.Option(
-        None, "--version", "-v", callback=version_callback, is_eager=True
-    ),
+    version: bool = typer.Option(None, "--version", "-v", callback=version_callback, is_eager=True),
 ):
     """nanobot - Personal AI Assistant."""
     pass
@@ -45,34 +43,34 @@ def onboard():
     from nanobot.config.loader import get_config_path, save_config
     from nanobot.config.schema import Config
     from nanobot.utils.helpers import get_workspace_path
-    
+
     config_path = get_config_path()
-    
+
     if config_path.exists():
         console.print(f"[yellow]Config already exists at {config_path}[/yellow]")
         if not typer.confirm("Overwrite?"):
             raise typer.Exit()
-    
+
     # Create default config
     config = Config()
     save_config(config)
     console.print(f"[green]✓[/green] Created config at {config_path}")
-    
+
     # Create workspace
     workspace = get_workspace_path()
     console.print(f"[green]✓[/green] Created workspace at {workspace}")
-    
+
     # Create default bootstrap files
     _create_workspace_templates(workspace)
-    
+
     console.print(f"\n{__logo__} nanobot is ready!")
     console.print("\nNext steps:")
     console.print("  1. Add your API key to [cyan]~/.nanobot/config.json[/cyan]")
     console.print("     Get one at: https://openrouter.ai/keys")
-    console.print("  2. Chat: [cyan]nanobot agent -m \"Hello!\"[/cyan]")
-    console.print("\n[dim]Want Telegram/WhatsApp? See: https://github.com/HKUDS/nanobot#-chat-apps[/dim]")
-
-
+    console.print('  2. Chat: [cyan]nanobot agent -m "Hello!"[/cyan]')
+    console.print(
+        "\n[dim]Want Telegram/WhatsApp? See: https://github.com/HKUDS/nanobot#-chat-apps[/dim]"
+    )
 
 
 def _create_workspace_templates(workspace: Path):
@@ -116,13 +114,13 @@ Information about the user goes here.
 - Language: (your preferred language)
 """,
     }
-    
+
     for filename, content in templates.items():
         file_path = workspace / filename
         if not file_path.exists():
             file_path.write_text(content)
             console.print(f"  [dim]Created {filename}[/dim]")
-    
+
     # Create memory directory and MEMORY.md
     memory_dir = workspace / "memory"
     memory_dir.mkdir(exist_ok=True)
@@ -162,7 +160,7 @@ This file stores important information that should persist across sessions.
     for filename, data in dashboard_files.items():
         file_path = dashboard_dir / filename
         if not file_path.exists():
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
 
     # Create knowledge subdirectory
@@ -176,7 +174,7 @@ This file stores important information that should persist across sessions.
     for filename, data in knowledge_files.items():
         file_path = knowledge_dir / filename
         if not file_path.exists():
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)
 
     console.print("  [dim]Created dashboard/ structure[/dim]")
@@ -187,6 +185,7 @@ This file stores important information that should persist across sessions.
         template_path = Path(__file__).parent.parent.parent / "workspace" / "DASHBOARD.md"
         if template_path.exists():
             import shutil
+
             shutil.copy(template_path, dashboard_md)
             console.print("  [dim]Created DASHBOARD.md[/dim]")
         else:
@@ -212,18 +211,19 @@ def gateway(
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
-    
+
     if verbose:
         import logging
+
         logging.basicConfig(level=logging.DEBUG)
-    
+
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
-    
+
     config = load_config()
-    
+
     # Create components
     bus = MessageBus()
-    
+
     # Create provider (supports OpenRouter, Anthropic, OpenAI, Bedrock)
     api_key = config.get_api_key()
     api_base = config.get_api_base()
@@ -234,17 +234,19 @@ def gateway(
         console.print("[red]Error: No API key configured.[/red]")
         console.print("Set one in ~/.nanobot/config.json under providers.openrouter.apiKey")
         raise typer.Exit(1)
-    
+
     provider = LiteLLMProvider(
-        api_key=api_key,
-        api_base=api_base,
-        default_model=config.agents.defaults.model
+        api_key=api_key, api_base=api_base, default_model=config.agents.defaults.model
     )
-    
+
     # Create cron service first (callback set after agent creation)
     cron_store_path = get_data_dir() / "cron" / "jobs.json"
     cron = CronService(cron_store_path)
-    
+
+    # Extract notification_chat_id and google config
+    notification_chat_id = config.channels.telegram.notification_chat_id or None
+    google_config = config.google if config.google.calendar.enabled else None
+
     # Create agent with cron service
     agent = AgentLoop(
         bus=bus,
@@ -257,8 +259,10 @@ def gateway(
         cron_service=cron,
         restrict_to_workspace=config.tools.restrict_to_workspace,
         notion_config=config.notion if config.notion.enabled else None,
+        google_config=google_config,
+        notification_chat_id=notification_chat_id,
     )
-    
+
     # Set cron callback (needs agent)
     # DESIGN: Notification delivery goes through agent.process_direct (LLM turn).
     # This means LLM failure/delay can affect notification delivery.
@@ -271,22 +275,20 @@ def gateway(
         notif_path = config.workspace_path / "dashboard" / "notifications.json"
         if notif_path.exists():
             import json
+
             return json.loads(notif_path.read_text(encoding="utf-8"))
         return {"version": "1.0", "notifications": []}
 
     async def _save_notifications_data(data: dict) -> bool:
         """Save notifications to Notion backend or JSON file. Returns success."""
         if agent.storage_backend:
-            ok, _msg = await asyncio.to_thread(
-                agent.storage_backend.save_notifications, data
-            )
+            ok, _msg = await asyncio.to_thread(agent.storage_backend.save_notifications, data)
             return ok
         else:
             notif_path = config.workspace_path / "dashboard" / "notifications.json"
             import json
-            notif_path.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+
+            notif_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             return True
 
     async def on_cron_job(job: CronJob) -> str | None:
@@ -301,10 +303,12 @@ def gateway(
             notif = next((n for n in notifs if n.get("id") == notif_id), None)
             if notif is None:
                 from loguru import logger
+
                 logger.warning(f"Notification {notif_id} not found, skipping cron delivery")
                 return None
             if notif.get("status") in ("cancelled", "delivered"):
                 from loguru import logger
+
                 logger.info(f"Skipping {notif['status']} notification cron: {notif_id}")
                 return None
 
@@ -316,16 +320,20 @@ def gateway(
         )
         if job.payload.deliver and job.payload.to:
             from nanobot.bus.events import OutboundMessage
-            await bus.publish_outbound(OutboundMessage(
-                channel=job.payload.channel or "cli",
-                chat_id=job.payload.to,
-                content=response or ""
-            ))
+
+            await bus.publish_outbound(
+                OutboundMessage(
+                    channel=job.payload.channel or "cli",
+                    chat_id=job.payload.to,
+                    content=response or "",
+                )
+            )
 
         # Mark notification as delivered (prevents duplicate from orphan crons)
         if is_notification:
             try:
                 from datetime import datetime
+
                 data = await _load_notifications_data()
                 notifs = data.get("notifications", [])
                 for n in notifs:
@@ -336,23 +344,26 @@ def gateway(
                 ok = await _save_notifications_data(data)
                 if not ok:
                     from loguru import logger
+
                     logger.warning(
                         f"Failed to persist delivered status for notification {notif_id}"
                     )
             except Exception:
                 from loguru import logger
+
                 logger.warning(f"Failed to mark notification {notif_id} as delivered")
 
         return response
+
     cron.on_job = on_cron_job
-    
+
     # Create heartbeat service
     async def on_heartbeat(prompt: str) -> str:
         """Execute heartbeat through the agent."""
         return await agent.process_direct(prompt, session_key="heartbeat")
 
     # Determine worker model (from config or fallback to fast model)
-    worker_config = getattr(config.agents, 'worker', None)
+    worker_config = getattr(config.agents, "worker", None)
     worker_model = worker_config.model if worker_config else "google/gemini-2.0-flash-exp"
 
     heartbeat = HeartbeatService(
@@ -365,8 +376,13 @@ def gateway(
         cron_service=cron,
         bus=bus,
         storage_backend=agent.storage_backend,
+        send_callback=bus.publish_outbound,
+        notification_chat_id=notification_chat_id,
+        gcal_client=agent.gcal_client,
+        gcal_timezone=agent.gcal_timezone,
+        gcal_duration_minutes=agent.gcal_duration_minutes,
     )
-    
+
     # Create channel manager
     channels = ChannelManager(config, bus)
 
@@ -379,13 +395,13 @@ def gateway(
         console.print(f"[green]✓[/green] Channels enabled: {', '.join(channels.enabled_channels)}")
     else:
         console.print("[yellow]Warning: No channels enabled[/yellow]")
-    
+
     cron_status = cron.status()
     if cron_status["jobs"] > 0:
         console.print(f"[green]✓[/green] Cron: {cron_status['jobs']} scheduled jobs")
-    
+
     console.print(f"[green]✓[/green] Heartbeat: every 30m")
-    
+
     async def run():
         try:
             await cron.start()
@@ -400,10 +416,8 @@ def gateway(
             cron.stop()
             agent.stop()
             await channels.stop_all()
-    
+
     asyncio.run(run())
-
-
 
 
 # ============================================================================
@@ -421,9 +435,9 @@ def agent(
     from nanobot.bus.queue import MessageBus
     from nanobot.providers.litellm_provider import LiteLLMProvider
     from nanobot.agent.loop import AgentLoop
-    
+
     config = load_config()
-    
+
     api_key = config.get_api_key()
     api_base = config.get_api_base()
     model = config.agents.defaults.model
@@ -435,11 +449,9 @@ def agent(
 
     bus = MessageBus()
     provider = LiteLLMProvider(
-        api_key=api_key,
-        api_base=api_base,
-        default_model=config.agents.defaults.model
+        api_key=api_key, api_base=api_base, default_model=config.agents.defaults.model
     )
-    
+
     agent_loop = AgentLoop(
         bus=bus,
         provider=provider,
@@ -449,31 +461,31 @@ def agent(
         restrict_to_workspace=config.tools.restrict_to_workspace,
         notion_config=config.notion if config.notion.enabled else None,
     )
-    
+
     if message:
         # Single message mode
         async def run_once():
             response = await agent_loop.process_direct(message, session_id)
             console.print(f"\n{__logo__} {response}")
-        
+
         asyncio.run(run_once())
     else:
         # Interactive mode
         console.print(f"{__logo__} Interactive mode (Ctrl+C to exit)\n")
-        
+
         async def run_interactive():
             while True:
                 try:
                     user_input = console.input("[bold blue]You:[/bold blue] ")
                     if not user_input.strip():
                         continue
-                    
+
                     response = await agent_loop.process_direct(user_input, session_id)
                     console.print(f"\n{__logo__} {response}\n")
                 except KeyboardInterrupt:
                     console.print("\nGoodbye!")
                     break
-        
+
         asyncio.run(run_interactive())
 
 
@@ -500,27 +512,15 @@ def channels_status():
 
     # WhatsApp
     wa = config.channels.whatsapp
-    table.add_row(
-        "WhatsApp",
-        "✓" if wa.enabled else "✗",
-        wa.bridge_url
-    )
+    table.add_row("WhatsApp", "✓" if wa.enabled else "✗", wa.bridge_url)
 
     dc = config.channels.discord
-    table.add_row(
-        "Discord",
-        "✓" if dc.enabled else "✗",
-        dc.gateway_url
-    )
-    
+    table.add_row("Discord", "✓" if dc.enabled else "✗", dc.gateway_url)
+
     # Telegram
     tg = config.channels.telegram
     tg_config = f"token: {tg.token[:10]}..." if tg.token else "[dim]not configured[/dim]"
-    table.add_row(
-        "Telegram",
-        "✓" if tg.enabled else "✗",
-        tg_config
-    )
+    table.add_row("Telegram", "✓" if tg.enabled else "✗", tg_config)
 
     console.print(table)
 
@@ -529,58 +529,59 @@ def _get_bridge_dir() -> Path:
     """Get the bridge directory, setting it up if needed."""
     import shutil
     import subprocess
-    
+
     # User's bridge location
     from nanobot.utils.helpers import get_data_path
+
     user_bridge = get_data_path() / "bridge"
-    
+
     # Check if already built
     if (user_bridge / "dist" / "index.js").exists():
         return user_bridge
-    
+
     # Check for npm
     if not shutil.which("npm"):
         console.print("[red]npm not found. Please install Node.js >= 18.[/red]")
         raise typer.Exit(1)
-    
+
     # Find source bridge: first check package data, then source dir
     pkg_bridge = Path(__file__).parent.parent / "bridge"  # nanobot/bridge (installed)
     src_bridge = Path(__file__).parent.parent.parent / "bridge"  # repo root/bridge (dev)
-    
+
     source = None
     if (pkg_bridge / "package.json").exists():
         source = pkg_bridge
     elif (src_bridge / "package.json").exists():
         source = src_bridge
-    
+
     if not source:
         console.print("[red]Bridge source not found.[/red]")
         console.print("Try reinstalling: pip install --force-reinstall nanobot")
         raise typer.Exit(1)
-    
+
     console.print(f"{__logo__} Setting up bridge...")
-    
+
     # Copy to user directory
     user_bridge.parent.mkdir(parents=True, exist_ok=True)
     if user_bridge.exists():
         shutil.rmtree(user_bridge)
     shutil.copytree(source, user_bridge, ignore=shutil.ignore_patterns("node_modules", "dist"))
-    
+
     # Install and build
     try:
         console.print("  Installing dependencies...")
         subprocess.run(["npm", "install"], cwd=user_bridge, check=True, capture_output=True)
-        
+
         console.print("  Building...")
         subprocess.run(["npm", "run", "build"], cwd=user_bridge, check=True, capture_output=True)
-        
+
         console.print("[green]✓[/green] Bridge ready\n")
     except subprocess.CalledProcessError as e:
         console.print(f"[red]Build failed: {e}[/red]")
         if e.stderr:
             console.print(f"[dim]{e.stderr.decode()[:500]}[/dim]")
         raise typer.Exit(1)
-    
+
     return user_bridge
 
 
@@ -588,12 +589,12 @@ def _get_bridge_dir() -> Path:
 def channels_login():
     """Link device via QR code."""
     import subprocess
-    
+
     bridge_dir = _get_bridge_dir()
-    
+
     console.print(f"{__logo__} Starting bridge...")
     console.print("Scan the QR code to connect.\n")
-    
+
     try:
         subprocess.run(["npm", "start"], cwd=bridge_dir, check=True)
     except subprocess.CalledProcessError as e:
@@ -617,24 +618,25 @@ def cron_list(
     """List scheduled jobs."""
     from nanobot.config.loader import get_data_dir
     from nanobot.cron.service import CronService
-    
+
     store_path = get_data_dir() / "cron" / "jobs.json"
     service = CronService(store_path)
-    
+
     jobs = service.list_jobs(include_disabled=all)
-    
+
     if not jobs:
         console.print("No scheduled jobs.")
         return
-    
+
     table = Table(title="Scheduled Jobs")
     table.add_column("ID", style="cyan")
     table.add_column("Name")
     table.add_column("Schedule")
     table.add_column("Status")
     table.add_column("Next Run")
-    
+
     import time
+
     for job in jobs:
         # Format schedule
         if job.schedule.kind == "every":
@@ -643,17 +645,19 @@ def cron_list(
             sched = job.schedule.expr or ""
         else:
             sched = "one-time"
-        
+
         # Format next run
         next_run = ""
         if job.state.next_run_at_ms:
-            next_time = time.strftime("%Y-%m-%d %H:%M", time.localtime(job.state.next_run_at_ms / 1000))
+            next_time = time.strftime(
+                "%Y-%m-%d %H:%M", time.localtime(job.state.next_run_at_ms / 1000)
+            )
             next_run = next_time
-        
+
         status = "[green]enabled[/green]" if job.enabled else "[dim]disabled[/dim]"
-        
+
         table.add_row(job.id, job.name, sched, status, next_run)
-    
+
     console.print(table)
 
 
@@ -666,13 +670,15 @@ def cron_add(
     at: str = typer.Option(None, "--at", help="Run once at time (ISO format)"),
     deliver: bool = typer.Option(False, "--deliver", "-d", help="Deliver response to channel"),
     to: str = typer.Option(None, "--to", help="Recipient for delivery"),
-    channel: str = typer.Option(None, "--channel", help="Channel for delivery (e.g. 'telegram', 'whatsapp')"),
+    channel: str = typer.Option(
+        None, "--channel", help="Channel for delivery (e.g. 'telegram', 'whatsapp')"
+    ),
 ):
     """Add a scheduled job."""
     from nanobot.config.loader import get_data_dir
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronSchedule
-    
+
     # Determine schedule type
     if every:
         schedule = CronSchedule(kind="every", every_ms=every * 1000)
@@ -680,15 +686,16 @@ def cron_add(
         schedule = CronSchedule(kind="cron", expr=cron_expr)
     elif at:
         import datetime
+
         dt = datetime.datetime.fromisoformat(at)
         schedule = CronSchedule(kind="at", at_ms=int(dt.timestamp() * 1000))
     else:
         console.print("[red]Error: Must specify --every, --cron, or --at[/red]")
         raise typer.Exit(1)
-    
+
     store_path = get_data_dir() / "cron" / "jobs.json"
     service = CronService(store_path)
-    
+
     job = service.add_job(
         name=name,
         schedule=schedule,
@@ -697,7 +704,7 @@ def cron_add(
         to=to,
         channel=channel,
     )
-    
+
     console.print(f"[green]✓[/green] Added job '{job.name}' ({job.id})")
 
 
@@ -708,10 +715,10 @@ def cron_remove(
     """Remove a scheduled job."""
     from nanobot.config.loader import get_data_dir
     from nanobot.cron.service import CronService
-    
+
     store_path = get_data_dir() / "cron" / "jobs.json"
     service = CronService(store_path)
-    
+
     if service.remove_job(job_id):
         console.print(f"[green]✓[/green] Removed job {job_id}")
     else:
@@ -726,10 +733,10 @@ def cron_enable(
     """Enable or disable a job."""
     from nanobot.config.loader import get_data_dir
     from nanobot.cron.service import CronService
-    
+
     store_path = get_data_dir() / "cron" / "jobs.json"
     service = CronService(store_path)
-    
+
     job = service.enable_job(job_id, enabled=not disable)
     if job:
         status = "disabled" if disable else "enabled"
@@ -746,13 +753,13 @@ def cron_run(
     """Manually run a job."""
     from nanobot.config.loader import get_data_dir
     from nanobot.cron.service import CronService
-    
+
     store_path = get_data_dir() / "cron" / "jobs.json"
     service = CronService(store_path)
-    
+
     async def run():
         return await service.run_job(job_id, force=force)
-    
+
     if asyncio.run(run()):
         console.print(f"[green]✓[/green] Job executed")
     else:
@@ -762,6 +769,7 @@ def cron_run(
 # ============================================================================
 # Dashboard Commands
 # ============================================================================
+
 
 def _get_dashboard_manager():
     """Helper to initialize DashboardManager."""
@@ -787,9 +795,9 @@ def dashboard_show():
     console.print(f"\n{__logo__} Dashboard\n")
 
     # Tasks summary
-    tasks = dashboard.get('tasks', [])
-    active_tasks = [t for t in tasks if t.get('status') == 'active']
-    someday_tasks = [t for t in tasks if t.get('status') == 'someday']
+    tasks = dashboard.get("tasks", [])
+    active_tasks = [t for t in tasks if t.get("status") == "active"]
+    someday_tasks = [t for t in tasks if t.get("status") == "someday"]
 
     console.print(f"[bold]Tasks:[/bold] {len(active_tasks)} active, {len(someday_tasks)} someday")
 
@@ -802,8 +810,10 @@ def dashboard_show():
 
         for task in active_tasks[:10]:  # Show first 10
             progress = f"{task.get('progress', {}).get('percentage', 0):.0f}%"
-            deadline = task.get('deadline_text', task.get('deadline', '-')[:10] if task.get('deadline') else '-')
-            table.add_row(task['id'][:8], task['title'][:40], progress, deadline)
+            deadline = task.get(
+                "deadline_text", task.get("deadline", "-")[:10] if task.get("deadline") else "-"
+            )
+            table.add_row(task["id"][:8], task["title"][:40], progress, deadline)
 
         console.print(table)
 
@@ -811,15 +821,15 @@ def dashboard_show():
             console.print(f"[dim]... and {len(active_tasks) - 10} more[/dim]\n")
 
     # Questions
-    questions = dashboard.get('questions', [])
-    pending_questions = [q for q in questions if not q.get('answered', False)]
+    questions = dashboard.get("questions", [])
+    pending_questions = [q for q in questions if not q.get("answered", False)]
 
     console.print(f"\n[bold]Questions:[/bold] {len(pending_questions)} pending")
 
     if pending_questions:
         for i, q in enumerate(pending_questions[:5], 1):
-            priority = q.get('priority', 'low')
-            color = {'high': 'red', 'medium': 'yellow', 'low': 'dim'}.get(priority, 'white')
+            priority = q.get("priority", "low")
+            color = {"high": "red", "medium": "yellow", "low": "dim"}.get(priority, "white")
             console.print(f"  [{color}]{i}. [{q['id'][:8]}] {q['question']}[/{color}]")
 
         if len(pending_questions) > 5:
@@ -837,15 +847,15 @@ def dashboard_tasks(
     manager = _get_dashboard_manager()
     dashboard = manager.load()
 
-    tasks = dashboard.get('tasks', [])
+    tasks = dashboard.get("tasks", [])
 
     if someday:
-        tasks = [t for t in tasks if t.get('status') == 'someday']
+        tasks = [t for t in tasks if t.get("status") == "someday"]
         title = "Someday Tasks"
     elif all:
         title = "All Tasks"
     else:
-        tasks = [t for t in tasks if t.get('status') == 'active']
+        tasks = [t for t in tasks if t.get("status") == "active"]
         title = "Active Tasks"
 
     if not tasks:
@@ -862,18 +872,13 @@ def dashboard_tasks(
 
     for task in tasks:
         progress = f"{task.get('progress', {}).get('percentage', 0):.0f}%"
-        priority = task.get('priority', '-')
-        deadline = task.get('deadline_text', task.get('deadline', '-')[:10] if task.get('deadline') else '-')
-        status = task.get('status', 'unknown')
-
-        table.add_row(
-            task['id'][:8],
-            task['title'][:35],
-            progress,
-            priority,
-            deadline,
-            status
+        priority = task.get("priority", "-")
+        deadline = task.get(
+            "deadline_text", task.get("deadline", "-")[:10] if task.get("deadline") else "-"
         )
+        status = task.get("status", "unknown")
+
+        table.add_row(task["id"][:8], task["title"][:35], progress, priority, deadline, status)
 
     console.print(table)
 
@@ -884,8 +889,8 @@ def dashboard_questions():
     manager = _get_dashboard_manager()
     dashboard = manager.load()
 
-    questions = dashboard.get('questions', [])
-    pending = [q for q in questions if not q.get('answered', False)]
+    questions = dashboard.get("questions", [])
+    pending = [q for q in questions if not q.get("answered", False)]
 
     if not pending:
         console.print("No pending questions.")
@@ -894,13 +899,13 @@ def dashboard_questions():
     console.print(f"\n[bold]Question Queue[/bold] ({len(pending)} pending)\n")
 
     for q in pending:
-        priority = q.get('priority', 'low')
-        color = {'high': 'red', 'medium': 'yellow', 'low': 'dim'}.get(priority, 'white')
+        priority = q.get("priority", "low")
+        color = {"high": "red", "medium": "yellow", "low": "dim"}.get(priority, "white")
 
         console.print(f"[{color}]ID:[/{color}] [{color}]{q['id']}[/{color}]")
         console.print(f"[{color}]Q:[/{color}] {q['question']}")
         console.print(f"[{color}]Priority:[/{color}] {priority}")
-        if q.get('related_task_id'):
+        if q.get("related_task_id"):
             console.print(f"[{color}]Related Task:[/{color}] {q['related_task_id']}")
         console.print()
 
@@ -925,12 +930,12 @@ def dashboard_answer(
     manager = _get_dashboard_manager()
     dashboard = manager.load()
 
-    questions = dashboard.get('questions', [])
+    questions = dashboard.get("questions", [])
 
     # Find question
     question = None
     for q in questions:
-        if q['id'] == question_id or q['id'].startswith(question_id):
+        if q["id"] == question_id or q["id"].startswith(question_id):
             question = q
             break
 
@@ -939,9 +944,9 @@ def dashboard_answer(
         raise typer.Exit(1)
 
     # Mark as answered
-    question['answered'] = True
-    question['answer'] = answer
-    question['answered_at'] = datetime.now().isoformat()
+    question["answered"] = True
+    question["answer"] = answer
+    question["answered_at"] = datetime.now().isoformat()
 
     # Save
     manager.save(dashboard)
@@ -965,8 +970,8 @@ def dashboard_history():
     manager = _get_dashboard_manager()
     dashboard = manager.load()
 
-    tasks = dashboard.get('tasks', [])
-    archived = [t for t in tasks if t.get('status') in ('completed', 'archived')]
+    tasks = dashboard.get("tasks", [])
+    archived = [t for t in tasks if t.get("status") in ("completed", "archived")]
 
     if not archived:
         console.print("No archived tasks yet.")
@@ -979,15 +984,10 @@ def dashboard_history():
     table.add_column("Reflection", width=30)
 
     for task in reversed(archived[-20:]):  # Last 20
-        completed_at = (task.get('completed_at') or '')[:10]
-        reflection = (task.get('reflection') or '')[:30]
+        completed_at = (task.get("completed_at") or "")[:10]
+        reflection = (task.get("reflection") or "")[:30]
 
-        table.add_row(
-            task['id'][:8],
-            task['title'][:40],
-            completed_at,
-            reflection
-        )
+        table.add_row(task["id"][:8], task["title"][:40], completed_at, reflection)
 
     console.print(table)
 
@@ -1012,6 +1012,67 @@ def dashboard_worker():
     asyncio.run(run())
 
     console.print("[green]✓[/green] Worker cycle complete")
+
+
+# ============================================================================
+# Google Commands
+# ============================================================================
+
+google_app = typer.Typer(help="Google integration management")
+app.add_typer(google_app, name="google")
+
+
+@google_app.command("auth")
+def google_auth():
+    """Authenticate with Google Calendar (opens browser for OAuth)."""
+    from nanobot.config.loader import load_config
+
+    config = load_config()
+    cal = config.google.calendar
+
+    if not cal.enabled:
+        console.print("[yellow]Google Calendar is not enabled in config.[/yellow]")
+        console.print("Set google.calendar.enabled=true in ~/.nanobot/config.json")
+        raise typer.Exit(1)
+
+    from pathlib import Path
+
+    secret_path = Path(cal.client_secret_path).expanduser()
+    token_path = Path(cal.token_path).expanduser()
+
+    if not secret_path.exists():
+        console.print(f"[red]Client secret not found: {secret_path}[/red]")
+        console.print("\nDownload it from Google Cloud Console:")
+        console.print("  APIs & Services > Credentials > OAuth 2.0 Client ID > Download JSON")
+        console.print(f"  Save as: {secret_path}")
+        raise typer.Exit(1)
+
+    console.print(f"{__logo__} Authenticating with Google Calendar...")
+    console.print(f"  Client secret: {secret_path}")
+    console.print(f"  Token path: {token_path}")
+
+    try:
+        from nanobot.google.calendar import GoogleCalendarClient
+
+        client = GoogleCalendarClient(
+            client_secret_path=str(secret_path),
+            token_path=str(token_path),
+            calendar_id=cal.calendar_id,
+        )
+        client._get_service()
+        client.close()
+
+        console.print(f"\n[green]✓[/green] Authentication successful!")
+        console.print(f"  Token saved to: {token_path}")
+
+        if str(token_path).startswith("/app/"):
+            console.print(
+                "\n[dim]For Docker: copy this token.json to your server's data/google/[/dim]"
+            )
+
+    except Exception as e:
+        console.print(f"\n[red]Authentication failed: {e}[/red]")
+        raise typer.Exit(1)
 
 
 # ============================================================================
@@ -1068,9 +1129,7 @@ def notion_validate():
         if not dbs.questions:
             core_missing.append("questions")
         if core_missing:
-            console.print(
-                f"  [red]✗ Core databases missing:[/red] {', '.join(core_missing)}"
-            )
+            console.print(f"  [red]✗ Core databases missing:[/red] {', '.join(core_missing)}")
 
         all_ok = not core_missing
         for name, db_id in db_map.items():
@@ -1116,24 +1175,36 @@ def status():
 
     console.print(f"{__logo__} nanobot Status\n")
 
-    console.print(f"Config: {config_path} {'[green]✓[/green]' if config_path.exists() else '[red]✗[/red]'}")
-    console.print(f"Workspace: {workspace} {'[green]✓[/green]' if workspace.exists() else '[red]✗[/red]'}")
+    console.print(
+        f"Config: {config_path} {'[green]✓[/green]' if config_path.exists() else '[red]✗[/red]'}"
+    )
+    console.print(
+        f"Workspace: {workspace} {'[green]✓[/green]' if workspace.exists() else '[red]✗[/red]'}"
+    )
 
     if config_path.exists():
         console.print(f"Model: {config.agents.defaults.model}")
-        
+
         # Check API keys
         has_openrouter = bool(config.providers.openrouter.api_key)
         has_anthropic = bool(config.providers.anthropic.api_key)
         has_openai = bool(config.providers.openai.api_key)
         has_gemini = bool(config.providers.gemini.api_key)
         has_vllm = bool(config.providers.vllm.api_base)
-        
-        console.print(f"OpenRouter API: {'[green]✓[/green]' if has_openrouter else '[dim]not set[/dim]'}")
-        console.print(f"Anthropic API: {'[green]✓[/green]' if has_anthropic else '[dim]not set[/dim]'}")
+
+        console.print(
+            f"OpenRouter API: {'[green]✓[/green]' if has_openrouter else '[dim]not set[/dim]'}"
+        )
+        console.print(
+            f"Anthropic API: {'[green]✓[/green]' if has_anthropic else '[dim]not set[/dim]'}"
+        )
         console.print(f"OpenAI API: {'[green]✓[/green]' if has_openai else '[dim]not set[/dim]'}")
         console.print(f"Gemini API: {'[green]✓[/green]' if has_gemini else '[dim]not set[/dim]'}")
-        vllm_status = f"[green]✓ {config.providers.vllm.api_base}[/green]" if has_vllm else "[dim]not set[/dim]"
+        vllm_status = (
+            f"[green]✓ {config.providers.vllm.api_base}[/green]"
+            if has_vllm
+            else "[dim]not set[/dim]"
+        )
         console.print(f"vLLM/Local: {vllm_status}")
 
 

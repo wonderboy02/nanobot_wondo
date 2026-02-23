@@ -17,7 +17,7 @@ WORKDIR /app
 # Install Python dependencies first (cached layer)
 COPY pyproject.toml README.md LICENSE ./
 RUN mkdir -p nanobot bridge && touch nanobot/__init__.py && \
-    uv pip install --system --no-cache . && \
+    uv pip install --system --no-cache ".[google]" && \
     rm -rf nanobot bridge
 
 # Copy the full source and install

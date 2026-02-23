@@ -83,6 +83,7 @@ You can create them in a single page for organization.
 | CreatedAt | date | Creation date |
 | DeliveredAt | date | Delivery date |
 | CancelledAt | date | Cancellation date |
+| GCalEventID | text | Google Calendar event ID (for sync) |
 
 ### Insights DB
 

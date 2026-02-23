@@ -13,6 +13,7 @@ from loguru import logger
 # Notion Property Builders (internal → Notion)
 # ============================================================================
 
+
 def _title(value: str) -> dict:
     return {"title": [{"text": {"content": value or ""}}]}
 
@@ -53,6 +54,7 @@ def _date(value: str | None) -> dict:
 # ============================================================================
 # Notion Property Extractors (Notion → internal)
 # ============================================================================
+
 
 def _extract_title(prop: dict) -> str:
     parts = prop.get("title", [])
@@ -99,6 +101,7 @@ def _get_prop(properties: dict, name: str) -> dict:
 # ============================================================================
 # Task Mapping
 # ============================================================================
+
 
 def task_to_notion(task: dict) -> dict[str, Any]:
     """Convert internal task dict to Notion properties."""
@@ -175,6 +178,7 @@ def notion_to_task(page: dict) -> dict[str, Any]:
 # Question Mapping
 # ============================================================================
 
+
 def question_to_notion(q: dict) -> dict[str, Any]:
     """Convert internal question dict to Notion properties."""
     props: dict[str, Any] = {
@@ -228,6 +232,7 @@ def notion_to_question(page: dict) -> dict[str, Any]:
 # Notification Mapping
 # ============================================================================
 
+
 def notification_to_notion(n: dict) -> dict[str, Any]:
     """Convert internal notification dict to Notion properties."""
     props: dict[str, Any] = {
@@ -247,6 +252,11 @@ def notification_to_notion(n: dict) -> dict[str, Any]:
         "DeliveredAt": _date(n.get("delivered_at")),
         "CancelledAt": _date(n.get("cancelled_at")),
     }
+    # Only include GCalEventID when set — avoids Notion API error
+    # if the property hasn't been added to the database yet.
+    gcal_event_id = n.get("gcal_event_id")
+    if gcal_event_id:
+        props["GCalEventID"] = _rich_text(gcal_event_id)
     return props
 
 
@@ -270,6 +280,7 @@ def notion_to_notification(page: dict) -> dict[str, Any]:
         "created_at": _extract_date(_get_prop(props, "CreatedAt")) or "",
         "delivered_at": _extract_date(_get_prop(props, "DeliveredAt")) or None,
         "cancelled_at": _extract_date(_get_prop(props, "CancelledAt")) or None,
+        "gcal_event_id": _extract_rich_text(_get_prop(props, "GCalEventID")) or None,
         "_notion_page_id": page.get("id", ""),
     }
 
@@ -277,6 +288,7 @@ def notion_to_notification(page: dict) -> dict[str, Any]:
 # ============================================================================
 # Insight Mapping
 # ============================================================================
+
 
 def insight_to_notion(i: dict) -> dict[str, Any]:
     """Convert internal insight dict to Notion properties."""
@@ -311,6 +323,7 @@ def notion_to_insight(page: dict) -> dict[str, Any]:
 # ============================================================================
 # Helpers
 # ============================================================================
+
 
 def _capitalize(value: str | None) -> str | None:
     """Capitalize first letter for Notion select values."""

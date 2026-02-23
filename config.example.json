@@ -18,7 +18,8 @@
       "enabled": false,
       "token": "YOUR_TELEGRAM_BOT_TOKEN",
       "allowFrom": [],
-      "proxy": null
+      "proxy": null,
+      "notificationChatId": ""
     },
     "discord": {
       "enabled": false,
@@ -72,6 +73,16 @@
     "moonshot": {
       "apiKey": "",
       "apiBase": null
+    }
+  },
+  "google": {
+    "calendar": {
+      "enabled": false,
+      "calendarId": "primary",
+      "timezone": "Asia/Seoul",
+      "defaultDurationMinutes": 30,
+      "clientSecretPath": "~/.nanobot/google/client_secret.json",
+      "tokenPath": "~/.nanobot/google/token.json"
     }
   },
   "gateway": {

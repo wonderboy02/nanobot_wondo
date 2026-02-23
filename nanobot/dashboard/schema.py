@@ -9,8 +9,10 @@ from pydantic import BaseModel, Field
 # Task Schemas
 # ============================================================================
 
+
 class TaskEstimation(BaseModel):
     """Task estimation."""
+
     hours: Optional[int] = None
     complexity: Literal["low", "medium", "high"] = "medium"
     confidence: Literal["low", "medium", "high"] = "medium"
@@ -18,6 +20,7 @@ class TaskEstimation(BaseModel):
 
 class TaskProgress(BaseModel):
     """Task progress."""
+
     percentage: int = Field(0, ge=0, le=100)
     last_update: str  # ISO datetime
     note: str = ""
@@ -27,6 +30,7 @@ class TaskProgress(BaseModel):
 
 class TaskLinks(BaseModel):
     """Task links to other entities."""
+
     projects: list[str] = Field(default_factory=list)
     insights: list[str] = Field(default_factory=list)
     resources: list[str] = Field(default_factory=list)
@@ -34,6 +38,7 @@ class TaskLinks(BaseModel):
 
 class Task(BaseModel):
     """Task schema."""
+
     id: str
     title: str
     raw_input: Optional[str] = None
@@ -54,6 +59,7 @@ class Task(BaseModel):
 
 class TasksFile(BaseModel):
     """tasks.json schema."""
+
     version: str = "1.0"
     tasks: list[Task] = Field(default_factory=list)
 
@@ -62,8 +68,10 @@ class TasksFile(BaseModel):
 # Question Schemas
 # ============================================================================
 
+
 class Question(BaseModel):
     """Question schema."""
+
     id: str
     question: str
     context: str = ""
@@ -76,7 +84,7 @@ class Question(BaseModel):
         "blocker_check",
         "status_check",
         "completion_check",
-        "routine_check"
+        "routine_check",
     ] = "info_gather"
     related_task_id: Optional[str] = None
     asked_count: int = 0
@@ -90,6 +98,7 @@ class Question(BaseModel):
 
 class QuestionsFile(BaseModel):
     """questions.json schema."""
+
     version: str = "1.0"
     questions: list[Question] = Field(default_factory=list)
 
@@ -98,13 +107,17 @@ class QuestionsFile(BaseModel):
 # Notification Schemas
 # ============================================================================
 
+
 class Notification(BaseModel):
     """Notification schema."""
+
     id: str
     message: str
     scheduled_at: str  # ISO datetime
     scheduled_at_text: Optional[str] = None  # Natural language (e.g., "내일 아침")
-    type: Literal["reminder", "deadline_alert", "progress_check", "blocker_followup", "question_reminder"] = "reminder"
+    type: Literal[
+        "reminder", "deadline_alert", "progress_check", "blocker_followup", "question_reminder"
+    ] = "reminder"
     priority: Literal["low", "medium", "high"] = "medium"
     related_task_id: Optional[str] = None
     related_question_id: Optional[str] = None
@@ -115,10 +128,12 @@ class Notification(BaseModel):
     cancelled_at: Optional[str] = None  # ISO datetime
     context: str = ""
     created_by: Literal["worker", "user", "main_agent"] = "worker"
+    gcal_event_id: Optional[str] = None
 
 
 class NotificationsFile(BaseModel):
     """notifications.json schema."""
+
     version: str = "1.0"
     notifications: list[Notification] = Field(default_factory=list)
 
@@ -130,6 +145,7 @@ class NotificationsFile(BaseModel):
 
 class Insight(BaseModel):
     """Insight schema."""
+
     id: str
     category: Literal["tech", "life", "work", "learning"]
     title: str
@@ -142,6 +158,7 @@ class Insight(BaseModel):
 
 class InsightsFile(BaseModel):
     """insights.json schema."""
+
     version: str = "1.0"
     insights: list[Insight] = Field(default_factory=list)
 
@@ -149,6 +166,7 @@ class InsightsFile(BaseModel):
 # ============================================================================
 # Validation Functions
 # ============================================================================
+
 
 def validate_tasks_file(data: dict) -> TasksFile:
     """Validate tasks.json."""
@@ -163,5 +181,3 @@ def validate_questions_file(data: dict) -> QuestionsFile:
 def validate_notifications_file(data: dict) -> NotificationsFile:
     """Validate notifications.json."""
     return NotificationsFile(**data)
-
-

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
 
 if TYPE_CHECKING:
     from nanobot.dashboard.storage import StorageBackend
+    from nanobot.google.calendar import GoogleCalendarClient
 
 from loguru import logger
 
@@ -27,27 +28,27 @@ def _is_heartbeat_empty(content: str | None) -> bool:
     """Check if HEARTBEAT.md has no actionable content."""
     if not content:
         return True
-    
+
     # Lines to skip: empty, headers, HTML comments, empty checkboxes
     skip_patterns = {"- [ ]", "* [ ]", "- [x]", "* [x]"}
-    
+
     for line in content.split("\n"):
         line = line.strip()
         if not line or line.startswith("#") or line.startswith("<!--") or line in skip_patterns:
             continue
         return False  # Found actionable content
-    
+
     return True
 
 
 class HeartbeatService:
     """
     Periodic heartbeat service that wakes the agent to check for tasks.
-    
+
     The agent reads HEARTBEAT.md from the workspace and executes any
     tasks listed there. If nothing needs attention, it replies HEARTBEAT_OK.
     """
-    
+
     def __init__(
         self,
         workspace: Path,
@@ -59,6 +60,11 @@ class HeartbeatService:
         cron_service: Optional[Any] = None,  # CronService
         bus: Optional[Any] = None,  # MessageBus
         storage_backend: "StorageBackend | None" = None,
+        send_callback: Optional[Any] = None,
+        notification_chat_id: Optional[str] = None,
+        gcal_client: "GoogleCalendarClient | None" = None,
+        gcal_timezone: str = "Asia/Seoul",
+        gcal_duration_minutes: int = 30,
     ):
         self.workspace = workspace
         self.on_heartbeat = on_heartbeat
@@ -69,13 +75,18 @@ class HeartbeatService:
         self.cron_service = cron_service
         self.bus = bus
         self.storage_backend = storage_backend
+        self.send_callback = send_callback
+        self.notification_chat_id = notification_chat_id
+        self.gcal_client = gcal_client
+        self.gcal_timezone = gcal_timezone
+        self.gcal_duration_minutes = gcal_duration_minutes
         self._running = False
         self._task: asyncio.Task | None = None
-    
+
     @property
     def heartbeat_file(self) -> Path:
         return self.workspace / "HEARTBEAT.md"
-    
+
     def _read_heartbeat_file(self) -> str | None:
         """Read HEARTBEAT.md content."""
         if self.heartbeat_file.exists():
@@ -84,24 +95,24 @@ class HeartbeatService:
             except Exception:
                 return None
         return None
-    
+
     async def start(self) -> None:
         """Start the heartbeat service."""
         if not self.enabled:
             logger.info("Heartbeat disabled")
             return
-        
+
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
         logger.info(f"Heartbeat started (every {self.interval_s}s)")
-    
+
     def stop(self) -> None:
         """Stop the heartbeat service."""
         self._running = False
         if self._task:
             self._task.cancel()
             self._task = None
-    
+
     async def _run_loop(self) -> None:
         """Main heartbeat loop."""
         while self._running:
@@ -113,7 +124,7 @@ class HeartbeatService:
                 break
             except Exception as e:
                 logger.error(f"Heartbeat error: {e}")
-    
+
     async def _tick(self) -> None:
         """Execute a single heartbeat tick."""
         # Run Worker Agent first
@@ -166,6 +177,11 @@ class HeartbeatService:
                 model=self.model,
                 cron_service=self.cron_service,
                 bus=self.bus,
+                send_callback=self.send_callback,
+                notification_chat_id=self.notification_chat_id,
+                gcal_client=self.gcal_client,
+                gcal_timezone=self.gcal_timezone,
+                gcal_duration_minutes=self.gcal_duration_minutes,
             )
             await worker.run_cycle()
             logger.debug("Worker cycle completed successfully")
@@ -176,4 +192,3 @@ class HeartbeatService:
             logger.warning(f"Dashboard files missing: {e}")
         except Exception as e:
             logger.error(f"Worker execution failed: {e}")
-    

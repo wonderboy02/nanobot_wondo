@@ -24,6 +24,7 @@ from nanobot.notion.mapper import (
 # Helper: wrap Notion properties into a fake page object
 # ============================================================================
 
+
 def _wrap_page(properties: dict, page_id: str = "page-abc") -> dict:
     """Wrap Notion properties dict into a page-like dict."""
     return {"id": page_id, "properties": properties}
@@ -32,6 +33,7 @@ def _wrap_page(properties: dict, page_id: str = "page-abc") -> dict:
 # ============================================================================
 # Task round-trip
 # ============================================================================
+
 
 class TestTaskMapping:
     """Tests for task_to_notion and notion_to_task."""
@@ -145,6 +147,7 @@ class TestTaskMapping:
 # Question round-trip
 # ============================================================================
 
+
 class TestQuestionMapping:
     """Tests for question_to_notion and notion_to_question."""
 
@@ -226,6 +229,7 @@ class TestQuestionMapping:
 # Notification round-trip
 # ============================================================================
 
+
 class TestNotificationMapping:
     """Tests for notification_to_notion and notion_to_notification."""
 
@@ -274,6 +278,28 @@ class TestNotificationMapping:
         result = notion_to_notification(page)
         assert result["context"] == ""
 
+    def test_notification_gcal_event_id_round_trip(self):
+        """gcal_event_id="gcal_123" survives Notion round trip."""
+        n = {**self.SAMPLE_NOTIFICATION, "gcal_event_id": "gcal_123"}
+        notion_props = notification_to_notion(n)
+        assert notion_props["GCalEventID"]["rich_text"][0]["text"]["content"] == "gcal_123"
+
+        page = _wrap_page(notion_props)
+        result = notion_to_notification(page)
+        assert result["gcal_event_id"] == "gcal_123"
+
+    def test_notification_gcal_event_id_none_round_trip(self):
+        """gcal_event_id=None -> GCalEventID omitted from Notion props -> None on read."""
+        n = {**self.SAMPLE_NOTIFICATION, "gcal_event_id": None}
+        notion_props = notification_to_notion(n)
+        # GCalEventID should NOT be included when value is None/empty
+        # (avoids Notion API error if property doesn't exist in DB)
+        assert "GCalEventID" not in notion_props
+
+        page = _wrap_page(notion_props)
+        result = notion_to_notification(page)
+        assert result["gcal_event_id"] is None
+
     def test_notification_missing_properties_defaults(self):
         """Missing properties return safe defaults."""
         page = _wrap_page({})
@@ -287,6 +313,7 @@ class TestNotificationMapping:
 # ============================================================================
 # Insight round-trip
 # ============================================================================
+
 
 class TestInsightMapping:
     """Tests for insight_to_notion and notion_to_insight."""
@@ -341,10 +368,10 @@ class TestInsightMapping:
         assert result["tags"] == []
 
 
-
 # ============================================================================
 # Edge cases: None values, empty strings
 # ============================================================================
+
 
 class TestEdgeCases:
     """Edge cases for mapper helper functions and property builders."""
@@ -417,7 +444,10 @@ class TestEdgeCases:
             "reflection": "Learned a lot from this task",
         }
         notion_props = task_to_notion(task)
-        assert notion_props["Reflection"]["rich_text"][0]["text"]["content"] == "Learned a lot from this task"
+        assert (
+            notion_props["Reflection"]["rich_text"][0]["text"]["content"]
+            == "Learned a lot from this task"
+        )
 
         page = _wrap_page(notion_props)
         result = notion_to_task(page)

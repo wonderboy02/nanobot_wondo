@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from nanobot.agent.tools.registry import ToolRegistry
     from nanobot.dashboard.storage import StorageBackend
+    from nanobot.google.calendar import GoogleCalendarClient
 
 from loguru import logger
 
@@ -77,6 +78,11 @@ class WorkerAgent:
         model: str | None = None,
         cron_service: Any | None = None,
         bus: Any | None = None,
+        send_callback: Any | None = None,
+        notification_chat_id: str | None = None,
+        gcal_client: "GoogleCalendarClient | None" = None,
+        gcal_timezone: str = "Asia/Seoul",
+        gcal_duration_minutes: int = 30,
     ):
         self.workspace = workspace
         self.storage_backend = storage_backend
@@ -84,6 +90,11 @@ class WorkerAgent:
         self.model = model
         self.cron_service = cron_service
         self.bus = bus  # Reserved for future event bus integration
+        self.send_callback = send_callback
+        self.notification_chat_id = notification_chat_id
+        self.gcal_client = gcal_client
+        self.gcal_timezone = gcal_timezone
+        self.gcal_duration_minutes = gcal_duration_minutes
         # Recreated each _run_llm_cycle(); None when Phase 2 never runs.
         self.tools: ToolRegistry | None = None
 
@@ -146,9 +157,7 @@ class WorkerAgent:
         await self._cleanup_questions(skip_answered=skip_answered, processed_ids=processed_ids)
         if skip_answered:
             reason = "extraction failed" if extraction_failed else "Phase 2 incomplete"
-            logger.info(
-                "[Worker] Preserved answered question(s) for next cycle ({})", reason
-            )
+            logger.info("[Worker] Preserved answered question(s) for next cycle ({})", reason)
 
         logger.info("[Worker] Cycle complete.")
 
@@ -613,9 +622,22 @@ class WorkerAgent:
             UpdateNotificationTool,
         )
 
-        self.tools.register(ScheduleNotificationTool(self.workspace, self.cron_service))
-        self.tools.register(UpdateNotificationTool(self.workspace, self.cron_service))
-        self.tools.register(CancelNotificationTool(self.workspace, self.cron_service))
+        notif_kwargs = dict(
+            gcal_client=self.gcal_client,
+            send_callback=self.send_callback,
+            notification_chat_id=self.notification_chat_id,
+            gcal_timezone=self.gcal_timezone,
+            gcal_duration_minutes=self.gcal_duration_minutes,
+        )
+        self.tools.register(
+            ScheduleNotificationTool(self.workspace, self.cron_service, **notif_kwargs)
+        )
+        self.tools.register(
+            UpdateNotificationTool(self.workspace, self.cron_service, **notif_kwargs)
+        )
+        self.tools.register(
+            CancelNotificationTool(self.workspace, self.cron_service, **notif_kwargs)
+        )
         self.tools.register(ListNotificationsTool(self.workspace))
 
         # Task management
@@ -629,3 +651,11 @@ class WorkerAgent:
         from nanobot.agent.tools.dashboard.save_insight import SaveInsightTool
 
         self.tools.register(SaveInsightTool(self.workspace))
+
+        # Set context for notification tools so Worker-created notifications
+        # can deliver via Telegram
+        if self.notification_chat_id:
+            for name in ("schedule_notification", "update_notification", "cancel_notification"):
+                tool = self.tools.get(name)
+                if tool and hasattr(tool, "set_context"):
+                    tool.set_context("telegram", self.notification_chat_id)
