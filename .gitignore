@@ -18,6 +18,8 @@ docs/
 __pycache__/
 poetry.lock
 .pytest_cache/
+.ruff_cache/
+.pt_run/
 
 # IDE and editor files
 .vscode/
@@ -25,8 +27,13 @@ poetry.lock
 .agents/
 .idea/
 
-# Temporary review/test artifacts
+# Temporary review/test artifacts (agent probes, pytest, codex review, etc.)
 .tmp_*/
+.ptmp_*/
+tmp_*/
+local_tmp_*/
+userprompt.txt
+e2e_*_results.log
 
 # Node.js dependencies
 node_modules/
