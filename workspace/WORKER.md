@@ -24,6 +24,7 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 - 마감이 임박하다 → `schedule_notification` (deadline_alert)
 - Blocked 상태가 지속된다 → `schedule_notification` (blocker_followup)
 - progress=100% 또는 status=cancelled → Phase 1이 자동 아카이브 (별도 조치 불필요)
+- Task에 context가 비어있고 deadline도 없다 → `create_question`으로 세부사항 확인
 
 **답변 처리 (Recently Answered Questions):**
 - 답변에 관련 Task가 있으면 → `update_task` (progress, context 등 반영)

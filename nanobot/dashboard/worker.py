@@ -11,7 +11,8 @@ The LLM approach trades deterministic guarantees for context-aware analysis:
   - Pro: richer, context-aware questions; fewer false positives
   - Con: no questions when provider/model unavailable (e.g. CLI manual run)
   - Mitigation: Phase 1 still handles all deterministic maintenance
-    (archive, status reevaluation, cleanup), so dashboard integrity is safe.
+    (bootstrap, consistency, archive, status reevaluation), so dashboard
+    integrity is safe.
     Question generation is a "nice to have" — missing a cycle is harmless.
 """
 
@@ -22,6 +23,7 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from nanobot.agent.tools.registry import ToolRegistry
@@ -29,6 +31,11 @@ if TYPE_CHECKING:
     from nanobot.google.calendar import GoogleCalendarClient
 
 from loguru import logger
+
+
+def _generate_id(prefix: str) -> str:
+    """Generate unique ID: {prefix}_xxxxxxxx (same pattern as BaseDashboardTool)."""
+    return f"{prefix}_{str(uuid4())[:8]}"
 
 
 def parse_datetime(dt_str: str) -> datetime:
@@ -53,6 +60,8 @@ class WorkerAgent:
     Unified Dashboard Worker Agent.
 
     Phase 1 — Deterministic maintenance (always runs):
+      - Bootstrap manually-added items (assign IDs, timestamps)
+      - Enforce data consistency (progress/status/blocked field invariants)
       - Archive completed/cancelled tasks
       - Re-evaluate active/someday status
 
@@ -121,7 +130,9 @@ class WorkerAgent:
         """
         logger.info("[Worker] Starting cycle...")
 
-        # Phase 1: Deterministic maintenance — tasks only (always runs)
+        # Phase 1: Deterministic maintenance (always runs)
+        # - Bootstrap: all entities (tasks, questions, notifications)
+        # - Consistency/archive/reevaluate: tasks only
         await self._run_maintenance()
 
         # Extract answered questions before cleanup (read-only snapshot).
@@ -173,14 +184,27 @@ class WorkerAgent:
     # =========================================================================
 
     async def _run_maintenance(self) -> None:
-        """Run deterministic maintenance tasks (tasks only).
+        """Run deterministic maintenance tasks.
 
+        Order:
+        1. Bootstrap — assign IDs/timestamps to manually-added items (all entities)
+        2. Consistency — enforce field invariants (tasks only)
+        3. Archive — completed/cancelled → archived (tasks only)
+        4. Reevaluate — active/someday status (tasks only)
+
+        Bootstrap runs independently per entity (separate load/save).
+        Steps 2-4 share a single load_tasks() call.
         Question cleanup is handled separately by _cleanup_questions()
         after Phase 2, so the LLM can process answered questions first.
         """
+        # Step 1: Bootstrap — assign IDs to manually-added items (all entities)
+        self._bootstrap_new_items()
+
+        # Steps 2-4: Task maintenance (single load/save)
         try:
             tasks_data = self.storage_backend.load_tasks()
-            changed = self._archive_completed_tasks(tasks_data)
+            changed = self._enforce_consistency(tasks_data)
+            changed |= self._archive_completed_tasks(tasks_data)
             changed |= self._reevaluate_active_status(tasks_data)
             if changed:
                 ok, msg = self.storage_backend.save_tasks(tasks_data)
@@ -188,6 +212,209 @@ class WorkerAgent:
                     logger.error(f"[Worker] Failed to save tasks: {msg}")
         except Exception:
             logger.exception("[Worker] Task maintenance error")
+
+    def _bootstrap_new_items(self) -> None:
+        """Assign IDs and timestamps to manually-added items (e.g. via Notion UI).
+
+        Iterates over tasks, questions, and notifications independently.
+        Items with empty ``id`` (mapper returns "" for blank NanobotID) get
+        a fresh ID and required timestamps.
+
+        For NotionStorageBackend, the Notion id_map is registered BEFORE
+        save so that ``_save_entity_items()`` does ``update_page()`` on the
+        existing Notion page instead of ``create_page()`` (which would
+        create a duplicate). On save failure, id_map entries are rolled back.
+
+        Each entity is error-isolated: one failure doesn't block the others.
+        Insights are excluded (system-generated only, no manual creation).
+        """
+        now = datetime.now().isoformat()
+
+        # (entity_type, loader, saver, id_prefix, extra_fields_fn)
+        configs: list[tuple[str, Any, Any, str, Any]] = [
+            (
+                "tasks",
+                self.storage_backend.load_tasks,
+                self.storage_backend.save_tasks,
+                "task",
+                lambda item, ts: self._bootstrap_task_fields(item, ts),
+            ),
+            (
+                "questions",
+                self.storage_backend.load_questions,
+                self.storage_backend.save_questions,
+                "q",
+                lambda item, ts: item.update({"created_at": ts}),
+            ),
+            (
+                "notifications",
+                self.storage_backend.load_notifications,
+                self.storage_backend.save_notifications,
+                "n",
+                lambda item, ts: item.update({"created_at": ts, "created_by": "user"}),
+            ),
+        ]
+
+        for entity_type, loader, saver, prefix, extra_fn in configs:
+            try:
+                data = loader()
+                # Entity list key matches entity_type (tasks, questions, notifications)
+                items = data.get(entity_type, [])
+                bootstrapped = []
+
+                for item in items:
+                    if item.get("id") != "":
+                        continue
+
+                    new_id = _generate_id(prefix)
+                    item["id"] = new_id
+                    extra_fn(item, now)
+                    bootstrapped.append(new_id)
+
+                if bootstrapped:
+                    # Register id mappings BEFORE save so that Notion's
+                    # _save_entity_items() sees the mapping and calls
+                    # update_page() instead of create_page() (prevents
+                    # duplicate pages). No-op for JsonStorageBackend.
+                    # NOTE: runs outside asyncio lock. Worker executes on
+                    # 30-min heartbeat cycle; dashboard tools use
+                    # @with_dashboard_lock. Concurrent access is near-
+                    # impossible in single-user mode. If multi-user
+                    # support is added, this needs a shared lock.
+                    id_map_registered: list[tuple[str, str]] = []
+                    save_ok = False
+                    try:
+                        for item in items:
+                            notion_page_id = item.get("_notion_page_id")
+                            if notion_page_id and item["id"] in bootstrapped:
+                                self.storage_backend.register_id_mapping(
+                                    entity_type, item["id"], notion_page_id
+                                )
+                                id_map_registered.append((item["id"], notion_page_id))
+
+                        ok, msg = saver(data)
+                        save_ok = ok
+                        if not ok:
+                            logger.error(f"[Worker] Bootstrap save failed for {entity_type}: {msg}")
+                    except Exception:
+                        logger.exception(f"[Worker] Bootstrap save exception for {entity_type}")
+                    finally:
+                        if not save_ok and id_map_registered:
+                            # Rollback on ANY failure (register loop, save
+                            # return False, save exception). Bootstrap IDs
+                            # were not persisted, so stale id_map entries
+                            # would route to update_page for a non-existent
+                            # ID. Next successful load() also rebuilds
+                            # id_map from scratch, but we clean up eagerly.
+                            for nid, _ in id_map_registered:
+                                self.storage_backend.unregister_id_mapping(entity_type, nid)
+
+                    if save_ok:
+                        logger.info(
+                            f"[Worker] Bootstrapped {len(bootstrapped)} {entity_type}: "
+                            f"{bootstrapped}"
+                        )
+
+            except Exception:
+                logger.exception(f"[Worker] Bootstrap error for {entity_type}")
+
+    @staticmethod
+    def _bootstrap_task_fields(item: dict, now: str) -> None:
+        """Assign bootstrap fields specific to tasks."""
+        item["created_at"] = now
+        item["updated_at"] = now
+        item.setdefault("progress", {})["last_update"] = now
+
+    def _enforce_consistency(self, tasks_data: dict) -> bool:
+        """Enforce field invariants on tasks (deterministic, no LLM).
+
+        Rules (applied in order per task):
+          R6: active/someday + completed_at → clear completed_at
+          R1: active/someday + progress=100% → completed + completed_at=now
+          R2a: completed + progress<100% → progress=100%
+          R2b: cancelled + progress=100% → warning only
+          R3: completed/archived + no completed_at → backfill completed_at
+          R4: blocked=true + no blocker_note → warning only
+          R5: blocked=false + blocker_note → clear blocker_note
+
+        Returns True if any task was modified.
+        """
+        tasks = tasks_data.get("tasks", [])
+        if not tasks:
+            return False
+
+        now = datetime.now().isoformat()
+        changed = False
+
+        for task in tasks:
+            try:
+                task_id = task.get("id", "?")
+                status = task.get("status", "active")
+                progress_dict = task.get("progress", {})
+                progress = progress_dict.get("percentage", 0)
+                completed_at = task.get("completed_at")
+                # blocked/blocker_note live inside progress (schema.py:27-28)
+                blocked = progress_dict.get("blocked", False)
+                blocker_note = progress_dict.get("blocker_note")
+
+                # R6: active/someday should not have completed_at
+                if status in ("active", "someday") and completed_at is not None:
+                    task["completed_at"] = None
+                    completed_at = None
+                    changed = True
+                    logger.info(f"[Worker] R6: {task_id} — cleared stale completed_at")
+
+                # R1: progress=100% on active/someday → auto-complete
+                if status in ("active", "someday") and progress >= 100:
+                    task["status"] = "completed"
+                    task["completed_at"] = now
+                    status = "completed"  # Update local var for subsequent rules
+                    completed_at = now  # Prevent R3 from redundant backfill
+                    changed = True
+                    logger.info(f"[Worker] R1: {task_id} — progress 100% → completed")
+
+                # R2a: completed but progress < 100% → fix progress
+                if status == "completed" and progress < 100:
+                    task.setdefault("progress", {})["percentage"] = 100
+                    task.setdefault("progress", {})["last_update"] = now
+                    changed = True
+                    logger.info(f"[Worker] R2a: {task_id} — completed, progress → 100%")
+
+                # R2b: cancelled with 100% → warning only (user intent unclear)
+                if status == "cancelled" and progress >= 100:
+                    logger.warning(
+                        f"[Worker] R2b: {task_id} — cancelled with progress=100%, preserved as-is"
+                    )
+
+                # R3: completed/archived without completed_at → backfill
+                if status in ("completed", "archived") and completed_at is None:
+                    task["completed_at"] = now
+                    changed = True
+                    logger.info(f"[Worker] R3: {task_id} — backfilled completed_at")
+
+                # R4/R5: blocked field consistency (only for active/someday)
+                if status in ("active", "someday"):
+                    has_note = bool(blocker_note and str(blocker_note).strip())
+
+                    # R4: blocked=true but no note → warning
+                    if blocked and not has_note:
+                        logger.warning(f"[Worker] R4: {task_id} — blocked=true but no blocker_note")
+
+                    # R5: not blocked but has note → clear note
+                    if not blocked and has_note:
+                        progress_dict["blocker_note"] = None
+                        changed = True
+                        logger.info(f"[Worker] R5: {task_id} — cleared orphan blocker_note")
+
+            except Exception:
+                # Guard against task not being a dict (e.g. corrupted data)
+                try:
+                    tid = task.get("id", "?") if isinstance(task, dict) else "???"
+                except Exception:
+                    tid = "???"
+                logger.exception(f"[Worker] Consistency check error for task {tid}")
+
+        return changed
 
     def _archive_completed_tasks(self, tasks_data: dict) -> bool:
         """Archive completed or cancelled tasks by setting status to 'archived'."""

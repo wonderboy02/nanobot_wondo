@@ -75,6 +75,21 @@ class StorageBackend(ABC):
     @abstractmethod
     def save_insights(self, data: dict) -> tuple[bool, str]: ...
 
+    # --- ID mapping (Notion bootstrap support) ---
+    def register_id_mapping(self, entity_type: str, nanobot_id: str, page_id: str) -> None:
+        """Register a nanobot_id → external page_id mapping.
+
+        Called by Worker bootstrap to ensure that newly-assigned IDs are
+        recognised during save (preventing duplicate page creation in Notion).
+        No-op for backends that don't use external page IDs (e.g. JSON).
+        """
+
+    def unregister_id_mapping(self, entity_type: str, nanobot_id: str) -> None:
+        """Remove a previously registered id mapping (rollback on save failure).
+
+        No-op for backends that don't use external page IDs.
+        """
+
     # --- Lifecycle ---
     def close(self) -> None:
         """Release resources (HTTP clients, etc.). No-op for stateless backends."""

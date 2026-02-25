@@ -116,6 +116,19 @@ class NotionStorageBackend(StorageBackend):
             self._cache.invalidate_all()
             self._id_maps.clear()
 
+    # ---- ID mapping (bootstrap support) ----
+
+    def register_id_mapping(self, entity_type: str, nanobot_id: str, page_id: str) -> None:
+        """Register a nanobot_id → notion_page_id so save uses update_page."""
+        with self._lock:
+            self._id_maps.setdefault(entity_type, {})[nanobot_id] = page_id
+
+    def unregister_id_mapping(self, entity_type: str, nanobot_id: str) -> None:
+        """Remove mapping (rollback on save failure)."""
+        with self._lock:
+            entity_map = self._id_maps.get(entity_type, {})
+            entity_map.pop(nanobot_id, None)
+
     # ---- helpers ----
 
     def _build_id_map(self, entity_type: str, pages: list[dict]) -> dict[str, str]:
