@@ -22,7 +22,11 @@ poetry.lock
 # IDE and editor files
 .vscode/
 .claude/
+.agents/
 .idea/
+
+# Temporary review/test artifacts
+.tmp_*/
 
 # Node.js dependencies
 node_modules/
