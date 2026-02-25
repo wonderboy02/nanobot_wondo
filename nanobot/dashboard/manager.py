@@ -31,8 +31,10 @@ class DashboardManager:
             "questions": self._load_json(self.questions_file).get("questions", []),
             "notifications": self._load_json(self.notifications_file).get("notifications", []),
             "knowledge": {
-                "insights": self._load_json(self.knowledge_path / "insights.json").get("insights", []),
-            }
+                "insights": self._load_json(self.knowledge_path / "insights.json").get(
+                    "insights", []
+                ),
+            },
         }
 
     def save(self, dashboard: dict[str, Any]) -> None:
@@ -43,36 +45,32 @@ class DashboardManager:
             dashboard: Dashboard state dict
         """
         # Save tasks
-        self._save_json(self.tasks_file, {
-            "version": "1.0",
-            "tasks": dashboard.get("tasks", [])
-        })
+        self._save_json(self.tasks_file, {"version": "1.0", "tasks": dashboard.get("tasks", [])})
 
         # Save questions
-        self._save_json(self.questions_file, {
-            "version": "1.0",
-            "questions": dashboard.get("questions", [])
-        })
+        self._save_json(
+            self.questions_file, {"version": "1.0", "questions": dashboard.get("questions", [])}
+        )
 
         # Save notifications
-        self._save_json(self.notifications_file, {
-            "version": "1.0",
-            "notifications": dashboard.get("notifications", [])
-        })
+        self._save_json(
+            self.notifications_file,
+            {"version": "1.0", "notifications": dashboard.get("notifications", [])},
+        )
 
         # Save knowledge
         knowledge = dashboard.get("knowledge", {})
-        self._save_json(self.knowledge_path / "insights.json", {
-            "version": "1.0",
-            "insights": knowledge.get("insights", [])
-        })
+        self._save_json(
+            self.knowledge_path / "insights.json",
+            {"version": "1.0", "insights": knowledge.get("insights", [])},
+        )
 
     def _load_json(self, file_path: Path) -> dict[str, Any]:
         """Load JSON file or return empty dict if not exists."""
         if not file_path.exists():
             return {}
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(file_path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {}
@@ -80,5 +78,5 @@ class DashboardManager:
     def _save_json(self, file_path: Path, data: dict[str, Any]) -> None:
         """Save JSON file with pretty printing."""
         file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(file_path, 'w', encoding='utf-8') as f:
+        with open(file_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)

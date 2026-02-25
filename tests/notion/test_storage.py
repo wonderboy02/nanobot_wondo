@@ -15,6 +15,7 @@ from nanobot.dashboard.storage import JsonStorageBackend
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
     """Create a minimal workspace directory structure."""
@@ -34,6 +35,7 @@ def storage(workspace: Path) -> JsonStorageBackend:
 # ---------------------------------------------------------------------------
 # load_* with missing files returns defaults
 # ---------------------------------------------------------------------------
+
 
 class TestLoadDefaults:
     """load_* methods should return sensible defaults when files are missing."""
@@ -55,10 +57,10 @@ class TestLoadDefaults:
         assert result == {"version": "1.0", "insights": []}
 
 
-
 # ---------------------------------------------------------------------------
 # save then load round-trip
 # ---------------------------------------------------------------------------
+
 
 class TestRoundTrip:
     """save_* then load_* should return the same data."""
@@ -155,6 +157,7 @@ class TestRoundTrip:
 # save_* with invalid data fails validation
 # ---------------------------------------------------------------------------
 
+
 class TestValidationFailures:
     """save_* with invalid data should return (False, error message)."""
 
@@ -236,6 +239,7 @@ class TestValidationFailures:
 # ---------------------------------------------------------------------------
 # load_* with corrupted file returns default
 # ---------------------------------------------------------------------------
+
 
 class TestCorruptedFiles:
     """load_* should return defaults when files contain invalid JSON."""

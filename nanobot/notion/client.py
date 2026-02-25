@@ -95,14 +95,14 @@ class NotionClient:
 
                 if response.status_code == 429:
                     retry_after = float(
-                        response.headers.get("Retry-After", RETRY_BACKOFF_BASE * (2 ** attempt))
+                        response.headers.get("Retry-After", RETRY_BACKOFF_BASE * (2**attempt))
                     )
                     logger.warning(f"Notion rate limited, retrying in {retry_after:.1f}s")
                     time.sleep(retry_after)
                     continue
 
                 if response.status_code >= 500:
-                    backoff = RETRY_BACKOFF_BASE * (2 ** attempt)
+                    backoff = RETRY_BACKOFF_BASE * (2**attempt)
                     logger.warning(
                         f"Notion server error {response.status_code}, retrying in {backoff:.1f}s"
                     )
@@ -116,7 +116,7 @@ class NotionClient:
 
             except httpx.TimeoutException:
                 if attempt < MAX_RETRIES - 1:
-                    backoff = RETRY_BACKOFF_BASE * (2 ** attempt)
+                    backoff = RETRY_BACKOFF_BASE * (2**attempt)
                     logger.warning(f"Notion request timeout, retrying in {backoff:.1f}s")
                     time.sleep(backoff)
                 else:
@@ -124,7 +124,7 @@ class NotionClient:
 
             except httpx.HTTPError as e:
                 if attempt < MAX_RETRIES - 1:
-                    backoff = RETRY_BACKOFF_BASE * (2 ** attempt)
+                    backoff = RETRY_BACKOFF_BASE * (2**attempt)
                     logger.warning(f"Notion HTTP error: {e}, retrying in {backoff:.1f}s")
                     time.sleep(backoff)
                 else:
@@ -152,9 +152,7 @@ class NotionClient:
             if start_cursor:
                 body["start_cursor"] = start_cursor
 
-            result = self._request(
-                "POST", f"/databases/{database_id}/query", json_body=body
-            )
+            result = self._request("POST", f"/databases/{database_id}/query", json_body=body)
 
             all_pages.extend(result.get("results", []))
             has_more = result.get("has_more", False)
@@ -187,7 +185,6 @@ class NotionClient:
         """Archive (soft-delete) a Notion page."""
         body = {"archived": True}
         return self._request("PATCH", f"/pages/{page_id}", json_body=body)
-
 
 
 class NotionAPIError(Exception):

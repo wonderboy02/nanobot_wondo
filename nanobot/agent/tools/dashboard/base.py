@@ -63,6 +63,7 @@ class BaseDashboardTool(Tool):
             return BaseDashboardTool._configured_backend
         if self._instance_backend is None:
             from nanobot.dashboard.storage import JsonStorageBackend
+
             self._instance_backend = JsonStorageBackend(self.workspace)
         return self._instance_backend
 
@@ -142,9 +143,7 @@ class BaseDashboardTool(Tool):
         """Validate and save questions data via the storage backend."""
         return await asyncio.to_thread(self._backend.save_questions, questions_data)
 
-    async def _validate_and_save_notifications(
-        self, notifications_data: dict
-    ) -> tuple[bool, str]:
+    async def _validate_and_save_notifications(self, notifications_data: dict) -> tuple[bool, str]:
         """Validate and save notifications data via the storage backend."""
         return await asyncio.to_thread(self._backend.save_notifications, notifications_data)
 
@@ -155,9 +154,7 @@ class BaseDashboardTool(Tool):
                 return (task, i)
         return (None, -1)
 
-    def _find_question(
-        self, questions: list[dict], question_id: str
-    ) -> tuple[dict | None, int]:
+    def _find_question(self, questions: list[dict], question_id: str) -> tuple[dict | None, int]:
         """Find question by ID."""
         for i, q in enumerate(questions):
             if q.get("id") == question_id:

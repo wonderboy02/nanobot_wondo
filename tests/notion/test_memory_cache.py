@@ -14,6 +14,7 @@ from nanobot.notion.storage import MemoryCache
 # Basic get / set
 # ---------------------------------------------------------------------------
 
+
 class TestMemoryCacheBasic:
     """Basic cache operations."""
 
@@ -44,6 +45,7 @@ class TestMemoryCacheBasic:
 # ---------------------------------------------------------------------------
 # TTL expiry
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryCacheTTL:
     """TTL-based expiry."""
@@ -79,6 +81,7 @@ class TestMemoryCacheTTL:
 # ---------------------------------------------------------------------------
 # invalidate / invalidate_all
 # ---------------------------------------------------------------------------
+
 
 class TestMemoryCacheInvalidation:
     """Cache invalidation methods."""

@@ -27,19 +27,17 @@ class ListNotificationsTool(BaseDashboardTool):
                 "status": {
                     "type": "string",
                     "enum": ["pending", "delivered", "cancelled"],
-                    "description": "Filter by notification status (optional)"
+                    "description": "Filter by notification status (optional)",
                 },
                 "related_task_id": {
                     "type": "string",
-                    "description": "Filter by related task ID (optional)"
-                }
-            }
+                    "description": "Filter by related task ID (optional)",
+                },
+            },
         }
 
     async def execute(
-        self,
-        status: Optional[str] = None,
-        related_task_id: Optional[str] = None
+        self, status: Optional[str] = None, related_task_id: Optional[str] = None
     ) -> str:
         """List notifications."""
         try:

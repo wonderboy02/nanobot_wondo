@@ -24,14 +24,11 @@ class UpdateQuestionTool(BaseDashboardTool):
         return {
             "type": "object",
             "properties": {
-                "question_id": {
-                    "type": "string",
-                    "description": "ID of the question to update"
-                },
+                "question_id": {"type": "string", "description": "ID of the question to update"},
                 "priority": {
                     "type": "string",
                     "enum": ["low", "medium", "high"],
-                    "description": "New priority level (optional)"
+                    "description": "New priority level (optional)",
                 },
                 "type": {
                     "type": "string",
@@ -43,20 +40,20 @@ class UpdateQuestionTool(BaseDashboardTool):
                         "blocker_check",
                         "status_check",
                         "completion_check",
-                        "routine_check"
+                        "routine_check",
                     ],
-                    "description": "New question type (optional)"
+                    "description": "New question type (optional)",
                 },
                 "cooldown_hours": {
                     "type": "integer",
-                    "description": "New cooldown period in hours (optional)"
+                    "description": "New cooldown period in hours (optional)",
                 },
                 "context": {
                     "type": "string",
-                    "description": "New or additional context (optional)"
-                }
+                    "description": "New or additional context (optional)",
+                },
             },
-            "required": ["question_id"]
+            "required": ["question_id"],
         }
 
     @with_dashboard_lock
@@ -66,7 +63,7 @@ class UpdateQuestionTool(BaseDashboardTool):
         priority: Optional[str] = None,
         type: Optional[str] = None,
         cooldown_hours: Optional[int] = None,
-        context: Optional[str] = None
+        context: Optional[str] = None,
     ) -> str:
         """Update a question."""
         try:

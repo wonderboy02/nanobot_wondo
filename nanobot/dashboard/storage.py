@@ -38,6 +38,7 @@ def load_json_file(path: Path, default: dict | None = None) -> dict:
 # Storage Backend ABC
 # ============================================================================
 
+
 class StorageBackend(ABC):
     """Abstract storage backend for Dashboard data.
 
@@ -48,39 +49,31 @@ class StorageBackend(ABC):
 
     # --- Tasks ---
     @abstractmethod
-    def load_tasks(self) -> dict:
-        ...
+    def load_tasks(self) -> dict: ...
 
     @abstractmethod
-    def save_tasks(self, data: dict) -> tuple[bool, str]:
-        ...
+    def save_tasks(self, data: dict) -> tuple[bool, str]: ...
 
     # --- Questions ---
     @abstractmethod
-    def load_questions(self) -> dict:
-        ...
+    def load_questions(self) -> dict: ...
 
     @abstractmethod
-    def save_questions(self, data: dict) -> tuple[bool, str]:
-        ...
+    def save_questions(self, data: dict) -> tuple[bool, str]: ...
 
     # --- Notifications ---
     @abstractmethod
-    def load_notifications(self) -> dict:
-        ...
+    def load_notifications(self) -> dict: ...
 
     @abstractmethod
-    def save_notifications(self, data: dict) -> tuple[bool, str]:
-        ...
+    def save_notifications(self, data: dict) -> tuple[bool, str]: ...
 
     # --- Insights ---
     @abstractmethod
-    def load_insights(self) -> dict:
-        ...
+    def load_insights(self) -> dict: ...
 
     @abstractmethod
-    def save_insights(self, data: dict) -> tuple[bool, str]:
-        ...
+    def save_insights(self, data: dict) -> tuple[bool, str]: ...
 
     # --- Lifecycle ---
     def close(self) -> None:
@@ -93,6 +86,7 @@ class StorageBackend(ABC):
 # ============================================================================
 # JSON Storage Backend (default / fallback)
 # ============================================================================
+
 
 class JsonStorageBackend(StorageBackend):
     """File-based JSON storage — the original Dashboard storage mechanism.
@@ -112,9 +106,7 @@ class JsonStorageBackend(StorageBackend):
     def _save_json(self, path: Path, data: dict) -> tuple[bool, str]:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(
-                json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-            )
+            path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
             return (True, "Saved successfully")
         except Exception as e:
             return (False, f"Error: {e}")
@@ -130,6 +122,7 @@ class JsonStorageBackend(StorageBackend):
     def save_tasks(self, data: dict) -> tuple[bool, str]:
         try:
             from nanobot.dashboard.schema import validate_tasks_file
+
             validate_tasks_file(data)
         except Exception as e:
             return (False, f"Validation error: {e}")
@@ -146,6 +139,7 @@ class JsonStorageBackend(StorageBackend):
     def save_questions(self, data: dict) -> tuple[bool, str]:
         try:
             from nanobot.dashboard.schema import validate_questions_file
+
             validate_questions_file(data)
         except Exception as e:
             return (False, f"Validation error: {e}")
@@ -162,6 +156,7 @@ class JsonStorageBackend(StorageBackend):
     def save_notifications(self, data: dict) -> tuple[bool, str]:
         try:
             from nanobot.dashboard.schema import validate_notifications_file
+
             validate_notifications_file(data)
         except Exception as e:
             return (False, f"Validation error: {e}")
@@ -180,4 +175,3 @@ class JsonStorageBackend(StorageBackend):
         # Insights have a flexible schema and low write frequency.
         # See CLAUDE.md "Known Limitations #5".
         return self._save_json(self._knowledge_dir / "insights.json", data)
-

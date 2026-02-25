@@ -66,7 +66,7 @@ def agent_setup(tmp_path):
         "2. Extract: answers, progress, blockers, context\n"
         "3. Use appropriate dashboard tools\n"
         "4. Reply SILENT for regular updates\n",
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     memory_dir = workspace / "memory"
@@ -85,14 +85,10 @@ def agent_setup(tmp_path):
         provider=provider,
         workspace=workspace,
         model=config.agents.defaults.model,
-        max_iterations=10
+        max_iterations=10,
     )
 
-    return {
-        "agent": agent_loop,
-        "workspace": workspace,
-        "dashboard": dashboard_path
-    }
+    return {"agent": agent_loop, "workspace": workspace, "dashboard": dashboard_path}
 
 
 @pytest.mark.e2e
@@ -124,20 +120,22 @@ def test_contextual_01_multiple_answers_one_message(agent_setup):
     now = datetime.now()
     tasks_data = {
         "version": "1.0",
-        "tasks": [{
-            "id": "task_001",
-            "title": "React 공부",
-            "status": "active",
-            "progress": {
-                "percentage": 0,
-                "last_update": now.isoformat(),
-                "note": "",
-                "blocked": False
-            },
-            "priority": "medium",
-            "created_at": now.isoformat(),
-            "updated_at": now.isoformat()
-        }]
+        "tasks": [
+            {
+                "id": "task_001",
+                "title": "React 공부",
+                "status": "active",
+                "progress": {
+                    "percentage": 0,
+                    "last_update": now.isoformat(),
+                    "note": "",
+                    "blocked": False,
+                },
+                "priority": "medium",
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+            }
+        ],
     }
 
     questions_data = {
@@ -150,7 +148,7 @@ def test_contextual_01_multiple_answers_one_message(agent_setup):
                 "type": "info_gather",
                 "related_task_id": "task_001",
                 "answered": False,
-                "created_at": now.isoformat()
+                "created_at": now.isoformat(),
             },
             {
                 "id": "q_002",
@@ -159,7 +157,7 @@ def test_contextual_01_multiple_answers_one_message(agent_setup):
                 "type": "progress_check",
                 "related_task_id": "task_001",
                 "answered": False,
-                "created_at": now.isoformat()
+                "created_at": now.isoformat(),
             },
             {
                 "id": "q_003",
@@ -168,9 +166,9 @@ def test_contextual_01_multiple_answers_one_message(agent_setup):
                 "type": "blocker_check",
                 "related_task_id": "task_001",
                 "answered": False,
-                "created_at": now.isoformat()
-            }
-        ]
+                "created_at": now.isoformat(),
+            },
+        ],
     }
 
     with open(dashboard / "tasks.json", "w", encoding="utf-8") as f:
@@ -183,6 +181,7 @@ def test_contextual_01_multiple_answers_one_message(agent_setup):
     message = "유튜브로 공부하고 있는데 50% 완료했어요. Hook이 좀 어려워서 막혔어요."
 
     import asyncio
+
     response = asyncio.run(agent.process_direct(message, session_key="test:contextual01"))
 
     # Verify multiple questions answered
@@ -212,12 +211,12 @@ def test_contextual_01_multiple_answers_one_message(agent_setup):
         tasks_result = json.load(f).get("tasks", [])
 
     task = tasks_result[0]
-    assert task["progress"]["percentage"] >= 40, \
+    assert task["progress"]["percentage"] >= 40, (
         f"Progress should be around 50%, got {task['progress']['percentage']}"
+    )
 
     # Verify blocker detected
-    assert task["progress"].get("blocked") == True, \
-        "Task should be marked as blocked"
+    assert task["progress"].get("blocked") == True, "Task should be marked as blocked"
 
 
 @pytest.mark.e2e
@@ -233,13 +232,16 @@ def test_contextual_02_implicit_blocker_extraction(agent_setup):
 
     # Add task
     import asyncio
+
     asyncio.run(agent.process_direct("React 공부해야 해", session_key="test:contextual02"))
     import time
+
     time.sleep(1)
 
     # Send message with implicit blocker
     message = "공부하고 있는데 Hook 부분이 너무 어려워서 이해가 안 돼요"
     import asyncio
+
     response = asyncio.run(agent.process_direct(message, session_key="test:contextual02"))
 
     # Verify blocker extracted
@@ -249,13 +251,15 @@ def test_contextual_02_implicit_blocker_extraction(agent_setup):
     if tasks:
         task = tasks[0]
         # Should detect blocker from "어려워서 이해가 안 돼요"
-        assert task["progress"].get("blocked") == True, \
+        assert task["progress"].get("blocked") == True, (
             "Should detect blocker from implicit language"
+        )
 
         blocker_note = task["progress"].get("blocker_note", "")
         assert blocker_note, "Should have blocker note"
-        assert "Hook" in blocker_note or "어려" in blocker_note, \
+        assert "Hook" in blocker_note or "어려" in blocker_note, (
             f"Blocker note should mention the difficulty: {blocker_note}"
+        )
 
 
 @pytest.mark.e2e
@@ -272,13 +276,13 @@ def test_contextual_03_silent_mode(agent_setup):
     # Regular message (should be SILENT)
     message1 = "내일까지 블로그 글 써야 해"
     import asyncio
+
     response1 = asyncio.run(agent.process_direct(message1, session_key="test:contextual03"))
 
     # Response might be SILENT or None
     # If not None, it should be minimal (just acknowledgment)
     if response1:
-        assert len(response1) < 100, \
-            "Regular update should have minimal/silent response"
+        assert len(response1) < 100, "Regular update should have minimal/silent response"
 
     # Verify task was still created (silent doesn't mean no action)
     with open(dashboard / "tasks.json", "r", encoding="utf-8") as f:
@@ -306,21 +310,23 @@ def test_contextual_04_holistic_update(agent_setup):
     now = datetime.now()
     tasks_data = {
         "version": "1.0",
-        "tasks": [{
-            "id": "task_001",
-            "title": "프로젝트 개발",
-            "status": "active",
-            "progress": {
-                "percentage": 0,
-                "last_update": now.isoformat(),
-                "note": "",
-                "blocked": False
-            },
-            "context": "",
-            "priority": "high",
-            "created_at": now.isoformat(),
-            "updated_at": now.isoformat()
-        }]
+        "tasks": [
+            {
+                "id": "task_001",
+                "title": "프로젝트 개발",
+                "status": "active",
+                "progress": {
+                    "percentage": 0,
+                    "last_update": now.isoformat(),
+                    "note": "",
+                    "blocked": False,
+                },
+                "context": "",
+                "priority": "high",
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+            }
+        ],
     }
 
     questions_data = {
@@ -333,7 +339,7 @@ def test_contextual_04_holistic_update(agent_setup):
                 "type": "info_gather",
                 "related_task_id": "task_001",
                 "answered": False,
-                "created_at": now.isoformat()
+                "created_at": now.isoformat(),
             },
             {
                 "id": "q_002",
@@ -342,9 +348,9 @@ def test_contextual_04_holistic_update(agent_setup):
                 "type": "progress_check",
                 "related_task_id": "task_001",
                 "answered": False,
-                "created_at": now.isoformat()
-            }
-        ]
+                "created_at": now.isoformat(),
+            },
+        ],
     }
 
     with open(dashboard / "tasks.json", "w", encoding="utf-8") as f:
@@ -361,6 +367,7 @@ def test_contextual_04_holistic_update(agent_setup):
         "내일까지 50%는 해야 하는데 걱정되네요."
     )
     import asyncio
+
     response = asyncio.run(agent.process_direct(message, session_key="test:contextual04"))
 
     # Verify holistic updates
@@ -393,8 +400,7 @@ def test_contextual_04_holistic_update(agent_setup):
         updates.append("questions")
 
     # Should have updated multiple aspects
-    assert len(updates) >= 2, \
-        f"Should update multiple aspects holistically, updated: {updates}"
+    assert len(updates) >= 2, f"Should update multiple aspects holistically, updated: {updates}"
 
 
 @pytest.mark.e2e
@@ -412,19 +418,17 @@ def test_contextual_05_no_limit_on_items(agent_setup):
     now = datetime.now()
     tasks = []
     for i in range(15):
-        tasks.append({
-            "id": f"task_{i:03d}",
-            "title": f"Task {i}",
-            "status": "active",
-            "progress": {
-                "percentage": i * 5,
-                "last_update": now.isoformat(),
-                "note": ""
-            },
-            "priority": "medium",
-            "created_at": now.isoformat(),
-            "updated_at": now.isoformat()
-        })
+        tasks.append(
+            {
+                "id": f"task_{i:03d}",
+                "title": f"Task {i}",
+                "status": "active",
+                "progress": {"percentage": i * 5, "last_update": now.isoformat(), "note": ""},
+                "priority": "medium",
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+            }
+        )
 
     tasks_data = {"version": "1.0", "tasks": tasks}
 
@@ -434,6 +438,7 @@ def test_contextual_05_no_limit_on_items(agent_setup):
     # Send message referencing a task beyond old limit
     message = "Task 14의 진행 상황 업데이트: 80% 완료"
     import asyncio
+
     response = asyncio.run(agent.process_direct(message, session_key="test:contextual05"))
 
     # Verify task 14 was found and updated (proving no 10-item limit)

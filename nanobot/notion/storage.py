@@ -21,6 +21,7 @@ from nanobot.dashboard.storage import StorageBackend
 # Memory Cache
 # ============================================================================
 
+
 class MemoryCache:
     """Simple TTL-based in-memory cache using a dict.
 
@@ -66,6 +67,7 @@ class MemoryCache:
 # ============================================================================
 # Notion Storage Backend
 # ============================================================================
+
 
 class NotionStorageBackend(StorageBackend):
     """Notion API-based storage with in-memory cache.
@@ -247,18 +249,24 @@ class NotionStorageBackend(StorageBackend):
 
     def load_tasks(self) -> dict:
         from nanobot.notion.mapper import notion_to_task
+
         return self._load_entity(
-            "tasks", self._dbs.tasks, notion_to_task, "tasks",
+            "tasks",
+            self._dbs.tasks,
+            notion_to_task,
+            "tasks",
             {"version": "1.0", "tasks": []},
         )
 
     def save_tasks(self, data: dict) -> tuple[bool, str]:
         try:
             from nanobot.dashboard.schema import validate_tasks_file
+
             validate_tasks_file(data)
         except Exception as e:
             return (False, f"Validation error: {e}")
         from nanobot.notion.mapper import task_to_notion
+
         tasks = data.get("tasks", [])
         return self._save_entity_items("tasks", self._dbs.tasks, tasks, task_to_notion)
 
@@ -266,18 +274,24 @@ class NotionStorageBackend(StorageBackend):
 
     def load_questions(self) -> dict:
         from nanobot.notion.mapper import notion_to_question
+
         return self._load_entity(
-            "questions", self._dbs.questions, notion_to_question, "questions",
+            "questions",
+            self._dbs.questions,
+            notion_to_question,
+            "questions",
             {"version": "1.0", "questions": []},
         )
 
     def save_questions(self, data: dict) -> tuple[bool, str]:
         try:
             from nanobot.dashboard.schema import validate_questions_file
+
             validate_questions_file(data)
         except Exception as e:
             return (False, f"Validation error: {e}")
         from nanobot.notion.mapper import question_to_notion
+
         questions = data.get("questions", [])
         return self._save_entity_items(
             "questions", self._dbs.questions, questions, question_to_notion
@@ -287,21 +301,29 @@ class NotionStorageBackend(StorageBackend):
 
     def load_notifications(self) -> dict:
         from nanobot.notion.mapper import notion_to_notification
+
         return self._load_entity(
-            "notifications", self._dbs.notifications, notion_to_notification,
-            "notifications", {"version": "1.0", "notifications": []},
+            "notifications",
+            self._dbs.notifications,
+            notion_to_notification,
+            "notifications",
+            {"version": "1.0", "notifications": []},
         )
 
     def save_notifications(self, data: dict) -> tuple[bool, str]:
         try:
             from nanobot.dashboard.schema import validate_notifications_file
+
             validate_notifications_file(data)
         except Exception as e:
             return (False, f"Validation error: {e}")
         from nanobot.notion.mapper import notification_to_notion
+
         notifications = data.get("notifications", [])
         return self._save_entity_items(
-            "notifications", self._dbs.notifications, notifications,
+            "notifications",
+            self._dbs.notifications,
+            notifications,
             notification_to_notion,
         )
 
@@ -309,15 +331,17 @@ class NotionStorageBackend(StorageBackend):
 
     def load_insights(self) -> dict:
         from nanobot.notion.mapper import notion_to_insight
+
         return self._load_entity(
-            "insights", self._dbs.insights, notion_to_insight, "insights",
+            "insights",
+            self._dbs.insights,
+            notion_to_insight,
+            "insights",
             {"version": "1.0", "insights": []},
         )
 
     def save_insights(self, data: dict) -> tuple[bool, str]:
         from nanobot.notion.mapper import insight_to_notion
-        insights = data.get("insights", [])
-        return self._save_entity_items(
-            "insights", self._dbs.insights, insights, insight_to_notion
-        )
 
+        insights = data.get("insights", [])
+        return self._save_entity_items("insights", self._dbs.insights, insights, insight_to_notion)

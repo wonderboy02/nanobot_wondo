@@ -29,18 +29,16 @@ def test_workspace(tmp_path):
     # Initialize files
     (dashboard / "tasks.json").write_text(json.dumps({"version": "1.0", "tasks": []}))
     (dashboard / "questions.json").write_text(json.dumps({"version": "1.0", "questions": []}))
-    (dashboard / "notifications.json").write_text(json.dumps({"version": "1.0", "notifications": []}))
+    (dashboard / "notifications.json").write_text(
+        json.dumps({"version": "1.0", "notifications": []})
+    )
 
     # Create cron service
     cron_path = tmp_path / "cron" / "jobs.json"
     cron_path.parent.mkdir(parents=True)
     cron_service = CronService(cron_path)
 
-    return {
-        "workspace": workspace,
-        "dashboard": dashboard,
-        "cron_service": cron_service
-    }
+    return {"workspace": workspace, "dashboard": dashboard, "cron_service": cron_service}
 
 
 class TestNotificationTools:
@@ -57,10 +55,7 @@ class TestNotificationTools:
         # Schedule notification
         scheduled_time = (datetime.now() + timedelta(hours=2)).isoformat()
         result = await tool.execute(
-            message="Test reminder",
-            scheduled_at=scheduled_time,
-            type="reminder",
-            priority="medium"
+            message="Test reminder", scheduled_at=scheduled_time, type="reminder", priority="medium"
         )
 
         assert "✅" in result
@@ -96,7 +91,7 @@ class TestNotificationTools:
             message="Original message",
             scheduled_at=scheduled_time,
             type="reminder",
-            priority="medium"
+            priority="medium",
         )
 
         # Get notification ID
@@ -107,10 +102,7 @@ class TestNotificationTools:
 
         # Update scheduled time
         new_time = (datetime.now() + timedelta(hours=3)).isoformat()
-        result = await update_tool.execute(
-            notification_id=notif_id,
-            scheduled_at=new_time
-        )
+        result = await update_tool.execute(notification_id=notif_id, scheduled_at=new_time)
 
         assert "✅" in result
         assert "updated" in result
@@ -141,7 +133,7 @@ class TestNotificationTools:
             message="To be cancelled",
             scheduled_at=scheduled_time,
             type="reminder",
-            priority="medium"
+            priority="medium",
         )
 
         # Get notification ID and cron job ID
@@ -154,10 +146,7 @@ class TestNotificationTools:
         assert cron_job_id in [job.id for job in cron_service.list_jobs()]
 
         # Cancel notification
-        result = await cancel_tool.execute(
-            notification_id=notif_id,
-            reason="Task completed"
-        )
+        result = await cancel_tool.execute(notification_id=notif_id, reason="Task completed")
 
         assert "✅" in result
         assert "cancelled" in result
@@ -188,7 +177,7 @@ class TestNotificationTools:
             scheduled_at=scheduled_time,
             type="reminder",
             priority="high",
-            related_task_id="task_001"
+            related_task_id="task_001",
         )
 
         await schedule_tool.execute(
@@ -196,7 +185,7 @@ class TestNotificationTools:
             scheduled_at=scheduled_time,
             type="reminder",
             priority="medium",
-            related_task_id="task_002"
+            related_task_id="task_002",
         )
 
         # List all pending notifications
@@ -226,26 +215,28 @@ class TestNotificationTaskIntegration:
         tomorrow = (datetime.now() + timedelta(days=1)).isoformat()
         tasks_data = {
             "version": "1.0",
-            "tasks": [{
-                "id": "task_001",
-                "title": "블로그 작성",
-                "deadline": tomorrow,
-                "deadline_text": "내일",
-                "status": "active",
-                "priority": "high",
-                "progress": {
-                    "percentage": 70,
-                    "last_update": datetime.now().isoformat(),
-                    "note": "",
-                    "blocked": False
-                },
-                "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
-                "context": "",
-                "tags": [],
-                "links": {"projects": [], "insights": [], "resources": []},
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            }]
+            "tasks": [
+                {
+                    "id": "task_001",
+                    "title": "블로그 작성",
+                    "deadline": tomorrow,
+                    "deadline_text": "내일",
+                    "status": "active",
+                    "priority": "high",
+                    "progress": {
+                        "percentage": 70,
+                        "last_update": datetime.now().isoformat(),
+                        "note": "",
+                        "blocked": False,
+                    },
+                    "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
+                    "context": "",
+                    "tags": [],
+                    "links": {"projects": [], "insights": [], "resources": []},
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat(),
+                }
+            ],
         }
         tasks_file.write_text(json.dumps(tasks_data), encoding="utf-8")
 
@@ -259,7 +250,7 @@ class TestNotificationTaskIntegration:
             scheduled_at=tomorrow_morning.isoformat(),
             type="deadline_alert",
             priority="high",
-            related_task_id="task_001"
+            related_task_id="task_001",
         )
 
         assert "✅" in result
@@ -289,7 +280,7 @@ class TestNotificationTaskIntegration:
             scheduled_at=deadline_time,
             type="deadline_alert",
             priority="high",
-            related_task_id="task_001"
+            related_task_id="task_001",
         )
 
         # Schedule progress check
@@ -299,7 +290,7 @@ class TestNotificationTaskIntegration:
             scheduled_at=progress_time,
             type="progress_check",
             priority="medium",
-            related_task_id="task_001"
+            related_task_id="task_001",
         )
 
         # Verify both notifications created
@@ -308,7 +299,9 @@ class TestNotificationTaskIntegration:
 
         assert len(data["notifications"]) == 2
 
-        task_notifications = [n for n in data["notifications"] if n["related_task_id"] == "task_001"]
+        task_notifications = [
+            n for n in data["notifications"] if n["related_task_id"] == "task_001"
+        ]
         assert len(task_notifications) == 2
 
         types = [n["type"] for n in task_notifications]
@@ -332,7 +325,7 @@ class TestNotificationPriority:
             message="Urgent deadline!",
             scheduled_at=scheduled_time,
             type="deadline_alert",
-            priority="high"
+            priority="high",
         )
 
         assert "✅" in result
@@ -355,10 +348,7 @@ class TestNotificationPriority:
 
         scheduled_time = (datetime.now() + timedelta(days=7)).isoformat()
         result = await tool.execute(
-            message="Weekly reminder",
-            scheduled_at=scheduled_time,
-            type="reminder",
-            priority="low"
+            message="Weekly reminder", scheduled_at=scheduled_time, type="reminder", priority="low"
         )
 
         assert "✅" in result

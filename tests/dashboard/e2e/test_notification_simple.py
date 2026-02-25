@@ -18,7 +18,9 @@ def test_workspace(tmp_path):
     # Initialize files
     (dashboard / "tasks.json").write_text(json.dumps({"version": "1.0", "tasks": []}))
     (dashboard / "questions.json").write_text(json.dumps({"version": "1.0", "questions": []}))
-    (dashboard / "notifications.json").write_text(json.dumps({"version": "1.0", "notifications": []}))
+    (dashboard / "notifications.json").write_text(
+        json.dumps({"version": "1.0", "notifications": []})
+    )
 
     return workspace
 
@@ -47,7 +49,7 @@ class TestNotificationCreation:
             message="Test notification",
             scheduled_at=scheduled_time,
             type="reminder",
-            priority="medium"
+            priority="medium",
         )
 
         assert "✅" in result
@@ -77,16 +79,18 @@ class TestNotificationCreation:
         notifications_file = test_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
-            "notifications": [{
-                "id": "n_001",
-                "message": "Test notification",
-                "scheduled_at": (datetime.now() + timedelta(hours=1)).isoformat(),
-                "type": "reminder",
-                "priority": "medium",
-                "status": "pending",
-                "created_at": datetime.now().isoformat(),
-                "created_by": "worker"
-            }]
+            "notifications": [
+                {
+                    "id": "n_001",
+                    "message": "Test notification",
+                    "scheduled_at": (datetime.now() + timedelta(hours=1)).isoformat(),
+                    "type": "reminder",
+                    "priority": "medium",
+                    "status": "pending",
+                    "created_at": datetime.now().isoformat(),
+                    "created_by": "worker",
+                }
+            ],
         }
         notifications_file.write_text(json.dumps(data))
 
@@ -108,17 +112,19 @@ class TestNotificationCreation:
         notifications_file = test_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
-            "notifications": [{
-                "id": "n_001",
-                "message": "Test notification",
-                "scheduled_at": (datetime.now() + timedelta(hours=1)).isoformat(),
-                "type": "reminder",
-                "priority": "medium",
-                "status": "pending",
-                "cron_job_id": "cron_123",
-                "created_at": datetime.now().isoformat(),
-                "created_by": "worker"
-            }]
+            "notifications": [
+                {
+                    "id": "n_001",
+                    "message": "Test notification",
+                    "scheduled_at": (datetime.now() + timedelta(hours=1)).isoformat(),
+                    "type": "reminder",
+                    "priority": "medium",
+                    "status": "pending",
+                    "cron_job_id": "cron_123",
+                    "created_at": datetime.now().isoformat(),
+                    "created_by": "worker",
+                }
+            ],
         }
         notifications_file.write_text(json.dumps(data))
 
@@ -154,15 +160,17 @@ class TestQuestionManagement:
         questions_file = test_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "low",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": datetime.now().isoformat(),
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "low",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": datetime.now().isoformat(),
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data))
 
@@ -185,15 +193,17 @@ class TestQuestionManagement:
         questions_file = test_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "medium",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": datetime.now().isoformat(),
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "medium",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": datetime.now().isoformat(),
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data))
 
@@ -222,19 +232,26 @@ class TestNotificationTaskIntegration:
         tasks_file = test_workspace / "dashboard" / "tasks.json"
         task_data = {
             "version": "1.0",
-            "tasks": [{
-                "id": "task_001",
-                "title": "Test task",
-                "status": "active",
-                "priority": "high",
-                "progress": {"percentage": 50, "last_update": datetime.now().isoformat(), "note": "", "blocked": False},
-                "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
-                "context": "",
-                "tags": [],
-                "links": {"projects": [], "insights": [], "resources": []},
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            }]
+            "tasks": [
+                {
+                    "id": "task_001",
+                    "title": "Test task",
+                    "status": "active",
+                    "priority": "high",
+                    "progress": {
+                        "percentage": 50,
+                        "last_update": datetime.now().isoformat(),
+                        "note": "",
+                        "blocked": False,
+                    },
+                    "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
+                    "context": "",
+                    "tags": [],
+                    "links": {"projects": [], "insights": [], "resources": []},
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat(),
+                }
+            ],
         }
         tasks_file.write_text(json.dumps(task_data))
 
@@ -253,7 +270,7 @@ class TestNotificationTaskIntegration:
             scheduled_at=scheduled_time,
             type="deadline_alert",
             priority="high",
-            related_task_id="task_001"
+            related_task_id="task_001",
         )
 
         assert "✅" in result

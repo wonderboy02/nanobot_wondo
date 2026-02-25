@@ -38,7 +38,8 @@ async def test_agent_updates_dashboard():
 
         # Create DASHBOARD.md with instructions
         dashboard_md = workspace / "DASHBOARD.md"
-        dashboard_md.write_text("""# Dashboard Management
+        dashboard_md.write_text(
+            """# Dashboard Management
 
 You are a Dashboard Sync Manager.
 
@@ -58,7 +59,9 @@ Example task format:
   "created_at": "2026-02-06T20:00:00",
   "updated_at": "2026-02-06T20:00:00"
 }
-""", encoding="utf-8")
+""",
+            encoding="utf-8",
+        )
 
         # Create memory directory
         memory_dir = workspace / "memory"
@@ -74,6 +77,7 @@ Example task format:
 
         # Skip actual agent execution for now - just verify Context includes Dashboard
         from nanobot.agent.context import ContextBuilder
+
         builder = ContextBuilder(workspace)
         system_prompt = builder.build_system_prompt()
 
@@ -95,20 +99,22 @@ Example task format:
         # Manually add a task
         tasks_data = {
             "version": "1.0",
-            "tasks": [{
-                "id": "task_test",
-                "title": "Test Task",
-                "status": "active",
-                "deadline": "2026-02-10T23:59:00",
-                "progress": {
-                    "percentage": 0,
-                    "last_update": datetime.now().isoformat(),
-                    "note": ""
-                },
-                "priority": "high",
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            }]
+            "tasks": [
+                {
+                    "id": "task_test",
+                    "title": "Test Task",
+                    "status": "active",
+                    "deadline": "2026-02-10T23:59:00",
+                    "progress": {
+                        "percentage": 0,
+                        "last_update": datetime.now().isoformat(),
+                        "note": "",
+                    },
+                    "priority": "high",
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat(),
+                }
+            ],
         }
         with open(tasks_file, "w", encoding="utf-8") as f:
             json.dump(tasks_data, f, indent=2)

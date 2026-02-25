@@ -30,60 +30,62 @@ def _markdown_to_telegram_html(text: str) -> str:
     """
     if not text:
         return ""
-    
+
     # 1. Extract and protect code blocks (preserve content from other processing)
     code_blocks: list[str] = []
+
     def save_code_block(m: re.Match) -> str:
         code_blocks.append(m.group(1))
         return f"\x00CB{len(code_blocks) - 1}\x00"
-    
-    text = re.sub(r'```[\w]*\n?([\s\S]*?)```', save_code_block, text)
-    
+
+    text = re.sub(r"```[\w]*\n?([\s\S]*?)```", save_code_block, text)
+
     # 2. Extract and protect inline code
     inline_codes: list[str] = []
+
     def save_inline_code(m: re.Match) -> str:
         inline_codes.append(m.group(1))
         return f"\x00IC{len(inline_codes) - 1}\x00"
-    
-    text = re.sub(r'`([^`]+)`', save_inline_code, text)
-    
+
+    text = re.sub(r"`([^`]+)`", save_inline_code, text)
+
     # 3. Headers # Title -> just the title text
-    text = re.sub(r'^#{1,6}\s+(.+)$', r'\1', text, flags=re.MULTILINE)
-    
+    text = re.sub(r"^#{1,6}\s+(.+)$", r"\1", text, flags=re.MULTILINE)
+
     # 4. Blockquotes > text -> just the text (before HTML escaping)
-    text = re.sub(r'^>\s*(.*)$', r'\1', text, flags=re.MULTILINE)
-    
+    text = re.sub(r"^>\s*(.*)$", r"\1", text, flags=re.MULTILINE)
+
     # 5. Escape HTML special characters
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    
+
     # 6. Links [text](url) - must be before bold/italic to handle nested cases
-    text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
-    
+    text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+
     # 7. Bold **text** or __text__
-    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
-    text = re.sub(r'__(.+?)__', r'<b>\1</b>', text)
-    
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"__(.+?)__", r"<b>\1</b>", text)
+
     # 8. Italic _text_ (avoid matching inside words like some_var_name)
-    text = re.sub(r'(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])', r'<i>\1</i>', text)
-    
+    text = re.sub(r"(?<![a-zA-Z0-9])_([^_]+)_(?![a-zA-Z0-9])", r"<i>\1</i>", text)
+
     # 9. Strikethrough ~~text~~
-    text = re.sub(r'~~(.+?)~~', r'<s>\1</s>', text)
-    
+    text = re.sub(r"~~(.+?)~~", r"<s>\1</s>", text)
+
     # 10. Bullet lists - item -> • item
-    text = re.sub(r'^[-*]\s+', '• ', text, flags=re.MULTILINE)
-    
+    text = re.sub(r"^[-*]\s+", "• ", text, flags=re.MULTILINE)
+
     # 11. Restore inline code with HTML tags
     for i, code in enumerate(inline_codes):
         # Escape HTML in code content
         escaped = code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         text = text.replace(f"\x00IC{i}\x00", f"<code>{escaped}</code>")
-    
+
     # 12. Restore code blocks with HTML tags
     for i, code in enumerate(code_blocks):
         # Escape HTML in code content
         escaped = code.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         text = text.replace(f"\x00CB{i}\x00", f"<pre><code>{escaped}</code></pre>")
-    
+
     return text
 
 
@@ -138,9 +140,7 @@ class TelegramNotificationManager:
         self._sent_hashes[h] = time.time()
         # Clean old entries
         cutoff = time.time() - (self._policy.dedup_window_hours * 3600)
-        self._sent_hashes = {
-            k: v for k, v in self._sent_hashes.items() if v > cutoff
-        }
+        self._sent_hashes = {k: v for k, v in self._sent_hashes.items() if v > cutoff}
 
     def _get_daily_count(self) -> int:
         today = datetime.now().strftime("%Y-%m-%d")
@@ -150,9 +150,7 @@ class TelegramNotificationManager:
         today = datetime.now().strftime("%Y-%m-%d")
         self._daily_counts[today] = self._daily_counts.get(today, 0) + 1
         # Clean old dates
-        self._daily_counts = {
-            k: v for k, v in self._daily_counts.items() if k >= today
-        }
+        self._daily_counts = {k: v for k, v in self._daily_counts.items() if k >= today}
 
     def should_send(self, message: str, priority: str = "medium") -> bool:
         """Check if a notification should be sent based on policy."""
@@ -184,8 +182,8 @@ class TelegramNotificationManager:
             return None
 
         # Take up to batch_max
-        to_send = self._batch[:self._policy.batch_max]
-        self._batch = self._batch[self._policy.batch_max:]
+        to_send = self._batch[: self._policy.batch_max]
+        self._batch = self._batch[self._policy.batch_max :]
 
         for item in to_send:
             self._record_sent(item["message"])
@@ -197,9 +195,7 @@ class TelegramNotificationManager:
         # Format multiple notifications
         lines = ["📋 <b>Notifications</b>\n"]
         for item in to_send:
-            priority_icon = {"high": "🔴", "medium": "🟡", "low": "⚪"}.get(
-                item["priority"], "⚪"
-            )
+            priority_icon = {"high": "🔴", "medium": "🟡", "low": "⚪"}.get(item["priority"], "⚪")
             lines.append(f"{priority_icon} {item['message']}")
 
         return "\n".join(lines)
@@ -219,12 +215,12 @@ class TelegramNotificationManager:
 class TelegramChannel(BaseChannel):
     """
     Telegram channel using long polling.
-    
+
     Simple and reliable - no webhook/public IP needed.
     """
-    
+
     name = "telegram"
-    
+
     _CACHE_TTL = 3600  # 1 hour
     _CACHE_MAX_SIZE = 100
 
@@ -252,67 +248,69 @@ class TelegramChannel(BaseChannel):
         # Heartbeat → Worker → Telegram notification flow is not connected yet.
         # See CLAUDE.md "Known Limitations #4" for the wiring plan.
         self.notifications = TelegramNotificationManager(config.notification_policy)
-    
+
     async def start(self) -> None:
         """Start the Telegram bot with long polling."""
         if not self.config.token:
             logger.error("Telegram bot token not configured")
             return
-        
+
         self._running = True
-        
+
         # Build the application
-        self._app = (
-            Application.builder()
-            .token(self.config.token)
-            .build()
-        )
-        
+        self._app = Application.builder().token(self.config.token).build()
+
         # Add message handler for text, photos, voice, documents
         self._app.add_handler(
             MessageHandler(
-                (filters.TEXT | filters.PHOTO | filters.VOICE | filters.AUDIO | filters.Document.ALL) 
-                & ~filters.COMMAND, 
-                self._on_message
+                (
+                    filters.TEXT
+                    | filters.PHOTO
+                    | filters.VOICE
+                    | filters.AUDIO
+                    | filters.Document.ALL
+                )
+                & ~filters.COMMAND,
+                self._on_message,
             )
         )
-        
+
         # Add command handlers
         self._app.add_handler(CommandHandler("start", self._on_start))
         self._app.add_handler(CommandHandler("questions", self._on_questions))
         self._app.add_handler(CommandHandler("tasks", self._on_tasks))
-        
+
         logger.info("Starting Telegram bot (polling mode)...")
-        
+
         # Initialize and start polling
         await self._app.initialize()
         await self._app.start()
-        
+
         # Get bot info
         bot_info = await self._app.bot.get_me()
         logger.info(f"Telegram bot @{bot_info.username} connected")
-        
+
         # Start polling (this runs until stopped)
         await self._app.updater.start_polling(
             allowed_updates=["message"],
-            drop_pending_updates=True  # Ignore old messages on startup
+            drop_pending_updates=True,  # Ignore old messages on startup
         )
-        
+
         # Keep running until stopped
         while self._running:
             await asyncio.sleep(1)
-    
+
     async def stop(self) -> None:
         """Stop the Telegram bot."""
         self._running = False
-        
+
         if self._app:
             logger.info("Stopping Telegram bot...")
             await self._app.updater.stop()
             await self._app.stop()
             await self._app.shutdown()
             self._app = None
-    
+
     async def send(self, msg: OutboundMessage) -> None:
         """Send a message through Telegram.
 
@@ -330,6 +328,7 @@ class TelegramChannel(BaseChannel):
             if message_id:
                 try:
                     from telegram import ReactionTypeEmoji
+
                     await self._app.bot.set_message_reaction(
                         chat_id=int(msg.chat_id),
                         message_id=int(message_id),
@@ -344,35 +343,27 @@ class TelegramChannel(BaseChannel):
             chat_id = int(msg.chat_id)
             # Convert markdown to Telegram HTML
             html_content = _markdown_to_telegram_html(msg.content)
-            await self._app.bot.send_message(
-                chat_id=chat_id,
-                text=html_content,
-                parse_mode="HTML"
-            )
+            await self._app.bot.send_message(chat_id=chat_id, text=html_content, parse_mode="HTML")
         except ValueError:
             logger.error(f"Invalid chat_id: {msg.chat_id}")
         except Exception as e:
             # Fallback to plain text if HTML parsing fails
             logger.warning(f"HTML parse failed, falling back to plain text: {e}")
             try:
-                await self._app.bot.send_message(
-                    chat_id=int(msg.chat_id),
-                    text=msg.content
-                )
+                await self._app.bot.send_message(chat_id=int(msg.chat_id), text=msg.content)
             except Exception as e2:
                 logger.error(f"Error sending Telegram message: {e2}")
-    
+
     async def _on_start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /start command."""
         if not update.message or not update.effective_user:
             return
-        
+
         user = update.effective_user
         await update.message.reply_text(
-            f"👋 Hi {user.first_name}! I'm nanobot.\n\n"
-            "Send me a message and I'll respond!"
+            f"👋 Hi {user.first_name}! I'm nanobot.\n\nSend me a message and I'll respond!"
         )
-    
+
     async def _on_questions(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /questions command — show unanswered questions with numbered mapping."""
         if not update.message or not update.effective_user:
@@ -495,7 +486,9 @@ class TelegramChannel(BaseChannel):
             else:
                 pct = raw_progress
             priority = t.get("priority", "")
-            blocked = raw_progress.get("blocked", False) if isinstance(raw_progress, dict) else False
+            blocked = (
+                raw_progress.get("blocked", False) if isinstance(raw_progress, dict) else False
+            )
 
             line = f"• <b>{title}</b> ({pct}%)"
             if priority:
@@ -554,7 +547,8 @@ class TelegramChannel(BaseChannel):
         now = time.time()
         # Remove expired entries
         expired = [
-            cid for cid, entry in self._question_cache.items()
+            cid
+            for cid, entry in self._question_cache.items()
             if now - entry["created_at"] > self._CACHE_TTL
         ]
         for cid in expired:
@@ -571,33 +565,33 @@ class TelegramChannel(BaseChannel):
         """Handle incoming messages (text, photos, voice, documents)."""
         if not update.message or not update.effective_user:
             return
-        
+
         message = update.message
         user = update.effective_user
         chat_id = message.chat_id
-        
+
         # Use stable numeric ID, but keep username for allowlist compatibility
         sender_id = str(user.id)
         if user.username:
             sender_id = f"{sender_id}|{user.username}"
-        
+
         # Store chat_id for replies
         self._chat_ids[sender_id] = chat_id
-        
+
         # Build content from text and/or media
         content_parts = []
         media_paths = []
-        
+
         # Text content
         if message.text:
             content_parts.append(message.text)
         if message.caption:
             content_parts.append(message.caption)
-        
+
         # Handle media files
         media_file = None
         media_type = None
-        
+
         if message.photo:
             media_file = message.photo[-1]  # Largest photo
             media_type = "image"
@@ -610,24 +604,25 @@ class TelegramChannel(BaseChannel):
         elif message.document:
             media_file = message.document
             media_type = "file"
-        
+
         # Download media if present
         if media_file and self._app:
             try:
                 file = await self._app.bot.get_file(media_file.file_id)
-                ext = self._get_extension(media_type, getattr(media_file, 'mime_type', None))
-                
+                ext = self._get_extension(media_type, getattr(media_file, "mime_type", None))
+
                 media_dir = get_data_path() / "media"
                 media_dir.mkdir(parents=True, exist_ok=True)
 
                 file_path = media_dir / f"{media_file.file_id[:16]}{ext}"
                 await file.download_to_drive(str(file_path))
-                
+
                 media_paths.append(str(file_path))
-                
+
                 # Handle voice transcription
                 if media_type == "voice" or media_type == "audio":
                     from nanobot.providers.transcription import GroqTranscriptionProvider
+
                     transcriber = GroqTranscriptionProvider(api_key=self.groq_api_key)
                     transcription = await transcriber.transcribe(file_path)
                     if transcription:
@@ -637,12 +632,12 @@ class TelegramChannel(BaseChannel):
                         content_parts.append(f"[{media_type}: {file_path}]")
                 else:
                     content_parts.append(f"[{media_type}: {file_path}]")
-                    
+
                 logger.debug(f"Downloaded {media_type} to {file_path}")
             except Exception as e:
                 logger.error(f"Failed to download media: {e}")
                 content_parts.append(f"[{media_type}: download failed]")
-        
+
         content = "\n".join(content_parts) if content_parts else "[empty message]"
 
         logger.debug(f"Telegram message from {sender_id}: {content[:50]}...")
@@ -658,8 +653,7 @@ class TelegramChannel(BaseChannel):
                 # Replace content with unmatched lines only (or empty note)
                 content = "\n".join(unmatched) if unmatched else ""
                 logger.info(
-                    f"Parsed {len(answers)} numbered answer(s), "
-                    f"{len(unmatched)} unmatched line(s)"
+                    f"Parsed {len(answers)} numbered answer(s), {len(unmatched)} unmatched line(s)"
                 )
             # One-time use: always delete cache after attempt
             del self._question_cache[chat_id]
@@ -677,18 +671,22 @@ class TelegramChannel(BaseChannel):
                 "first_name": user.first_name,
                 "is_group": message.chat.type != "private",
                 **extra_metadata,
-            }
+            },
         )
-    
+
     def _get_extension(self, media_type: str, mime_type: str | None) -> str:
         """Get file extension based on media type."""
         if mime_type:
             ext_map = {
-                "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
-                "audio/ogg": ".ogg", "audio/mpeg": ".mp3", "audio/mp4": ".m4a",
+                "image/jpeg": ".jpg",
+                "image/png": ".png",
+                "image/gif": ".gif",
+                "audio/ogg": ".ogg",
+                "audio/mpeg": ".mp3",
+                "audio/mp4": ".m4a",
             }
             if mime_type in ext_map:
                 return ext_map[mime_type]
-        
+
         type_map = {"image": ".jpg", "voice": ".ogg", "audio": ".mp3", "file": ""}
         return type_map.get(media_type, "")

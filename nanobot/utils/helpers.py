@@ -22,10 +22,10 @@ def get_data_path() -> Path:
 def get_workspace_path(workspace: str | None = None) -> Path:
     """
     Get the workspace path.
-    
+
     Args:
         workspace: Optional workspace path. Defaults to ~/.nanobot/workspace.
-    
+
     Returns:
         Expanded and ensured workspace path.
     """
@@ -55,5 +55,3 @@ def safe_filename(name: str) -> str:
     for char in unsafe:
         name = name.replace(char, "_")
     return name.strip()
-
-

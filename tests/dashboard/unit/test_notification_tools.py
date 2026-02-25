@@ -22,10 +22,9 @@ def temp_workspace(tmp_path):
 
     # Initialize notifications.json
     notifications_file = dashboard_path / "notifications.json"
-    notifications_file.write_text(json.dumps({
-        "version": "1.0",
-        "notifications": []
-    }), encoding="utf-8")
+    notifications_file.write_text(
+        json.dumps({"version": "1.0", "notifications": []}), encoding="utf-8"
+    )
 
     return tmp_path
 
@@ -42,7 +41,7 @@ def mock_cron_service():
             name=kwargs.get("name", "test"),
             enabled=True,
             schedule=kwargs.get("schedule"),
-            payload=Mock()
+            payload=Mock(),
         )
 
     cron.add_job = Mock(side_effect=add_job_side_effect)
@@ -64,7 +63,7 @@ class TestScheduleNotificationTool:
             message="Test notification",
             scheduled_at=scheduled_at,
             type="reminder",
-            priority="medium"
+            priority="medium",
         )
 
         assert "✅" in result
@@ -95,9 +94,7 @@ class TestScheduleNotificationTool:
         tool = ScheduleNotificationTool(temp_workspace, mock_cron_service)
 
         result = await tool.execute(
-            message="Reminder in 2 hours",
-            scheduled_at="in 2 hours",
-            type="reminder"
+            message="Reminder in 2 hours", scheduled_at="in 2 hours", type="reminder"
         )
 
         assert "✅" in result
@@ -125,7 +122,7 @@ class TestScheduleNotificationTool:
             type="deadline_alert",
             priority="high",
             related_task_id="task_001",
-            context="Automatic deadline reminder"
+            context="Automatic deadline reminder",
         )
 
         assert "✅" in result
@@ -144,9 +141,7 @@ class TestScheduleNotificationTool:
         tool = ScheduleNotificationTool(temp_workspace, mock_cron_service)
 
         result = await tool.execute(
-            message="Test",
-            scheduled_at="invalid_datetime",
-            type="reminder"
+            message="Test", scheduled_at="invalid_datetime", type="reminder"
         )
 
         assert "Error" in result
@@ -163,26 +158,25 @@ class TestUpdateNotificationTool:
         notifications_file = temp_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
-            "notifications": [{
-                "id": "n_001",
-                "message": "Old message",
-                "scheduled_at": "2026-02-10T09:00:00",
-                "type": "reminder",
-                "priority": "medium",
-                "status": "pending",
-                "cron_job_id": "cron_001",
-                "created_at": "2026-02-08T10:00:00",
-                "created_by": "worker"
-            }]
+            "notifications": [
+                {
+                    "id": "n_001",
+                    "message": "Old message",
+                    "scheduled_at": "2026-02-10T09:00:00",
+                    "type": "reminder",
+                    "priority": "medium",
+                    "status": "pending",
+                    "cron_job_id": "cron_001",
+                    "created_at": "2026-02-08T10:00:00",
+                    "created_by": "worker",
+                }
+            ],
         }
         notifications_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = UpdateNotificationTool(temp_workspace, mock_cron_service)
 
-        result = await tool.execute(
-            notification_id="n_001",
-            message="New message"
-        )
+        result = await tool.execute(notification_id="n_001", message="New message")
 
         assert "✅" in result
 
@@ -198,26 +192,25 @@ class TestUpdateNotificationTool:
         notifications_file = temp_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
-            "notifications": [{
-                "id": "n_001",
-                "message": "Test",
-                "scheduled_at": "2026-02-10T09:00:00",
-                "type": "reminder",
-                "priority": "medium",
-                "status": "pending",
-                "cron_job_id": "cron_001",
-                "created_at": "2026-02-08T10:00:00",
-                "created_by": "worker"
-            }]
+            "notifications": [
+                {
+                    "id": "n_001",
+                    "message": "Test",
+                    "scheduled_at": "2026-02-10T09:00:00",
+                    "type": "reminder",
+                    "priority": "medium",
+                    "status": "pending",
+                    "cron_job_id": "cron_001",
+                    "created_at": "2026-02-08T10:00:00",
+                    "created_by": "worker",
+                }
+            ],
         }
         notifications_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = UpdateNotificationTool(temp_workspace, mock_cron_service)
 
-        result = await tool.execute(
-            notification_id="n_001",
-            scheduled_at="2026-02-11T10:00:00"
-        )
+        result = await tool.execute(notification_id="n_001", scheduled_at="2026-02-11T10:00:00")
 
         assert "✅" in result
 
@@ -236,10 +229,7 @@ class TestUpdateNotificationTool:
         """Test updating non-existent notification."""
         tool = UpdateNotificationTool(temp_workspace, mock_cron_service)
 
-        result = await tool.execute(
-            notification_id="n_nonexistent",
-            message="Test"
-        )
+        result = await tool.execute(notification_id="n_nonexistent", message="Test")
 
         assert "Error" in result
         assert "not found" in result
@@ -250,27 +240,26 @@ class TestUpdateNotificationTool:
         notifications_file = temp_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
-            "notifications": [{
-                "id": "n_001",
-                "message": "Test",
-                "scheduled_at": "2026-02-10T09:00:00",
-                "type": "reminder",
-                "priority": "medium",
-                "status": "delivered",
-                "delivered_at": "2026-02-10T09:00:05",
-                "cron_job_id": "cron_001",
-                "created_at": "2026-02-08T10:00:00",
-                "created_by": "worker"
-            }]
+            "notifications": [
+                {
+                    "id": "n_001",
+                    "message": "Test",
+                    "scheduled_at": "2026-02-10T09:00:00",
+                    "type": "reminder",
+                    "priority": "medium",
+                    "status": "delivered",
+                    "delivered_at": "2026-02-10T09:00:05",
+                    "cron_job_id": "cron_001",
+                    "created_at": "2026-02-08T10:00:00",
+                    "created_by": "worker",
+                }
+            ],
         }
         notifications_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = UpdateNotificationTool(temp_workspace, mock_cron_service)
 
-        result = await tool.execute(
-            notification_id="n_001",
-            message="New message"
-        )
+        result = await tool.execute(notification_id="n_001", message="New message")
 
         assert "Error" in result
         assert "delivered" in result
@@ -286,26 +275,25 @@ class TestCancelNotificationTool:
         notifications_file = temp_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
-            "notifications": [{
-                "id": "n_001",
-                "message": "Test",
-                "scheduled_at": "2026-02-10T09:00:00",
-                "type": "reminder",
-                "priority": "medium",
-                "status": "pending",
-                "cron_job_id": "cron_001",
-                "created_at": "2026-02-08T10:00:00",
-                "created_by": "worker"
-            }]
+            "notifications": [
+                {
+                    "id": "n_001",
+                    "message": "Test",
+                    "scheduled_at": "2026-02-10T09:00:00",
+                    "type": "reminder",
+                    "priority": "medium",
+                    "status": "pending",
+                    "cron_job_id": "cron_001",
+                    "created_at": "2026-02-08T10:00:00",
+                    "created_by": "worker",
+                }
+            ],
         }
         notifications_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = CancelNotificationTool(temp_workspace, mock_cron_service)
 
-        result = await tool.execute(
-            notification_id="n_001",
-            reason="Task completed early"
-        )
+        result = await tool.execute(notification_id="n_001", reason="Task completed early")
 
         assert "✅" in result
 
@@ -335,18 +323,20 @@ class TestCancelNotificationTool:
         notifications_file = temp_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
-            "notifications": [{
-                "id": "n_001",
-                "message": "Test",
-                "scheduled_at": "2026-02-10T09:00:00",
-                "type": "reminder",
-                "priority": "medium",
-                "status": "cancelled",
-                "cancelled_at": "2026-02-09T10:00:00",
-                "cron_job_id": "cron_001",
-                "created_at": "2026-02-08T10:00:00",
-                "created_by": "worker"
-            }]
+            "notifications": [
+                {
+                    "id": "n_001",
+                    "message": "Test",
+                    "scheduled_at": "2026-02-10T09:00:00",
+                    "type": "reminder",
+                    "priority": "medium",
+                    "status": "cancelled",
+                    "cancelled_at": "2026-02-09T10:00:00",
+                    "cron_job_id": "cron_001",
+                    "created_at": "2026-02-08T10:00:00",
+                    "created_by": "worker",
+                }
+            ],
         }
         notifications_file.write_text(json.dumps(data), encoding="utf-8")
 
@@ -376,7 +366,7 @@ class TestListNotificationsTool:
                     "priority": "medium",
                     "status": "pending",
                     "created_at": "2026-02-08T10:00:00",
-                    "created_by": "worker"
+                    "created_by": "worker",
                 },
                 {
                     "id": "n_002",
@@ -386,9 +376,9 @@ class TestListNotificationsTool:
                     "priority": "high",
                     "status": "pending",
                     "created_at": "2026-02-08T10:00:00",
-                    "created_by": "worker"
-                }
-            ]
+                    "created_by": "worker",
+                },
+            ],
         }
         notifications_file.write_text(json.dumps(data), encoding="utf-8")
 
@@ -417,7 +407,7 @@ class TestListNotificationsTool:
                     "priority": "medium",
                     "status": "pending",
                     "created_at": "2026-02-08T10:00:00",
-                    "created_by": "worker"
+                    "created_by": "worker",
                 },
                 {
                     "id": "n_002",
@@ -428,9 +418,9 @@ class TestListNotificationsTool:
                     "status": "delivered",
                     "delivered_at": "2026-02-09T09:00:05",
                     "created_at": "2026-02-08T10:00:00",
-                    "created_by": "worker"
-                }
-            ]
+                    "created_by": "worker",
+                },
+            ],
         }
         notifications_file.write_text(json.dumps(data), encoding="utf-8")
 
@@ -458,7 +448,7 @@ class TestListNotificationsTool:
                     "status": "pending",
                     "related_task_id": "task_001",
                     "created_at": "2026-02-08T10:00:00",
-                    "created_by": "worker"
+                    "created_by": "worker",
                 },
                 {
                     "id": "n_002",
@@ -469,9 +459,9 @@ class TestListNotificationsTool:
                     "status": "pending",
                     "related_task_id": "task_002",
                     "created_at": "2026-02-08T10:00:00",
-                    "created_by": "worker"
-                }
-            ]
+                    "created_by": "worker",
+                },
+            ],
         }
         notifications_file.write_text(json.dumps(data), encoding="utf-8")
 

@@ -23,17 +23,14 @@ class RemoveQuestionTool(BaseDashboardTool):
         return {
             "type": "object",
             "properties": {
-                "question_id": {
-                    "type": "string",
-                    "description": "ID of the question to remove"
-                },
+                "question_id": {"type": "string", "description": "ID of the question to remove"},
                 "reason": {
                     "type": "string",
                     "default": "",
-                    "description": "Optional reason for removal (e.g., 'duplicate', 'obsolete', 'answered elsewhere')"
-                }
+                    "description": "Optional reason for removal (e.g., 'duplicate', 'obsolete', 'answered elsewhere')",
+                },
             },
-            "required": ["question_id"]
+            "required": ["question_id"],
         }
 
     @with_dashboard_lock

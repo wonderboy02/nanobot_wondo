@@ -17,7 +17,13 @@ from nanobot.notion.client import NotionClient, NotionAPIError, RATE_LIMIT_INTER
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_response(status_code: int = 200, json_data: dict | None = None, headers: dict | None = None, text: str = ""):
+
+def _make_response(
+    status_code: int = 200,
+    json_data: dict | None = None,
+    headers: dict | None = None,
+    text: str = "",
+):
     """Build a mock httpx.Response."""
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status_code
@@ -32,6 +38,7 @@ def _make_response(status_code: int = 200, json_data: dict | None = None, header
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def client():
     return NotionClient(token="secret_test_token")
@@ -40,6 +47,7 @@ def client():
 # ---------------------------------------------------------------------------
 # query_database - pagination
 # ---------------------------------------------------------------------------
+
 
 def test_query_database_single_page(client):
     """query_database returns all results when has_more=false."""
@@ -83,6 +91,7 @@ def test_query_database_pagination(client):
 # create_page
 # ---------------------------------------------------------------------------
 
+
 def test_create_page_success(client):
     """create_page sends correct body and returns page object."""
     created_page = {"id": "new-page-1", "properties": {"Title": {"title": []}}}
@@ -107,6 +116,7 @@ def test_create_page_success(client):
 # update_page
 # ---------------------------------------------------------------------------
 
+
 def test_update_page_success(client):
     """update_page sends PATCH with properties."""
     updated = {"id": "page-1", "properties": {"Status": {"select": {"name": "Done"}}}}
@@ -127,6 +137,7 @@ def test_update_page_success(client):
 # archive_page
 # ---------------------------------------------------------------------------
 
+
 def test_archive_page_success(client):
     """archive_page sends PATCH with archived=true."""
     archived = {"id": "page-1", "archived": True}
@@ -139,13 +150,16 @@ def test_archive_page_success(client):
 
         result = client.archive_page("page-1")
         assert result["archived"] is True
-        body = mock_http.request.call_args.kwargs.get("json") or mock_http.request.call_args[1].get("json", {})
+        body = mock_http.request.call_args.kwargs.get("json") or mock_http.request.call_args[1].get(
+            "json", {}
+        )
         assert body["archived"] is True
 
 
 # ---------------------------------------------------------------------------
 # Rate limiting
 # ---------------------------------------------------------------------------
+
 
 def test_rate_limiting_enforces_delay(client):
     """Consecutive requests should have at least RATE_LIMIT_INTERVAL gap."""
@@ -170,6 +184,7 @@ def test_rate_limiting_enforces_delay(client):
 # Retry on 429
 # ---------------------------------------------------------------------------
 
+
 def test_retry_on_429(client):
     """Client retries when Notion returns 429 rate limit."""
     resp_429 = _make_response(429, headers={"Retry-After": "0.01"})
@@ -190,6 +205,7 @@ def test_retry_on_429(client):
 # Retry on 500
 # ---------------------------------------------------------------------------
 
+
 def test_retry_on_500(client):
     """Client retries on server errors (5xx)."""
     resp_500 = _make_response(500, text="Internal Server Error")
@@ -209,6 +225,7 @@ def test_retry_on_500(client):
 # ---------------------------------------------------------------------------
 # NotionAPIError on 4xx (non-429)
 # ---------------------------------------------------------------------------
+
 
 def test_raises_api_error_on_4xx(client):
     """Client raises NotionAPIError immediately for 4xx errors (not 429)."""
@@ -247,6 +264,7 @@ def test_raises_api_error_on_403(client):
 # Max retries exceeded
 # ---------------------------------------------------------------------------
 
+
 def test_max_retries_exceeded(client):
     """Client raises NotionAPIError after exhausting all retries on 500."""
     resp_500 = _make_response(500, text="Server Error")
@@ -266,6 +284,7 @@ def test_max_retries_exceeded(client):
 # ---------------------------------------------------------------------------
 # close
 # ---------------------------------------------------------------------------
+
 
 def test_close(client):
     """close() closes the underlying httpx client."""

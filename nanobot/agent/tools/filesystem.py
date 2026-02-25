@@ -51,8 +51,7 @@ def _is_read_only(path: Path, workspace: Path | None = None) -> bool:
     return filename in READ_ONLY_PATTERNS
 
 
-def _resolve_path(path: str, allowed_dir: Path | None = None,
-                  check_write: bool = False) -> Path:
+def _resolve_path(path: str, allowed_dir: Path | None = None, check_write: bool = False) -> Path:
     """Resolve path and optionally enforce directory restriction.
 
     Args:
@@ -80,7 +79,10 @@ def _resolve_path(path: str, allowed_dir: Path | None = None,
     # Read-only file check (only when writing)
     if check_write and _is_read_only(resolved, allowed_dir):
         # Check if it's a dashboard data file
-        if any(pattern in str(resolved) for pattern in ["tasks.json", "questions.json", "notifications.json", "insights.json"]):
+        if any(
+            pattern in str(resolved)
+            for pattern in ["tasks.json", "questions.json", "notifications.json", "insights.json"]
+        ):
             raise PermissionError(
                 f"Path {path} is a dashboard data file. "
                 f"Use dashboard tools (create_task, update_task, answer_question, etc.) instead of write_file."
@@ -96,31 +98,26 @@ def _resolve_path(path: str, allowed_dir: Path | None = None,
 
 class ReadFileTool(Tool):
     """Tool to read file contents."""
-    
+
     def __init__(self, allowed_dir: Path | None = None):
         self._allowed_dir = allowed_dir
 
     @property
     def name(self) -> str:
         return "read_file"
-    
+
     @property
     def description(self) -> str:
         return "Read the contents of a file at the given path."
-    
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The file path to read"
-                }
-            },
-            "required": ["path"]
+            "properties": {"path": {"type": "string", "description": "The file path to read"}},
+            "required": ["path"],
         }
-    
+
     async def execute(self, path: str, **kwargs: Any) -> str:
         try:
             file_path = _resolve_path(path, self._allowed_dir)
@@ -128,7 +125,7 @@ class ReadFileTool(Tool):
                 return f"Error: File not found: {path}"
             if not file_path.is_file():
                 return f"Error: Not a file: {path}"
-            
+
             content = file_path.read_text(encoding="utf-8")
             return content
         except PermissionError as e:
@@ -139,35 +136,29 @@ class ReadFileTool(Tool):
 
 class WriteFileTool(Tool):
     """Tool to write content to a file."""
-    
+
     def __init__(self, allowed_dir: Path | None = None):
         self._allowed_dir = allowed_dir
 
     @property
     def name(self) -> str:
         return "write_file"
-    
+
     @property
     def description(self) -> str:
         return "Write content to a file at the given path. Creates parent directories if needed."
-    
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The file path to write to"
-                },
-                "content": {
-                    "type": "string",
-                    "description": "The content to write"
-                }
+                "path": {"type": "string", "description": "The file path to write to"},
+                "content": {"type": "string", "description": "The content to write"},
             },
-            "required": ["path", "content"]
+            "required": ["path", "content"],
         }
-    
+
     async def execute(self, path: str, content: str, **kwargs: Any) -> str:
         try:
             file_path = _resolve_path(path, self._allowed_dir, check_write=True)
@@ -182,39 +173,30 @@ class WriteFileTool(Tool):
 
 class EditFileTool(Tool):
     """Tool to edit a file by replacing text."""
-    
+
     def __init__(self, allowed_dir: Path | None = None):
         self._allowed_dir = allowed_dir
 
     @property
     def name(self) -> str:
         return "edit_file"
-    
+
     @property
     def description(self) -> str:
         return "Edit a file by replacing old_text with new_text. The old_text must exist exactly in the file."
-    
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The file path to edit"
-                },
-                "old_text": {
-                    "type": "string",
-                    "description": "The exact text to find and replace"
-                },
-                "new_text": {
-                    "type": "string",
-                    "description": "The text to replace with"
-                }
+                "path": {"type": "string", "description": "The file path to edit"},
+                "old_text": {"type": "string", "description": "The exact text to find and replace"},
+                "new_text": {"type": "string", "description": "The text to replace with"},
             },
-            "required": ["path", "old_text", "new_text"]
+            "required": ["path", "old_text", "new_text"],
         }
-    
+
     async def execute(self, path: str, old_text: str, new_text: str, **kwargs: Any) -> str:
         try:
             file_path = _resolve_path(path, self._allowed_dir, check_write=True)
@@ -243,31 +225,26 @@ class EditFileTool(Tool):
 
 class ListDirTool(Tool):
     """Tool to list directory contents."""
-    
+
     def __init__(self, allowed_dir: Path | None = None):
         self._allowed_dir = allowed_dir
 
     @property
     def name(self) -> str:
         return "list_dir"
-    
+
     @property
     def description(self) -> str:
         return "List the contents of a directory."
-    
+
     @property
     def parameters(self) -> dict[str, Any]:
         return {
             "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "The directory path to list"
-                }
-            },
-            "required": ["path"]
+            "properties": {"path": {"type": "string", "description": "The directory path to list"}},
+            "required": ["path"],
         }
-    
+
     async def execute(self, path: str, **kwargs: Any) -> str:
         try:
             dir_path = _resolve_path(path, self._allowed_dir)
@@ -275,15 +252,15 @@ class ListDirTool(Tool):
                 return f"Error: Directory not found: {path}"
             if not dir_path.is_dir():
                 return f"Error: Not a directory: {path}"
-            
+
             items = []
             for item in sorted(dir_path.iterdir()):
                 prefix = "📁 " if item.is_dir() else "📄 "
                 items.append(f"{prefix}{item.name}")
-            
+
             if not items:
                 return f"Directory {path} is empty"
-            
+
             return "\n".join(items)
         except PermissionError as e:
             return f"Error: {e}"

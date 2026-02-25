@@ -19,7 +19,6 @@ from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
-from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.subagent import SubagentManager
 from nanobot.session.manager import SessionManager
@@ -214,10 +213,6 @@ class AgentLoop:
         self.tools.register(WebSearchTool(api_key=self.brave_api_key))
         self.tools.register(WebFetchTool())
 
-        # Message tool
-        message_tool = MessageTool(send_callback=self.bus.publish_outbound)
-        self.tools.register(message_tool)
-
         # Spawn tool (for subagents)
         spawn_tool = SpawnTool(manager=self.subagents)
         self.tools.register(spawn_tool)
@@ -357,10 +352,6 @@ class AgentLoop:
         session = self.sessions.get_or_create(msg.session_key)
 
         # Update tool contexts
-        message_tool = self.tools.get("message")
-        if isinstance(message_tool, MessageTool):
-            message_tool.set_context(msg.channel, msg.chat_id)
-
         spawn_tool = self.tools.get("spawn")
         if isinstance(spawn_tool, SpawnTool):
             spawn_tool.set_context(msg.channel, msg.chat_id)
@@ -461,7 +452,7 @@ class AgentLoop:
                 break
 
         if final_content is None:
-            final_content = "I've completed processing but have no response to give."
+            final_content = SILENT_RESPONSE_KEYWORD
 
         # Check for Silent mode
         is_silent = final_content.strip().upper() == SILENT_RESPONSE_KEYWORD
@@ -521,10 +512,6 @@ class AgentLoop:
         session = self.sessions.get_or_create(session_key)
 
         # Update tool contexts
-        message_tool = self.tools.get("message")
-        if isinstance(message_tool, MessageTool):
-            message_tool.set_context(origin_channel, origin_chat_id)
-
         spawn_tool = self.tools.get("spawn")
         if isinstance(spawn_tool, SpawnTool):
             spawn_tool.set_context(origin_channel, origin_chat_id)
@@ -584,12 +571,17 @@ class AgentLoop:
                 break
 
         if final_content is None:
-            final_content = "Background task completed."
+            final_content = SILENT_RESPONSE_KEYWORD
+
+        is_silent = final_content.strip().upper() == SILENT_RESPONSE_KEYWORD
 
         # Save to session (mark as system message in history)
         session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
-        session.add_message("assistant", final_content)
+        session.add_message("assistant", "[Dashboard updated silently]" if is_silent else final_content)
         self.sessions.save(session)
+
+        if is_silent:
+            return None
 
         return OutboundMessage(
             channel=origin_channel, chat_id=origin_chat_id, content=final_content

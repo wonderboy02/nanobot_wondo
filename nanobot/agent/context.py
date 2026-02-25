@@ -17,45 +17,45 @@ from nanobot.agent.skills import SkillsLoader
 class ContextBuilder:
     """
     Builds the context (system prompt + messages) for the agent.
-    
+
     Assembles bootstrap files, memory, skills, and conversation history
     into a coherent prompt for the LLM.
     """
-    
+
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "DASHBOARD.md"]
-    
+
     def __init__(self, workspace: Path, storage_backend: "StorageBackend | None" = None):
         self.workspace = workspace
         self.storage_backend = storage_backend
         self.memory = MemoryStore(workspace)
         self.skills = SkillsLoader(workspace)
         self._precomputed_dashboard: str | None = None
-    
+
     def build_system_prompt(self, skill_names: list[str] | None = None) -> str:
         """
         Build the system prompt from bootstrap files, memory, and skills.
-        
+
         Args:
             skill_names: Optional list of skills to include.
-        
+
         Returns:
             Complete system prompt.
         """
         parts = []
-        
+
         # Core identity
         parts.append(self._get_identity())
-        
+
         # Bootstrap files
         bootstrap = self._load_bootstrap_files()
         if bootstrap:
             parts.append(bootstrap)
-        
+
         # Memory context
         memory = self.memory.get_memory_context()
         if memory:
             parts.append(f"# Memory\n\n{memory}")
-        
+
         # Skills - progressive loading
         # 1. Always-loaded skills: include full content
         always_skills = self.skills.get_always_skills()
@@ -80,15 +80,16 @@ Skills with available="false" need dependencies installed first - you can try in
             parts.append(f"# Dashboard State\n\n{dashboard_context}")
 
         return "\n\n---\n\n".join(parts)
-    
+
     def _get_identity(self) -> str:
         """Get the core identity section."""
         from datetime import datetime
+
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
         workspace_path = str(self.workspace.expanduser().resolve())
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"
-        
+
         return f"""# nanobot
 
 ## Current Time
@@ -103,7 +104,7 @@ Skills with available="false" need dependencies installed first - you can try in
 - Daily notes: {workspace_path}/memory/YYYY-MM-DD.md
 
 Reply directly with text for conversations. Only use the 'message' tool for chat channel delivery."""
-    
+
     def _load_bootstrap_files(self) -> str:
         """Load all bootstrap files from workspace."""
         parts = []
@@ -144,6 +145,7 @@ Reply directly with text for conversations. Only use the 'message' tool for chat
         # backend is active without precomputed summary (potential event loop block).
         try:
             from nanobot.dashboard.helper import get_dashboard_summary
+
             dashboard_path = self.workspace / "dashboard"
 
             if not dashboard_path.exists() and self.storage_backend is None:
@@ -151,6 +153,7 @@ Reply directly with text for conversations. Only use the 'message' tool for chat
 
             if self.storage_backend is not None:
                 from loguru import logger
+
                 logger.warning(
                     "Dashboard sync fallback with Notion backend — "
                     "event loop will block during Notion I/O. "
@@ -164,11 +167,12 @@ Reply directly with text for conversations. Only use the 'message' tool for chat
         except Exception as e:
             try:
                 from loguru import logger
+
                 logger.debug(f"Dashboard context skipped: {e}")
             except Exception:
                 pass
             return ""
-    
+
     def build_messages(
         self,
         history: list[dict[str, Any]],
@@ -219,7 +223,7 @@ Reply directly with text for conversations. Only use the 'message' tool for chat
         """Build user message content with optional base64-encoded images."""
         if not media:
             return text
-        
+
         images = []
         for path in media:
             p = Path(path)
@@ -228,59 +232,52 @@ Reply directly with text for conversations. Only use the 'message' tool for chat
                 continue
             b64 = base64.b64encode(p.read_bytes()).decode()
             images.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
-        
+
         if not images:
             return text
         return images + [{"type": "text", "text": text}]
-    
+
     def add_tool_result(
-        self,
-        messages: list[dict[str, Any]],
-        tool_call_id: str,
-        tool_name: str,
-        result: str
+        self, messages: list[dict[str, Any]], tool_call_id: str, tool_name: str, result: str
     ) -> list[dict[str, Any]]:
         """
         Add a tool result to the message list.
-        
+
         Args:
             messages: Current message list.
             tool_call_id: ID of the tool call.
             tool_name: Name of the tool.
             result: Tool execution result.
-        
+
         Returns:
             Updated message list.
         """
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call_id,
-            "name": tool_name,
-            "content": result
-        })
+        messages.append(
+            {"role": "tool", "tool_call_id": tool_call_id, "name": tool_name, "content": result}
+        )
         return messages
-    
+
     def add_assistant_message(
         self,
         messages: list[dict[str, Any]],
         content: str | None,
-        tool_calls: list[dict[str, Any]] | None = None
+        tool_calls: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Add an assistant message to the message list.
-        
+
         Args:
             messages: Current message list.
             content: Message content.
             tool_calls: Optional tool calls.
-        
+
         Returns:
             Updated message list.
         """
         msg: dict[str, Any] = {"role": "assistant", "content": content or ""}
-        
+
         if tool_calls:
             msg["tool_calls"] = tool_calls
-        
+
         messages.append(msg)
         return messages

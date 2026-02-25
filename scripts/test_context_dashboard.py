@@ -44,11 +44,11 @@ def test_context_includes_dashboard():
                         "percentage": 30,
                         "last_update": datetime.now().isoformat(),
                         "note": "진행 중",
-                        "blocked": False
+                        "blocked": False,
                     },
                     "priority": "high",
                     "created_at": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat()
+                    "updated_at": datetime.now().isoformat(),
                 },
                 {
                     "id": "task_002",
@@ -58,13 +58,13 @@ def test_context_includes_dashboard():
                         "percentage": 0,
                         "last_update": datetime.now().isoformat(),
                         "note": "",
-                        "blocked": False
+                        "blocked": False,
                     },
                     "priority": "low",
                     "created_at": datetime.now().isoformat(),
-                    "updated_at": datetime.now().isoformat()
-                }
-            ]
+                    "updated_at": datetime.now().isoformat(),
+                },
+            ],
         }
 
         with open(dashboard_dir / "tasks.json", "w", encoding="utf-8") as f:
@@ -83,9 +83,9 @@ def test_context_includes_dashboard():
                     "related_task_id": "task_001",
                     "cooldown_hours": 24,
                     "answered": False,
-                    "created_at": datetime.now().isoformat()
+                    "created_at": datetime.now().isoformat(),
                 }
-            ]
+            ],
         }
 
         with open(dashboard_dir / "questions.json", "w", encoding="utf-8") as f:
@@ -93,7 +93,9 @@ def test_context_includes_dashboard():
 
         # Create DASHBOARD.md
         dashboard_md = workspace / "DASHBOARD.md"
-        dashboard_md.write_text("# Dashboard Management\n\nYou are a Dashboard Sync Manager.", encoding="utf-8")
+        dashboard_md.write_text(
+            "# Dashboard Management\n\nYou are a Dashboard Sync Manager.", encoding="utf-8"
+        )
 
         # Build context
         builder = ContextBuilder(workspace)

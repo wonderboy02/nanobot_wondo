@@ -49,7 +49,7 @@ def agent_setup(tmp_path):
         "- answer_question(question_id, answer)\n"
         "- create_question(question, priority, type, related_task_id)\n\n"
         "Use dashboard tools, NOT read_file/write_file.",
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     memory_dir = workspace / "memory"
@@ -68,14 +68,10 @@ def agent_setup(tmp_path):
         provider=provider,
         workspace=workspace,
         model=config.agents.defaults.model,
-        max_iterations=10
+        max_iterations=10,
     )
 
-    return {
-        "agent": agent_loop,
-        "workspace": workspace,
-        "dashboard": dashboard_path
-    }
+    return {"agent": agent_loop, "workspace": workspace, "dashboard": dashboard_path}
 
 
 @pytest.mark.asyncio
@@ -172,16 +168,18 @@ async def test_error_03_very_long_context(agent_setup):
     # Create many tasks (simulate large dashboard)
     tasks = []
     for i in range(50):  # 50 tasks
-        tasks.append({
-            "id": f"task_{i:03d}",
-            "title": f"Task {i}: Lorem ipsum dolor sit amet, consectetur adipiscing elit",
-            "status": "active" if i < 30 else "someday",
-            "deadline": "2026-02-15T23:59:00",
-            "progress": {"percentage": i * 2, "last_update": "2026-02-08T10:00:00", "note": ""},
-            "priority": "medium",
-            "created_at": "2026-02-01T10:00:00",
-            "updated_at": "2026-02-08T10:00:00"
-        })
+        tasks.append(
+            {
+                "id": f"task_{i:03d}",
+                "title": f"Task {i}: Lorem ipsum dolor sit amet, consectetur adipiscing elit",
+                "status": "active" if i < 30 else "someday",
+                "deadline": "2026-02-15T23:59:00",
+                "progress": {"percentage": i * 2, "last_update": "2026-02-08T10:00:00", "note": ""},
+                "priority": "medium",
+                "created_at": "2026-02-01T10:00:00",
+                "updated_at": "2026-02-08T10:00:00",
+            }
+        )
 
     with open(dashboard / "tasks.json", "w", encoding="utf-8") as f:
         json.dump({"version": "1.0", "tasks": tasks}, f, indent=2)
@@ -217,7 +215,7 @@ async def test_error_04_missing_required_fields(agent_setup):
     # Create task with missing required fields
     incomplete_task = {
         "id": "task_incomplete",
-        "title": "Incomplete Task"
+        "title": "Incomplete Task",
         # Missing: status, progress, created_at, etc.
     }
 
@@ -273,7 +271,9 @@ async def test_error_05_concurrent_updates(agent_setup):
 
     # Should have at least 2 tasks (A + one of B/C)
     # May have 3 if concurrent writes handled well
-    assert len(tasks) >= 2, f"Should have at least 2 tasks after concurrent updates, got {len(tasks)}"
+    assert len(tasks) >= 2, (
+        f"Should have at least 2 tasks after concurrent updates, got {len(tasks)}"
+    )
 
 
 @pytest.mark.asyncio
@@ -303,8 +303,9 @@ async def test_error_06_invalid_date_format(agent_setup):
         if tasks:
             task = tasks[0]
             # Should have parsed date somehow
-            assert task.get("deadline") or task.get("deadline_text"), \
+            assert task.get("deadline") or task.get("deadline_text"), (
                 "Should have some deadline info"
+            )
 
     except Exception as e:
         print(f"Invalid date handled with: {e}")
@@ -325,9 +326,11 @@ async def test_error_07_extremely_long_message(agent_setup):
     dashboard = setup["dashboard"]
 
     # Create very long message
-    long_message = "블로그 글을 써야 하는데, " + \
-        "주제는 React Server Components이고, " * 50 + \
-        "내일까지 완료해야 해"
+    long_message = (
+        "블로그 글을 써야 하는데, "
+        + "주제는 React Server Components이고, " * 50
+        + "내일까지 완료해야 해"
+    )
 
     try:
         response = await agent.process_direct(long_message, session_key="test:error07")
@@ -339,8 +342,7 @@ async def test_error_07_extremely_long_message(agent_setup):
         assert len(tasks) >= 1, "Should extract task from long message"
 
         task = tasks[0]
-        assert "블로그" in task["title"] or "글" in task["title"], \
-            "Should extract task title"
+        assert "블로그" in task["title"] or "글" in task["title"], "Should extract task title"
 
     except Exception as e:
         print(f"Long message handled with: {e}")
