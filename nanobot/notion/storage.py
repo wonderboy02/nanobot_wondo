@@ -14,7 +14,7 @@ from typing import Any
 
 from loguru import logger
 
-from nanobot.dashboard.storage import StorageBackend
+from nanobot.dashboard.storage import SaveResult, StorageBackend
 
 
 # ============================================================================
@@ -200,7 +200,7 @@ class NotionStorageBackend(StorageBackend):
         db_id: str,
         items: list[dict],
         to_notion_fn,
-    ) -> tuple[bool, str]:
+    ) -> SaveResult:
         """Generic save: create/update/archive items in Notion → invalidate cache.
 
         Items present in the list are created or updated.
@@ -214,7 +214,7 @@ class NotionStorageBackend(StorageBackend):
         phases would risk id_map races). Revisit if multi-user support is added.
         """
         if not db_id:
-            return (False, f"No Notion database configured for {entity_type}")
+            return SaveResult(False, f"No Notion database configured for {entity_type}")
 
         with self._lock:
             try:
@@ -251,12 +251,12 @@ class NotionStorageBackend(StorageBackend):
 
                 self._id_maps[entity_type] = id_map
                 self._cache.invalidate(entity_type)
-                return (True, f"{entity_type} saved to Notion")
+                return SaveResult(True, f"{entity_type} saved to Notion")
 
             except Exception as e:
                 self._cache.invalidate(entity_type)
                 logger.error(f"Notion save {entity_type} failed: {e}")
-                return (False, f"Notion error: {e}")
+                return SaveResult(False, f"Notion error: {e}")
 
     # ---- Tasks ----
 
@@ -271,13 +271,7 @@ class NotionStorageBackend(StorageBackend):
             {"version": "1.0", "tasks": []},
         )
 
-    def save_tasks(self, data: dict) -> tuple[bool, str]:
-        try:
-            from nanobot.dashboard.schema import validate_tasks_file
-
-            validate_tasks_file(data)
-        except Exception as e:
-            return (False, f"Validation error: {e}")
+    def _persist_tasks(self, data: dict) -> SaveResult:
         from nanobot.notion.mapper import task_to_notion
 
         tasks = data.get("tasks", [])
@@ -296,13 +290,7 @@ class NotionStorageBackend(StorageBackend):
             {"version": "1.0", "questions": []},
         )
 
-    def save_questions(self, data: dict) -> tuple[bool, str]:
-        try:
-            from nanobot.dashboard.schema import validate_questions_file
-
-            validate_questions_file(data)
-        except Exception as e:
-            return (False, f"Validation error: {e}")
+    def _persist_questions(self, data: dict) -> SaveResult:
         from nanobot.notion.mapper import question_to_notion
 
         questions = data.get("questions", [])
@@ -323,13 +311,7 @@ class NotionStorageBackend(StorageBackend):
             {"version": "1.0", "notifications": []},
         )
 
-    def save_notifications(self, data: dict) -> tuple[bool, str]:
-        try:
-            from nanobot.dashboard.schema import validate_notifications_file
-
-            validate_notifications_file(data)
-        except Exception as e:
-            return (False, f"Validation error: {e}")
+    def _persist_notifications(self, data: dict) -> SaveResult:
         from nanobot.notion.mapper import notification_to_notion
 
         notifications = data.get("notifications", [])
@@ -353,7 +335,7 @@ class NotionStorageBackend(StorageBackend):
             {"version": "1.0", "insights": []},
         )
 
-    def save_insights(self, data: dict) -> tuple[bool, str]:
+    def _persist_insights(self, data: dict) -> SaveResult:
         from nanobot.notion.mapper import insight_to_notion
 
         insights = data.get("insights", [])

@@ -1,7 +1,5 @@
 """Update question tool."""
 
-from typing import Optional
-
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
 
 
@@ -60,10 +58,10 @@ class UpdateQuestionTool(BaseDashboardTool):
     async def execute(
         self,
         question_id: str,
-        priority: Optional[str] = None,
-        type: Optional[str] = None,
-        cooldown_hours: Optional[int] = None,
-        context: Optional[str] = None,
+        priority: str | None = None,
+        type: str | None = None,
+        cooldown_hours: int | None = None,
+        context: str | None = None,
     ) -> str:
         """Update a question."""
         try:

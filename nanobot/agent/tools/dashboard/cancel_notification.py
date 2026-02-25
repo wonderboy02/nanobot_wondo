@@ -23,13 +23,15 @@ class CancelNotificationTool(BaseDashboardTool):
         self,
         workspace: Path,
         cron_service: CronService,
+        *,
+        backend=None,
         gcal_client: "GoogleCalendarClient | None" = None,
         send_callback: Callable[["OutboundMessage"], Awaitable[None]] | None = None,
         notification_chat_id: str | None = None,
         gcal_timezone: str = "Asia/Seoul",
         gcal_duration_minutes: int = 30,
     ):
-        super().__init__(workspace)
+        super().__init__(workspace, backend)
         self.cron_service = cron_service
         self._gcal_client = gcal_client
         self._send_callback = send_callback

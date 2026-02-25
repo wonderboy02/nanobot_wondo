@@ -59,7 +59,6 @@ class CreateQuestionTool(BaseDashboardTool):
         type: str = "info_gather",
         related_task_id: str | None = None,
         context: str = "",
-        **kwargs: Any,
     ) -> str:
         try:
             # Load existing questions

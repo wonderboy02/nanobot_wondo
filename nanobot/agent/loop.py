@@ -147,10 +147,8 @@ class AgentLoop:
         """Configure the storage backend based on Notion config.
 
         If Notion is enabled and configured, uses NotionStorageBackend.
-        Otherwise falls back to JsonStorageBackend (default).
+        Otherwise falls back to JsonStorageBackend (default, via tool lazy init).
         """
-        from nanobot.agent.tools.dashboard.base import BaseDashboardTool
-
         if self.notion_config and self.notion_config.enabled and self.notion_config.token:
             # Validate that core DB IDs are configured
             dbs = self.notion_config.databases
@@ -158,7 +156,6 @@ class AgentLoop:
                 logger.warning(
                     "Notion enabled but core DB IDs (tasks/questions) missing, using JSON fallback"
                 )
-                BaseDashboardTool.configure_backend(None)
                 self._notion_setup_warning = (
                     "⚠️ Notion enabled but tasks/questions DB IDs are missing. "
                     "Run `nanobot notion validate` to check your config. "
@@ -176,19 +173,15 @@ class AgentLoop:
                     databases=self.notion_config.databases,
                     cache_ttl_s=self.notion_config.cache_ttl_s,
                 )
-                BaseDashboardTool.configure_backend(backend)
                 self._storage_backend = backend
                 logger.info("Notion storage backend configured")
             except Exception as e:
                 logger.error(f"Failed to configure Notion backend: {e}, using JSON fallback")
-                BaseDashboardTool.configure_backend(None)
                 self._notion_setup_warning = (
                     "⚠️ Notion backend failed to initialize. "
                     "Using local JSON fallback. Check your Notion config."
                 )
         else:
-            # Explicitly reset to avoid stale backend from previous AgentLoop instance
-            BaseDashboardTool.configure_backend(None)
             logger.debug("Using JSON storage backend (Notion not configured)")
 
     def _register_default_tools(self) -> None:
@@ -233,19 +226,20 @@ class AgentLoop:
             ListNotificationsTool,
         )
 
-        self.tools.register(CreateTaskTool(workspace=self.workspace))
-        self.tools.register(UpdateTaskTool(workspace=self.workspace))
-        self.tools.register(AnswerQuestionTool(workspace=self.workspace))
-        self.tools.register(CreateQuestionTool(workspace=self.workspace))
-        self.tools.register(UpdateQuestionTool(workspace=self.workspace))
-        self.tools.register(RemoveQuestionTool(workspace=self.workspace))
-        self.tools.register(ArchiveTaskTool(workspace=self.workspace))
-        self.tools.register(SaveInsightTool(workspace=self.workspace))
+        self.tools.register(CreateTaskTool(self.workspace, self._storage_backend))
+        self.tools.register(UpdateTaskTool(self.workspace, self._storage_backend))
+        self.tools.register(AnswerQuestionTool(self.workspace, self._storage_backend))
+        self.tools.register(CreateQuestionTool(self.workspace, self._storage_backend))
+        self.tools.register(UpdateQuestionTool(self.workspace, self._storage_backend))
+        self.tools.register(RemoveQuestionTool(self.workspace, self._storage_backend))
+        self.tools.register(ArchiveTaskTool(self.workspace, self._storage_backend))
+        self.tools.register(SaveInsightTool(self.workspace, self._storage_backend))
 
         # Notification tools (user explicit requests)
         # Worker handles automatic notifications, Main handles user requests like "remind me tomorrow"
         if self.cron_service:
             notif_kwargs = dict(
+                backend=self._storage_backend,
                 gcal_client=self._gcal_client,
                 send_callback=self.bus.publish_outbound,
                 notification_chat_id=self._notification_chat_id,
@@ -267,7 +261,7 @@ class AgentLoop:
                     workspace=self.workspace, cron_service=self.cron_service, **notif_kwargs
                 )
             )
-            self.tools.register(ListNotificationsTool(workspace=self.workspace))
+            self.tools.register(ListNotificationsTool(self.workspace, self._storage_backend))
 
     async def run(self) -> None:
         """Run the agent loop, processing messages from the bus."""

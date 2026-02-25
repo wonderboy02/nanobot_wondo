@@ -1,7 +1,5 @@
 """List notifications tool."""
 
-from typing import Optional
-
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool
 
 
@@ -36,9 +34,7 @@ class ListNotificationsTool(BaseDashboardTool):
             },
         }
 
-    async def execute(
-        self, status: Optional[str] = None, related_task_id: Optional[str] = None
-    ) -> str:
+    async def execute(self, status: str | None = None, related_task_id: str | None = None) -> str:
         """List notifications."""
         try:
             # Load notifications

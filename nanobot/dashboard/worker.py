@@ -892,9 +892,9 @@ class WorkerAgent:
         from nanobot.agent.tools.dashboard.remove_question import RemoveQuestionTool
         from nanobot.agent.tools.dashboard.update_question import UpdateQuestionTool
 
-        self.tools.register(CreateQuestionTool(self.workspace))
-        self.tools.register(UpdateQuestionTool(self.workspace))
-        self.tools.register(RemoveQuestionTool(self.workspace))
+        self.tools.register(CreateQuestionTool(self.workspace, self.storage_backend))
+        self.tools.register(UpdateQuestionTool(self.workspace, self.storage_backend))
+        self.tools.register(RemoveQuestionTool(self.workspace, self.storage_backend))
 
         # Notification management
         from nanobot.agent.tools.dashboard.cancel_notification import (
@@ -911,6 +911,7 @@ class WorkerAgent:
         )
 
         notif_kwargs = dict(
+            backend=self.storage_backend,
             gcal_client=self.gcal_client,
             send_callback=self.send_callback,
             notification_chat_id=self.notification_chat_id,
@@ -926,19 +927,19 @@ class WorkerAgent:
         self.tools.register(
             CancelNotificationTool(self.workspace, self.cron_service, **notif_kwargs)
         )
-        self.tools.register(ListNotificationsTool(self.workspace))
+        self.tools.register(ListNotificationsTool(self.workspace, self.storage_backend))
 
         # Task management
         from nanobot.agent.tools.dashboard.archive_task import ArchiveTaskTool
         from nanobot.agent.tools.dashboard.update_task import UpdateTaskTool
 
-        self.tools.register(UpdateTaskTool(self.workspace))
-        self.tools.register(ArchiveTaskTool(self.workspace))
+        self.tools.register(UpdateTaskTool(self.workspace, self.storage_backend))
+        self.tools.register(ArchiveTaskTool(self.workspace, self.storage_backend))
 
         # Insight management (for saving insights from answered questions)
         from nanobot.agent.tools.dashboard.save_insight import SaveInsightTool
 
-        self.tools.register(SaveInsightTool(self.workspace))
+        self.tools.register(SaveInsightTool(self.workspace, self.storage_backend))
 
         # Set context for notification tools so Worker-created notifications
         # can deliver via Telegram

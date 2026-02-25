@@ -15,6 +15,7 @@ from nanobot.agent.tools.dashboard.update_notification import UpdateNotification
 from nanobot.agent.tools.dashboard.cancel_notification import CancelNotificationTool
 from nanobot.cron.service import CronService
 from nanobot.cron.types import CronSchedule, CronJob
+from nanobot.dashboard.storage import SaveResult
 
 
 # ============================================================================
@@ -769,7 +770,7 @@ class TestSecondSaveFailure:
             nonlocal call_count
             call_count += 1
             if call_count == 2:
-                return (False, "Storage write error")
+                return SaveResult(False, "Storage write error")
             return await original_validate(data)
 
         tool._validate_and_save_notifications = patched_validate
@@ -817,7 +818,7 @@ class TestSecondSaveFailure:
             nonlocal call_count
             call_count += 1
             if call_count == 2:
-                return (False, "Storage write error")
+                return SaveResult(False, "Storage write error")
             return await original_validate(data)
 
         tool._validate_and_save_notifications = patched_validate

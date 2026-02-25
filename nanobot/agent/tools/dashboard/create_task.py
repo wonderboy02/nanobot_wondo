@@ -56,7 +56,6 @@ class CreateTaskTool(BaseDashboardTool):
         priority: str = "medium",
         context: str = "",
         tags: list[str] | None = None,
-        **kwargs: Any,
     ) -> str:
         try:
             # Load existing tasks

@@ -13,6 +13,17 @@ from __future__ import annotations
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import NamedTuple
+
+
+class SaveResult(NamedTuple):
+    """Result of a storage save operation.
+
+    NamedTuple so existing ``ok, msg = save_tasks(data)`` unpacking still works.
+    """
+
+    success: bool
+    message: str
 
 
 def load_json_file(path: Path, default: dict | None = None) -> dict:
@@ -42,38 +53,75 @@ def load_json_file(path: Path, default: dict | None = None) -> dict:
 class StorageBackend(ABC):
     """Abstract storage backend for Dashboard data.
 
-    Each method pair (load/save) handles a specific entity type.
-    load_* returns the full file-level dict (e.g., {"version": "1.0", "tasks": [...]}).
-    save_* accepts the validated dict and persists it, returning (success, message).
+    Each entity has a load/save pair:
+    - load_* returns the full file-level dict (e.g., {"version": "1.0", "tasks": [...]}).
+    - save_* validates, then delegates to _persist_* (Template Method pattern).
+
+    Subclasses implement _persist_* (and load_*) only.
+    Validation lives once in the ABC, eliminating duplication across backends.
     """
 
     # --- Tasks ---
     @abstractmethod
     def load_tasks(self) -> dict: ...
 
+    def save_tasks(self, data: dict) -> SaveResult:
+        """Validate and persist tasks data."""
+        try:
+            from nanobot.dashboard.schema import validate_tasks_file
+
+            validate_tasks_file(data)
+        except Exception as e:
+            return SaveResult(False, f"Validation error: {e}")
+        return self._persist_tasks(data)
+
     @abstractmethod
-    def save_tasks(self, data: dict) -> tuple[bool, str]: ...
+    def _persist_tasks(self, data: dict) -> SaveResult: ...
 
     # --- Questions ---
     @abstractmethod
     def load_questions(self) -> dict: ...
 
+    def save_questions(self, data: dict) -> SaveResult:
+        """Validate and persist questions data."""
+        try:
+            from nanobot.dashboard.schema import validate_questions_file
+
+            validate_questions_file(data)
+        except Exception as e:
+            return SaveResult(False, f"Validation error: {e}")
+        return self._persist_questions(data)
+
     @abstractmethod
-    def save_questions(self, data: dict) -> tuple[bool, str]: ...
+    def _persist_questions(self, data: dict) -> SaveResult: ...
 
     # --- Notifications ---
     @abstractmethod
     def load_notifications(self) -> dict: ...
 
+    def save_notifications(self, data: dict) -> SaveResult:
+        """Validate and persist notifications data."""
+        try:
+            from nanobot.dashboard.schema import validate_notifications_file
+
+            validate_notifications_file(data)
+        except Exception as e:
+            return SaveResult(False, f"Validation error: {e}")
+        return self._persist_notifications(data)
+
     @abstractmethod
-    def save_notifications(self, data: dict) -> tuple[bool, str]: ...
+    def _persist_notifications(self, data: dict) -> SaveResult: ...
 
     # --- Insights ---
     @abstractmethod
     def load_insights(self) -> dict: ...
 
+    def save_insights(self, data: dict) -> SaveResult:
+        """Persist insights data (no Pydantic validation — flexible schema)."""
+        return self._persist_insights(data)
+
     @abstractmethod
-    def save_insights(self, data: dict) -> tuple[bool, str]: ...
+    def _persist_insights(self, data: dict) -> SaveResult: ...
 
     # --- ID mapping (Notion bootstrap support) ---
     def register_id_mapping(self, entity_type: str, nanobot_id: str, page_id: str) -> None:
@@ -118,13 +166,13 @@ class JsonStorageBackend(StorageBackend):
     def _load_json(self, path: Path, default: dict | None = None) -> dict:
         return load_json_file(path, default)
 
-    def _save_json(self, path: Path, data: dict) -> tuple[bool, str]:
+    def _save_json(self, path: Path, data: dict) -> SaveResult:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-            return (True, "Saved successfully")
+            return SaveResult(True, "Saved successfully")
         except Exception as e:
-            return (False, f"Error: {e}")
+            return SaveResult(False, f"Error: {e}")
 
     # --- Tasks ---
 
@@ -134,13 +182,7 @@ class JsonStorageBackend(StorageBackend):
             default={"version": "1.0", "tasks": []},
         )
 
-    def save_tasks(self, data: dict) -> tuple[bool, str]:
-        try:
-            from nanobot.dashboard.schema import validate_tasks_file
-
-            validate_tasks_file(data)
-        except Exception as e:
-            return (False, f"Validation error: {e}")
+    def _persist_tasks(self, data: dict) -> SaveResult:
         return self._save_json(self._dashboard_dir / "tasks.json", data)
 
     # --- Questions ---
@@ -151,13 +193,7 @@ class JsonStorageBackend(StorageBackend):
             default={"version": "1.0", "questions": []},
         )
 
-    def save_questions(self, data: dict) -> tuple[bool, str]:
-        try:
-            from nanobot.dashboard.schema import validate_questions_file
-
-            validate_questions_file(data)
-        except Exception as e:
-            return (False, f"Validation error: {e}")
+    def _persist_questions(self, data: dict) -> SaveResult:
         return self._save_json(self._dashboard_dir / "questions.json", data)
 
     # --- Notifications ---
@@ -168,13 +204,7 @@ class JsonStorageBackend(StorageBackend):
             default={"version": "1.0", "notifications": []},
         )
 
-    def save_notifications(self, data: dict) -> tuple[bool, str]:
-        try:
-            from nanobot.dashboard.schema import validate_notifications_file
-
-            validate_notifications_file(data)
-        except Exception as e:
-            return (False, f"Validation error: {e}")
+    def _persist_notifications(self, data: dict) -> SaveResult:
         return self._save_json(self._dashboard_dir / "notifications.json", data)
 
     # --- Insights ---
@@ -185,8 +215,5 @@ class JsonStorageBackend(StorageBackend):
             default={"version": "1.0", "insights": []},
         )
 
-    def save_insights(self, data: dict) -> tuple[bool, str]:
-        # DESIGN: No Pydantic validation (unlike tasks/questions/notifications).
-        # Insights have a flexible schema and low write frequency.
-        # See CLAUDE.md "Known Limitations #5".
+    def _persist_insights(self, data: dict) -> SaveResult:
         return self._save_json(self._knowledge_dir / "insights.json", data)

@@ -13,6 +13,8 @@ import json
 from datetime import datetime
 from unittest.mock import patch
 
+from nanobot.dashboard.storage import SaveResult
+
 import pytest
 
 
@@ -434,7 +436,7 @@ async def test_bootstrap_calls_unregister_on_save_failure(test_workspace):
         unregister_calls.append((entity_type, nanobot_id))
 
     with (
-        patch.object(backend, "save_tasks", return_value=(False, "disk full")),
+        patch.object(backend, "save_tasks", return_value=SaveResult(False, "disk full")),
         patch.object(backend, "unregister_id_mapping", side_effect=unregister_spy),
     ):
         worker._bootstrap_new_items()

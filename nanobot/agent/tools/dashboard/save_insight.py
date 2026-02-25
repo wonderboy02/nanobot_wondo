@@ -58,7 +58,6 @@ class SaveInsightTool(BaseDashboardTool):
         title: str = "",
         source: str = "",
         tags: list[str] | None = None,
-        **kwargs: Any,
     ) -> str:
         try:
             # Load existing insights via backend
