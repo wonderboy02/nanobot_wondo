@@ -1,3 +1,34 @@
+# Codex Agent Instructions
+
+> This file is the Codex-specific superset of CLAUDE.md.
+> Keep all sections below "---" in sync with CLAUDE.md.
+> Codex-only rules are above the separator.
+
+## Codex Tool Usage Rules
+
+### Encoding and Newline Safety
+
+- Preserve each file's existing encoding and newline style.
+- Do not rewrite non-ASCII text (Korean, emoji, symbols) unless explicitly requested.
+- For text edits, use UTF-8 and avoid introducing BOM.
+- Do not mass-normalize files when touching a small section.
+- If an edit would change unrelated lines because of encoding/newline conversion, stop and report it.
+
+### Editing Method
+
+- Prefer patch-based edits over shell redirection for text files.
+- On Windows PowerShell, avoid write commands that default to UTF-16 or BOM output.
+- Keep changes minimal and scoped to requested lines only.
+
+### Code Modifications
+
+- 코드 수정하기 전에 반드시 설명을 하고 수정할 것.
+- Read files before modifying them. Understand existing code before suggesting changes.
+- Run `ruff format . && ruff check .` after code changes.
+- Run `pytest tests/dashboard/unit/ -v` to verify changes.
+
+---
+
 # nanobot_wondo — Fork of HKUDS/nanobot
 
 - Dashboard-centric personal AI assistant (Korean workflow)
@@ -45,9 +76,12 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 ### Worker Agent (dashboard/worker.py)
 
-- **Phase 1** (deterministic, always): archive completed tasks, re-evaluate active/someday, clean answered/stale questions
-- **Phase 2** (LLM, when provider/model configured): notifications, question generation, data cleanup (tool calls)
+- **Phase 1** (deterministic, always): archive completed tasks, re-evaluate active/someday
+- **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
+- **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
+- **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
 - Runs automatically every 30 minutes via Heartbeat
+- **Notification delivery**: claim-before-publish pattern (mark delivered → save → publish → GCal delete). See WORKER.md for follow-up instructions
 
 ## Non-Negotiable Rules
 
@@ -172,10 +206,15 @@ bash tests/test_docker.sh                  # Docker integration test
 | 7 | `telegram.py` | `_is_quiet_hours()` depends on server timezone (mitigated by Docker TZ=Asia/Seoul) | Low |
 | 8 | `bus/events.py` | OutboundMessage has no explicit type field (reaction uses metadata convention) | Low |
 | 9 | Worker vs Main Agent | Dashboard file race condition (~0.056% probability, accepted trade-off) | Low |
+| 10 | `cli/commands.py` | Claim-before-publish: publish 실패 시 "delivered인데 미발송" 상태 가능. 반대(publish-first)는 cron one-shot 삭제로 notification loss 더 심각하여 claim-first 선택 | Medium |
+| 11 | `storage.py:18` | `load_json_file` 파싱 오류를 빈 default로 삼킴 → delivery guard가 notification 못 찾을 수 있음. 빈 리스트 감지로 완화했으나 부분 손상(일부 항목 누락)은 감지 불가 | Low |
+| 12 | `cli/commands.py` | GCal 이벤트 삭제 best-effort: 실패 시 warning 로그만, 재시도/정리 없음 → orphan event 누적 가능. cancel_notification과 동일 패턴 | Low |
+| 13 | `worker.py` | delivered notification 48h 유지: LLM이 completion_check 중복 생성 가능. WORKER.md 지침으로 완화하나 LLM 준수에 의존 | Low |
 
 **Changes from previous doc**:
 - Removed: old #3 "Rule Worker not using StorageBackend" — resolved by Worker unification
 - Added: #8 OutboundMessage type field (tech debt from commit `8981642`)
+- Added: #10-13 Notification delivery pipeline trade-offs
 
 ## Dev Runbook
 
@@ -210,7 +249,7 @@ docker compose logs -f nanobot             # Logs
 | New Known Limitation | This doc Section 7 |
 | Feature release | `CHANGELOG.md` (no history in this doc) |
 | Test structure change | This doc Section 4 |
-| CLAUDE.md content change | `.github/copilot-instructions.md` (manual sync, identical copy) |
+| CLAUDE.md content change | `AGENTS.md` (sync project sections below "---" separator) |
 
 ## Document Map
 

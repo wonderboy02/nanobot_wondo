@@ -218,7 +218,7 @@ docker compose logs -f nanobot             # Logs
 | New Known Limitation | This doc Section 7 |
 | Feature release | `CHANGELOG.md` (no history in this doc) |
 | Test structure change | This doc Section 4 |
-| CLAUDE.md content change | `.github/copilot-instructions.md` (manual sync, identical copy) |
+| CLAUDE.md content change | `AGENTS.md` (sync project sections below "---" separator) |
 
 ## Document Map
 
