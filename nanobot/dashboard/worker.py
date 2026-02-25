@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,13 +32,20 @@ from loguru import logger
 
 
 def parse_datetime(dt_str: str) -> datetime:
-    """Parse ISO datetime string to naive datetime.
+    """Parse ISO datetime string to naive local-time datetime.
 
-    Strips timezone info to avoid naive/aware comparison TypeError
-    with datetime.now(). Acceptable for single-user, single-timezone usage.
+    If the input is timezone-aware, converts to local time first, then
+    strips tzinfo so the result is comparable with datetime.now().
+    If naive, returns as-is (assumed local time).
+
+    Raises ValueError if dt_str is empty or not a valid ISO datetime.
     """
+    if not isinstance(dt_str, str) or not dt_str:
+        raise ValueError(f"Invalid datetime string: {dt_str!r}")
     dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-    return dt.replace(tzinfo=None)
+    if dt.tzinfo is not None:
+        dt = dt.astimezone().replace(tzinfo=None)
+    return dt
 
 
 class WorkerAgent:
@@ -561,7 +568,12 @@ class WorkerAgent:
         return messages
 
     def _build_notifications_summary(self) -> str:
-        """Build summary of scheduled notifications."""
+        """Build summary of pending and recently delivered notifications.
+
+        Includes two sections:
+        - Pending notifications (scheduled, not yet delivered)
+        - Recently Delivered (last 48h) with follow-up instructions
+        """
         try:
             data = self.storage_backend.load_notifications()
             notifications = data.get("notifications", [])
@@ -571,25 +583,74 @@ class WorkerAgent:
 
             pending = [n for n in notifications if n.get("status") == "pending"]
 
-            if not pending:
+            # Recently delivered (last 48h)
+            now = datetime.now()
+            cutoff = now - timedelta(hours=48)
+            delivered_recent = []
+            for n in notifications:
+                if n.get("status") != "delivered":
+                    continue
+                delivered_at = n.get("delivered_at", "")
+                try:
+                    dt = parse_datetime(delivered_at)
+                    if dt >= cutoff:
+                        delivered_recent.append(n)
+                except (ValueError, TypeError):
+                    # Skip: including unparseable entries would cause infinite
+                    # repetition since they can never age past the 48h cutoff.
+                    logger.error(
+                        f"[Worker] Skipping notification {n.get('id', '?')}: "
+                        f"invalid delivered_at={delivered_at!r} — fix data to restore tracking"
+                    )
+
+            if not pending and not delivered_recent:
                 return "## Scheduled Notifications\n\nNo pending notifications."
 
             lines = ["## Scheduled Notifications\n"]
-            for notif in pending:
-                scheduled_at = notif.get("scheduled_at", "")
-                try:
-                    dt = datetime.fromisoformat(scheduled_at)
-                    time_str = dt.strftime("%Y-%m-%d %H:%M")
-                except (ValueError, TypeError):
-                    time_str = scheduled_at
+
+            # Pending section
+            if pending:
+                for notif in pending:
+                    scheduled_at = notif.get("scheduled_at", "")
+                    try:
+                        dt = datetime.fromisoformat(scheduled_at)
+                        time_str = dt.strftime("%Y-%m-%d %H:%M")
+                    except (ValueError, TypeError):
+                        time_str = scheduled_at
+
+                    lines.append(
+                        f"- **{notif.get('id', '?')}** "
+                        f"({notif.get('type', '?')}, {notif.get('priority', '?')}): "
+                        f"{notif.get('message', '')} [Scheduled: {time_str}]"
+                    )
+                    if notif.get("related_task_id"):
+                        lines.append(f"  Related Task: {notif['related_task_id']}")
+            else:
+                lines.append("No pending notifications.\n")
+
+            # Recently delivered section
+            if delivered_recent:
+                lines.append("\n### Recently Delivered Notifications (last 48h)\n")
+                for notif in delivered_recent:
+                    delivered_at = notif.get("delivered_at", "")
+                    try:
+                        dt = parse_datetime(delivered_at)
+                        time_str = dt.strftime("%Y-%m-%d %H:%M")
+                    except (ValueError, TypeError):
+                        time_str = delivered_at
+
+                    lines.append(
+                        f"- **{notif.get('id', '?')}** "
+                        f"({notif.get('type', '?')}, {notif.get('priority', '?')}): "
+                        f"{notif.get('message', '')} [Delivered: {time_str}]"
+                    )
+                    if notif.get("related_task_id"):
+                        lines.append(f"  Related Task: {notif['related_task_id']}")
 
                 lines.append(
-                    f"- **{notif.get('id', '?')}** "
-                    f"({notif.get('type', '?')}, {notif.get('priority', '?')}): "
-                    f"{notif.get('message', '')} [Scheduled: {time_str}]"
+                    "\n위 알림은 이미 전달되었다. "
+                    "WORKER.md의 '전달된 알림 후속 조치' 지침에 따라 처리하라."
                 )
-                if notif.get("related_task_id"):
-                    lines.append(f"  Related Task: {notif['related_task_id']}")
 
             return "\n".join(lines)
 

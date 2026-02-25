@@ -1,11 +1,108 @@
 """CLI commands for nanobot."""
 
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 from rich.console import Console
 from rich.table import Table
+
+if TYPE_CHECKING:
+    from nanobot.google.calendar import GoogleCalendarClient
+
+
+async def delete_gcal_event_on_delivery(
+    gcal_client: GoogleCalendarClient | None,
+    gcal_event_id: str | None,
+    *,
+    notification_id: str = "",
+) -> None:
+    """Delete GCal event after notification delivery (best-effort)."""
+    if gcal_client and gcal_event_id:
+        try:
+            await asyncio.to_thread(gcal_client.delete_event, event_id=gcal_event_id)
+        except Exception as e:
+            from loguru import logger
+
+            logger.warning(
+                f"GCal sync failed (delivery) for notification={notification_id} "
+                f"event={gcal_event_id}: {e}"
+            )
+
+
+async def claim_notification_delivered(
+    notif_id: str,
+    load_fn,
+    save_fn,
+) -> tuple[bool, str | None, bool]:
+    """Claim a notification as delivered (mark + save).
+
+    Returns (delivered_saved, gcal_event_id, suppress_publish):
+    - (True,  id, False) — claimed successfully
+    - (False, None, True) — intentionally skipped (cancelled/delivered/genuinely not found)
+    - (False, None, False) — transient error (storage issue, save failure);
+                              caller should still publish to avoid notification loss
+
+    Uses claim-before-publish pattern: by persisting "delivered" before
+    the outbound message is sent, a concurrent cancel will see the
+    "delivered" status and skip, reducing TOCTOU state overwrites.
+    """
+    from datetime import datetime
+
+    from loguru import logger
+
+    try:
+        data = await load_fn()
+        notifications = data.get("notifications") if isinstance(data, dict) else None
+        if notifications is None:
+            logger.error(
+                f"Notification data missing 'notifications' key for {notif_id}, "
+                f"treating as transient storage error"
+            )
+            return False, None, False  # transient — still publish
+
+        target = next(
+            (n for n in notifications if n.get("id") == notif_id),
+            None,
+        )
+        if target is None:
+            if not notifications:
+                # Empty list during delivery is suspicious: cancel_notification
+                # only changes status (doesn't remove entries), so a scheduled
+                # notification should still be in the list.  Likely a transient
+                # storage issue (corrupted file → default empty list).
+                logger.error(
+                    f"Notifications list empty while delivering {notif_id}, "
+                    f"treating as transient storage error"
+                )
+                return False, None, False  # transient — still publish
+            logger.error(
+                f"Notification {notif_id} not found during delivery marking "
+                f"(possible race condition)"
+            )
+            return False, None, True
+
+        if target.get("status") in ("cancelled", "delivered"):
+            logger.info(f"Notification {notif_id} is now {target['status']}, skipping delivery")
+            return False, None, True
+
+        target["status"] = "delivered"
+        target["delivered_at"] = datetime.now().isoformat()
+        gcal_event_id = target.get("gcal_event_id")
+        ok = await save_fn(data)
+        if ok:
+            return True, gcal_event_id, False
+        else:
+            logger.error(f"Failed to persist delivered status for notification {notif_id}")
+            return False, None, False  # transient — still publish
+
+    except Exception as exc:
+        logger.error(f"Failed to mark notification {notif_id} as delivered: {exc}")
+        return False, None, False  # transient — still publish
+
 
 from nanobot import __version__, __logo__
 
@@ -299,14 +396,26 @@ def gateway(
 
         if is_notification:
             data = await _load_notifications_data()
-            notifs = data.get("notifications", [])
-            notif = next((n for n in notifs if n.get("id") == notif_id), None)
-            if notif is None:
+            notifs = data.get("notifications") if isinstance(data, dict) else None
+            if notifs is None or (not notifs):
+                # Missing key or empty list is suspicious at delivery time —
+                # may indicate transient storage error (corrupted file → default).
+                # Skip the guard and let delivery proceed to avoid notification loss.
+                from loguru import logger
+
+                logger.warning(
+                    f"Notifications data empty/missing for {notif_id}, "
+                    f"skipping pre-check guard to avoid notification loss"
+                )
+                notif = None  # will bypass status check below
+            else:
+                notif = next((n for n in notifs if n.get("id") == notif_id), None)
+            if notif is None and notifs:
                 from loguru import logger
 
                 logger.warning(f"Notification {notif_id} not found, skipping cron delivery")
                 return None
-            if notif.get("status") in ("cancelled", "delivered"):
+            if notif is not None and notif.get("status") in ("cancelled", "delivered"):
                 from loguru import logger
 
                 logger.info(f"Skipping {notif['status']} notification cron: {notif_id}")
@@ -318,7 +427,26 @@ def gateway(
             channel=job.payload.channel or "cli",
             chat_id=job.payload.to or "direct",
         )
-        if job.payload.deliver and job.payload.to:
+
+        # Notification delivery: claim-before-publish pattern.
+        # Mark delivered + save BEFORE publish so concurrent cancel sees
+        # "delivered" and skips, reducing TOCTOU state overwrites.
+        delivered_saved = False
+        fresh_gcal_event_id = None
+        suppress_publish = False
+        if is_notification:
+            (
+                delivered_saved,
+                fresh_gcal_event_id,
+                suppress_publish,
+            ) = await claim_notification_delivered(
+                notif_id, _load_notifications_data, _save_notifications_data
+            )
+
+        # Publish outbound: skip only when intentionally suppressed (cancelled/not found).
+        # On transient claim failure, still publish to avoid notification loss.
+        should_publish = not is_notification or delivered_saved or not suppress_publish
+        if should_publish and job.payload.deliver and job.payload.to:
             from nanobot.bus.events import OutboundMessage
 
             await bus.publish_outbound(
@@ -329,29 +457,11 @@ def gateway(
                 )
             )
 
-        # Mark notification as delivered (prevents duplicate from orphan crons)
-        if is_notification:
-            try:
-                from datetime import datetime
-
-                data = await _load_notifications_data()
-                notifs = data.get("notifications", [])
-                for n in notifs:
-                    if n.get("id") == notif_id:
-                        n["status"] = "delivered"
-                        n["delivered_at"] = datetime.now().isoformat()
-                        break
-                ok = await _save_notifications_data(data)
-                if not ok:
-                    from loguru import logger
-
-                    logger.warning(
-                        f"Failed to persist delivered status for notification {notif_id}"
-                    )
-            except Exception:
-                from loguru import logger
-
-                logger.warning(f"Failed to mark notification {notif_id} as delivered")
+        # Google Calendar sync: delete event after delivery (best-effort)
+        if delivered_saved and fresh_gcal_event_id:
+            await delete_gcal_event_on_delivery(
+                agent.gcal_client, fresh_gcal_event_id, notification_id=notif_id or ""
+            )
 
         return response
 

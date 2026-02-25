@@ -826,3 +826,246 @@ class TestSecondSaveFailure:
 
         assert "✅" in result
         mock_gcal_client.create_event.assert_called_once()
+
+
+# ============================================================================
+# TestDeliveryGCalCleanup — delete_gcal_event_on_delivery() unit tests
+# ============================================================================
+
+
+class TestDeliveryGCalCleanup:
+    """Unit tests for the delete_gcal_event_on_delivery() helper."""
+
+    @pytest.mark.asyncio
+    async def test_delivery_gcal_delete_success(self, mock_gcal_client):
+        """Delivery triggers delete_event with correct gcal_event_id."""
+        from nanobot.cli.commands import delete_gcal_event_on_delivery
+
+        await delete_gcal_event_on_delivery(mock_gcal_client, "gcal_evt_del_100")
+
+        mock_gcal_client.delete_event.assert_called_once_with(event_id="gcal_evt_del_100")
+
+    @pytest.mark.asyncio
+    async def test_delivery_gcal_delete_failure(self, mock_gcal_client):
+        """GCal delete failure does not raise (best-effort)."""
+        from nanobot.cli.commands import delete_gcal_event_on_delivery
+
+        mock_gcal_client.delete_event.side_effect = Exception("GCal API down")
+
+        # Should not raise (best-effort)
+        await delete_gcal_event_on_delivery(mock_gcal_client, "gcal_evt_del_200")
+
+        # delete_event was attempted
+        mock_gcal_client.delete_event.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_delivery_no_gcal_event_id(self, mock_gcal_client):
+        """No gcal_event_id -> delete_event NOT called."""
+        from nanobot.cli.commands import delete_gcal_event_on_delivery
+
+        await delete_gcal_event_on_delivery(mock_gcal_client, None)
+
+        mock_gcal_client.delete_event.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_delivery_no_gcal_client(self):
+        """gcal_client=None -> no error, delete_event NOT called."""
+        from nanobot.cli.commands import delete_gcal_event_on_delivery
+
+        # Should not raise even with None client
+        await delete_gcal_event_on_delivery(None, "gcal_evt_del_300")
+
+
+# ============================================================================
+# TestClaimNotificationDelivered — claim_notification_delivered() unit tests
+# ============================================================================
+
+
+class TestClaimNotificationDelivered:
+    """Unit tests for claim_notification_delivered().
+
+    This function is the extracted core of on_cron_job's delivery path,
+    covering: target lookup, TOCTOU status re-check, delivered marking,
+    save, and gcal_event_id extraction.
+    """
+
+    @staticmethod
+    def _make_notif_data(*notifs):
+        return {"version": "1.0", "notifications": list(notifs)}
+
+    @staticmethod
+    def _make_notif(notif_id="n_001", status="pending", gcal_event_id=None):
+        return {
+            "id": notif_id,
+            "message": "Test notification",
+            "scheduled_at": "2026-02-25T10:00:00",
+            "type": "reminder",
+            "priority": "medium",
+            "status": status,
+            "gcal_event_id": gcal_event_id,
+        }
+
+    @pytest.mark.asyncio
+    async def test_claim_success_marks_delivered(self):
+        """Pending notification → delivered, suppress_publish=False."""
+        from nanobot.cli.commands import claim_notification_delivered
+
+        data = self._make_notif_data(self._make_notif(gcal_event_id="gcal_100"))
+        save_called_with = {}
+
+        async def load_fn():
+            return data
+
+        async def save_fn(d):
+            save_called_with["data"] = d
+            return True
+
+        ok, gcal_id, suppress = await claim_notification_delivered("n_001", load_fn, save_fn)
+
+        assert ok is True
+        assert gcal_id == "gcal_100"
+        assert suppress is False
+        saved_notif = save_called_with["data"]["notifications"][0]
+        assert saved_notif["status"] == "delivered"
+        assert "delivered_at" in saved_notif
+
+    @pytest.mark.asyncio
+    async def test_claim_target_not_found(self):
+        """Notification not in data (but others exist) → suppress_publish=True, no save."""
+        from nanobot.cli.commands import claim_notification_delivered
+
+        data = self._make_notif_data(self._make_notif(notif_id="n_other"))  # different ID
+        save_called = False
+
+        async def load_fn():
+            return data
+
+        async def save_fn(d):
+            nonlocal save_called
+            save_called = True
+            return True
+
+        ok, gcal_id, suppress = await claim_notification_delivered("n_missing", load_fn, save_fn)
+
+        assert ok is False
+        assert gcal_id is None
+        assert suppress is True
+        assert save_called is False
+
+    @pytest.mark.asyncio
+    async def test_claim_already_cancelled(self):
+        """Cancelled notification → suppress_publish=True, not overwritten."""
+        from nanobot.cli.commands import claim_notification_delivered
+
+        data = self._make_notif_data(self._make_notif(status="cancelled"))
+        save_called = False
+
+        async def load_fn():
+            return data
+
+        async def save_fn(d):
+            nonlocal save_called
+            save_called = True
+            return True
+
+        ok, gcal_id, suppress = await claim_notification_delivered("n_001", load_fn, save_fn)
+
+        assert ok is False
+        assert gcal_id is None
+        assert suppress is True
+        assert save_called is False
+        assert data["notifications"][0]["status"] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_claim_already_delivered(self):
+        """Already delivered → suppress_publish=True, idempotent."""
+        from nanobot.cli.commands import claim_notification_delivered
+
+        data = self._make_notif_data(self._make_notif(status="delivered"))
+
+        async def load_fn():
+            return data
+
+        async def save_fn(d):
+            return True
+
+        ok, gcal_id, suppress = await claim_notification_delivered("n_001", load_fn, save_fn)
+
+        assert ok is False
+        assert gcal_id is None
+        assert suppress is True
+
+    @pytest.mark.asyncio
+    async def test_claim_save_failure_still_publishes(self):
+        """Save fails → suppress_publish=False (transient, still publish)."""
+        from nanobot.cli.commands import claim_notification_delivered
+
+        data = self._make_notif_data(self._make_notif())
+
+        async def load_fn():
+            return data
+
+        async def save_fn(d):
+            return False
+
+        ok, gcal_id, suppress = await claim_notification_delivered("n_001", load_fn, save_fn)
+
+        assert ok is False
+        assert gcal_id is None
+        assert suppress is False  # transient failure, still publish
+
+    @pytest.mark.asyncio
+    async def test_claim_load_exception_still_publishes(self):
+        """Load raises → suppress_publish=False (transient, still publish)."""
+        from nanobot.cli.commands import claim_notification_delivered
+
+        async def load_fn():
+            raise RuntimeError("Storage unavailable")
+
+        async def save_fn(d):
+            return True
+
+        ok, gcal_id, suppress = await claim_notification_delivered("n_001", load_fn, save_fn)
+
+        assert ok is False
+        assert gcal_id is None
+        assert suppress is False  # transient failure, still publish
+
+    @pytest.mark.asyncio
+    async def test_claim_missing_notifications_key(self):
+        """Storage returns data without 'notifications' key → transient, still publish."""
+        from nanobot.cli.commands import claim_notification_delivered
+
+        async def load_fn():
+            return {}  # no "notifications" key — possible storage anomaly
+
+        async def save_fn(d):
+            return True
+
+        ok, gcal_id, suppress = await claim_notification_delivered("n_001", load_fn, save_fn)
+
+        assert ok is False
+        assert gcal_id is None
+        assert suppress is False  # transient — don't suppress publish
+
+    @pytest.mark.asyncio
+    async def test_claim_empty_notifications_list(self):
+        """Empty notifications list during delivery → transient, still publish.
+
+        JsonStorageBackend returns default {"notifications": []} on parse error.
+        An empty list is suspicious at delivery time since cancel_notification
+        only changes status (doesn't remove entries).
+        """
+        from nanobot.cli.commands import claim_notification_delivered
+
+        async def load_fn():
+            return {"version": "1.0", "notifications": []}  # default from corrupted file
+
+        async def save_fn(d):
+            return True
+
+        ok, gcal_id, suppress = await claim_notification_delivered("n_001", load_fn, save_fn)
+
+        assert ok is False
+        assert gcal_id is None
+        assert suppress is False  # transient — don't suppress publish

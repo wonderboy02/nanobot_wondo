@@ -894,5 +894,307 @@ async def test_worker_registers_save_insight_tool(test_workspace, mock_cron_serv
     assert "save_insight" in worker.tools.tool_names
 
 
+# ============================================================================
+# _build_notifications_summary delivered section tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_notifications_summary_with_recent_delivered(test_workspace, mock_cron_service):
+    """_build_notifications_summary includes recently delivered notifications."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    notif_file = test_workspace / "dashboard" / "notifications.json"
+    notif_data = {
+        "version": "1.0",
+        "notifications": [
+            {
+                "id": "n_delivered_recent",
+                "message": "최근 전달된 알림",
+                "scheduled_at": (now - timedelta(hours=2)).isoformat(),
+                "delivered_at": (now - timedelta(hours=1)).isoformat(),
+                "type": "deadline_alert",
+                "priority": "high",
+                "status": "delivered",
+                "related_task_id": "task_001",
+            }
+        ],
+    }
+    notif_file.write_text(json.dumps(notif_data), encoding="utf-8")
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+        cron_service=mock_cron_service,
+        bus=Mock(),
+    )
+
+    result = worker._build_notifications_summary()
+    assert "Recently Delivered" in result
+    assert "n_delivered_recent" in result
+    assert "최근 전달된 알림" in result
+    assert "task_001" in result
+    assert "WORKER.md" in result
+
+
+@pytest.mark.asyncio
+async def test_notifications_summary_invalid_delivered_at_skipped(
+    test_workspace, mock_cron_service
+):
+    """Delivered notification with invalid delivered_at is excluded (not included forever)."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+
+    notif_file = test_workspace / "dashboard" / "notifications.json"
+    notif_data = {
+        "version": "1.0",
+        "notifications": [
+            {
+                "id": "n_bad_date",
+                "message": "잘못된 날짜 알림",
+                "scheduled_at": "2026-02-25T10:00:00",
+                "delivered_at": "not-a-date",
+                "type": "reminder",
+                "priority": "medium",
+                "status": "delivered",
+            },
+            {
+                "id": "n_no_date",
+                "message": "날짜 없는 알림",
+                "scheduled_at": "2026-02-25T10:00:00",
+                "type": "reminder",
+                "priority": "medium",
+                "status": "delivered",
+                # no delivered_at at all
+            },
+        ],
+    }
+    notif_file.write_text(json.dumps(notif_data), encoding="utf-8")
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+        cron_service=mock_cron_service,
+        bus=Mock(),
+    )
+
+    result = worker._build_notifications_summary()
+    # Invalid delivered_at entries must be excluded to prevent infinite repetition
+    assert "n_bad_date" not in result
+    assert "n_no_date" not in result
+
+
+@pytest.mark.asyncio
+async def test_notifications_summary_old_delivered_excluded(test_workspace, mock_cron_service):
+    """_build_notifications_summary excludes delivered notifications older than 48h."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    notif_file = test_workspace / "dashboard" / "notifications.json"
+    notif_data = {
+        "version": "1.0",
+        "notifications": [
+            {
+                "id": "n_delivered_old",
+                "message": "오래된 전달 알림",
+                "scheduled_at": (now - timedelta(hours=72)).isoformat(),
+                "delivered_at": (now - timedelta(hours=60)).isoformat(),
+                "type": "reminder",
+                "priority": "medium",
+                "status": "delivered",
+            }
+        ],
+    }
+    notif_file.write_text(json.dumps(notif_data), encoding="utf-8")
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+        cron_service=mock_cron_service,
+        bus=Mock(),
+    )
+
+    result = worker._build_notifications_summary()
+    assert "n_delivered_old" not in result
+    assert "No pending notifications" in result
+
+
+@pytest.mark.asyncio
+async def test_notifications_summary_pending_and_delivered(test_workspace, mock_cron_service):
+    """_build_notifications_summary shows both pending and recently delivered sections."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    notif_file = test_workspace / "dashboard" / "notifications.json"
+    notif_data = {
+        "version": "1.0",
+        "notifications": [
+            {
+                "id": "n_pending_001",
+                "message": "대기 중 알림",
+                "scheduled_at": (now + timedelta(hours=2)).isoformat(),
+                "type": "reminder",
+                "priority": "medium",
+                "status": "pending",
+                "related_task_id": "task_002",
+            },
+            {
+                "id": "n_delivered_001",
+                "message": "전달 완료 알림",
+                "scheduled_at": (now - timedelta(hours=3)).isoformat(),
+                "delivered_at": (now - timedelta(hours=1)).isoformat(),
+                "type": "progress_check",
+                "priority": "high",
+                "status": "delivered",
+                "related_task_id": "task_003",
+            },
+        ],
+    }
+    notif_file.write_text(json.dumps(notif_data), encoding="utf-8")
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+        cron_service=mock_cron_service,
+        bus=Mock(),
+    )
+
+    result = worker._build_notifications_summary()
+    # Pending section
+    assert "n_pending_001" in result
+    assert "대기 중 알림" in result
+    assert "task_002" in result
+    # Delivered section
+    assert "Recently Delivered" in result
+    assert "n_delivered_001" in result
+    assert "전달 완료 알림" in result
+    assert "task_003" in result
+
+
+@pytest.mark.asyncio
+async def test_notifications_summary_delivered_at_boundary_48h(test_workspace, mock_cron_service):
+    """Boundary test: just inside vs just outside 48h window."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    notif_file = test_workspace / "dashboard" / "notifications.json"
+    notif_data = {
+        "version": "1.0",
+        "notifications": [
+            {
+                "id": "n_boundary_outside",
+                "message": "48시간 1분 전 (제외)",
+                "scheduled_at": (now - timedelta(hours=50)).isoformat(),
+                "delivered_at": (now - timedelta(hours=48, minutes=1)).isoformat(),
+                "type": "reminder",
+                "priority": "medium",
+                "status": "delivered",
+            },
+            {
+                "id": "n_boundary_inside",
+                "message": "47시간 59분 전 (포함)",
+                "scheduled_at": (now - timedelta(hours=49)).isoformat(),
+                "delivered_at": (now - timedelta(hours=47, minutes=59)).isoformat(),
+                "type": "reminder",
+                "priority": "medium",
+                "status": "delivered",
+            },
+        ],
+    }
+    notif_file.write_text(json.dumps(notif_data), encoding="utf-8")
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+        cron_service=mock_cron_service,
+        bus=Mock(),
+    )
+
+    result = worker._build_notifications_summary()
+    # Just outside 48h -> excluded
+    assert "n_boundary_outside" not in result
+    # Just inside 48h -> included
+    assert "n_boundary_inside" in result
+
+
+@pytest.mark.asyncio
+async def test_notifications_summary_delivered_with_timezone(test_workspace, mock_cron_service):
+    """Delivered notifications with timezone-aware delivered_at should be handled."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    notif_file = test_workspace / "dashboard" / "notifications.json"
+    # Use timezone-aware ISO strings (+09:00 and Z)
+    recent_kst = (now - timedelta(hours=1)).isoformat() + "+09:00"
+    recent_utc = (now - timedelta(hours=1)).isoformat() + "Z"
+
+    notif_data = {
+        "version": "1.0",
+        "notifications": [
+            {
+                "id": "n_tz_kst",
+                "message": "KST 타임존 알림",
+                "scheduled_at": now.isoformat(),
+                "delivered_at": recent_kst,
+                "type": "reminder",
+                "priority": "medium",
+                "status": "delivered",
+            },
+            {
+                "id": "n_tz_utc",
+                "message": "UTC Z 타임존 알림",
+                "scheduled_at": now.isoformat(),
+                "delivered_at": recent_utc,
+                "type": "reminder",
+                "priority": "medium",
+                "status": "delivered",
+            },
+        ],
+    }
+    notif_file.write_text(json.dumps(notif_data), encoding="utf-8")
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+        cron_service=mock_cron_service,
+        bus=Mock(),
+    )
+
+    result = worker._build_notifications_summary()
+    # Both timezone-aware entries should be processed without TypeError
+    assert "n_tz_kst" in result
+    assert "n_tz_utc" in result
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
