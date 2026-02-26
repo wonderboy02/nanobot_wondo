@@ -543,6 +543,27 @@ class TestSchedulerDelivery:
         assert "n_001" in scheduler._delivered  # Retained in dedup
 
     @pytest.mark.asyncio
+    async def test_mark_exception_treated_as_failure(self, temp_workspace, backend):
+        """mark_delivered raises exception → treated as failure, retries, dedup retained."""
+        past = (datetime.now() - timedelta(minutes=5)).isoformat()
+        _write_notifications(temp_workspace, [_make_notification(scheduled_at=past)])
+
+        reconciler = NotificationReconciler(
+            backend, default_chat_id="chat_123", default_channel="telegram"
+        )
+        send_cb = AsyncMock()
+        scheduler = ReconciliationScheduler(reconciler, send_cb)
+
+        # Force mark_delivered to raise on every call
+        reconciler.mark_delivered = Mock(side_effect=RuntimeError("storage crash"))
+
+        await scheduler.trigger()
+
+        assert send_cb.call_count == 1  # Message sent
+        assert reconciler.mark_delivered.call_count == 3  # 3 retry attempts
+        assert "n_001" in scheduler._delivered  # Retained in dedup
+
+    @pytest.mark.asyncio
     async def test_mark_retry_succeeds_on_second_attempt(self, temp_workspace, backend):
         """mark_delivered fails first, succeeds second → clean state."""
         past = (datetime.now() - timedelta(minutes=5)).isoformat()

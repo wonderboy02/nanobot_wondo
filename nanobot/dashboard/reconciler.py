@@ -277,8 +277,8 @@ class ReconciliationScheduler:
         for attempt in range(3):
             try:
                 ok = await asyncio.to_thread(self.reconciler.mark_delivered, notif_id)
-            except Exception as e:
-                logger.error(f"[Scheduler] mark_delivered exception for {notif_id}: {e}")
+            except Exception:
+                logger.exception(f"[Scheduler] mark_delivered exception for {notif_id}")
                 ok = False
             if ok:
                 self._delivered.discard(notif_id)
