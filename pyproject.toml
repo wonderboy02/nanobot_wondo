@@ -87,3 +87,7 @@ select = ["E9", "F63", "F7", "F82"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "e2e: End-to-end tests requiring real LLM API (deselected by default)",
+]
+addopts = "-m 'not e2e'"

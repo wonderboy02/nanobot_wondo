@@ -10,25 +10,27 @@
 - Worker, Reconciler, Notification/Question 도구 등 결정론 단위 테스트
 
 2. `e2e/`
-- Agent/Worker 시나리오 중심 테스트
+- Agent/Worker 시나리오 중심 테스트 (실제 LLM API 필요, `@pytest.mark.e2e`)
 - 일부 파일은 현재 분류와 성격이 혼재되어 있으며, 재구성 계획은 `tests/TEST_REVIEW_RESTRUCTURE_PLAN.md`를 따릅니다.
 
 ## 2) 현재 권장 실행
 
 ```bash
-# Dashboard 단위 테스트
-python -m pytest tests/dashboard/unit -v
+# Dashboard 단위 테스트 (addopts로 e2e 자동 제외)
+pytest tests/dashboard/unit/ -v
 
-# Dashboard E2E 시나리오 (명시적 실행)
-python -m pytest tests/dashboard/e2e -v -s
+# Dashboard E2E 시나리오 (명시적 실행, -m e2e로 addopts 오버라이드)
+pytest tests/dashboard/e2e/ -v -s -m e2e
 ```
 
 ## 3) 재구성 메모
 
 다음 파일들은 장기적으로 `unit/integration` 계층으로 이동 권장 대상입니다.
 
-1. `tests/dashboard/e2e/test_notification_simple.py`
-2. `tests/dashboard/e2e/test_notification_realistic.py`
-3. `tests/dashboard/e2e/test_notification_workflow.py`
+1. `tests/dashboard/e2e/test_notification_simple.py` — LLM 없음, e2e 마커 없음
+2. `tests/dashboard/e2e/test_notification_realistic.py` — LLM 없음, e2e 마커 없음
+3. `tests/dashboard/e2e/test_notification_workflow.py` — LLM 없음, e2e 마커 없음
+
+`test_worker_integration.py`는 `@pytest.mark.e2e`가 있으나 일부 테스트는 mock 기반으로 혼합 성격입니다.
 
 상세 근거/계획은 `tests/TEST_REVIEW_RESTRUCTURE_PLAN.md` 참조.
