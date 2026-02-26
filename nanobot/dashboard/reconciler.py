@@ -275,7 +275,11 @@ class ReconciliationScheduler:
 
         # 4. Mark delivered with retry
         for attempt in range(3):
-            ok = await asyncio.to_thread(self.reconciler.mark_delivered, notif_id)
+            try:
+                ok = await asyncio.to_thread(self.reconciler.mark_delivered, notif_id)
+            except Exception as e:
+                logger.error(f"[Scheduler] mark_delivered exception for {notif_id}: {e}")
+                ok = False
             if ok:
                 self._delivered.discard(notif_id)
                 logger.info(f"[Scheduler] Delivered {notif_id}")

@@ -209,15 +209,17 @@ bash tests/test_docker.sh                  # Docker integration test
 | 8 | `bus/events.py` | OutboundMessage has no explicit type field (reaction uses metadata convention) | Low |
 | 9 | `storage.py:18` | `load_json_file` 파싱 오류를 빈 default로 삼킴 → 빈 리스트 감지로 완화했으나 부분 손상은 감지 불가 | Low |
 | 10 | `worker.py` | delivered notification 48h 유지: LLM이 completion_check 중복 생성 가능. WORKER.md 지침으로 완화하나 LLM 준수에 의존 | Low |
-| 11 | `reconciler.py` | update_notification으로 scheduled_at 변경 시 gcal_event_id=None으로 리셋 → 이전 GCal 이벤트는 다음 reconcile 때 삭제되나, reconcile 전 수동 삭제 없으면 일시적 orphan 가능 | Low |
+| 11 | `reconciler.py` | update_notification으로 scheduled_at 변경 시 gcal_event_id=None으로 리셋 → 이전 GCal 이벤트 ID 유실로 Reconciler가 삭제 불가 (영구 orphan). 빈도 낮고 GCal 자체 피해 경미하나, 해결하려면 Reconciler에 old_gcal_event_id 추적 로직 필요 | Low |
 | 12 | `notifications.json` | delivered/cancelled notification 영구 보존 — archival 정책 없음. tasks.json과 동일 패턴 (#6). Worker Phase 1에 cleanup 추가 검토 | Low |
 | 13 | `reconciler.py` | SyncTarget 추상화 없음 — GCal 하드코딩. target 3개 이상 시 SyncTarget ABC 도입 필요 | Low |
+| 14 | `reconciler.py` | `reconcile()`에서 GCal create/delete 후 ledger save 실패 시 다음 reconcile에서 중복 GCal 이벤트 생성 가능. `_ensure_gcal()` 멱등성이 gcal_event_id 존재 여부에 의존하므로, save 안 된 상태에서 재실행 시 ID 없음 → 재생성. save 실패 자체가 극히 드물어 실질적 영향 미미 | Low |
 
 **Changes from previous doc**:
 - Removed: old #9 "Dashboard file race condition" — resolved by `_processing_lock` (in-process asyncio.Lock; single-worker assumption)
 - Removed: old #10 "Claim-before-publish" — resolved by Ledger-Based Delivery (send-first + mark retry)
 - Removed: old #12 "GCal 삭제 best-effort in cli" — resolved by Reconciler (멱등 GCal sync)
 - Added: #11 GCal orphan on notification update, #12 notification accumulation, #13 SyncTarget abstraction
+- Added: #14 GCal duplicate on reconcile save failure (Low)
 
 ## Dev Runbook
 
