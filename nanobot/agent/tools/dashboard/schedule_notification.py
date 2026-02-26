@@ -1,66 +1,18 @@
-"""Schedule notification tool."""
+"""Schedule notification tool.
+
+Ledger-only: writes a pending notification to storage.
+GCal sync and delivery are handled by ReconciliationScheduler.
+"""
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
-from typing import TYPE_CHECKING, Awaitable, Callable, Optional
-
-from loguru import logger
+from typing import Optional
 
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
-from nanobot.cron.service import CronService
-from nanobot.cron.types import CronSchedule
-
-if TYPE_CHECKING:
-    from nanobot.bus.events import OutboundMessage
-    from nanobot.google.calendar import GoogleCalendarClient
 
 
 class ScheduleNotificationTool(BaseDashboardTool):
-    """Schedule a notification for future delivery via cron."""
-
-    def __init__(
-        self,
-        workspace: Path,
-        cron_service: CronService,
-        *,
-        backend=None,
-        gcal_client: "GoogleCalendarClient | None" = None,
-        send_callback: Callable[["OutboundMessage"], Awaitable[None]] | None = None,
-        notification_chat_id: str | None = None,
-        gcal_timezone: str = "Asia/Seoul",
-        gcal_duration_minutes: int = 30,
-    ):
-        super().__init__(workspace, backend)
-        self.cron_service = cron_service
-        self._gcal_client = gcal_client
-        self._send_callback = send_callback
-        self._notification_chat_id = notification_chat_id
-        self._gcal_timezone = gcal_timezone
-        self._gcal_duration_minutes = gcal_duration_minutes
-        self._channel: str | None = None
-        self._chat_id: str | None = None
-
-    def set_context(self, channel: str, chat_id: str) -> None:
-        """Set the current channel and chat_id for notification delivery."""
-        self._channel = channel
-        self._chat_id = chat_id
-
-    async def _send_telegram(self, content: str) -> None:
-        """Send an instant notification via bus callback (uses current channel, falls back to telegram)."""
-        if not self._send_callback:
-            return
-        chat_id = self._chat_id or self._notification_chat_id
-        if not chat_id:
-            return
-        from nanobot.bus.events import OutboundMessage
-
-        msg = OutboundMessage(channel=self._channel or "telegram", chat_id=chat_id, content=content)
-        try:
-            await self._send_callback(msg)
-        except Exception as e:
-            logger.warning(f"Failed to send Telegram notification: {e}")
+    """Schedule a notification for future delivery."""
 
     @property
     def name(self) -> str:
@@ -70,7 +22,6 @@ class ScheduleNotificationTool(BaseDashboardTool):
     def description(self) -> str:
         return (
             "Schedule a notification to be delivered at a specific time. "
-            "Creates both a notification entry and a cron job for delivery. "
             "Use this to remind the user about tasks, deadlines, or blockers."
         )
 
@@ -144,30 +95,14 @@ class ScheduleNotificationTool(BaseDashboardTool):
         context: str = "",
         created_by: str = "main_agent",
     ) -> str:
-        """Schedule a notification."""
+        """Schedule a notification (ledger write only)."""
         try:
-            # Parse scheduled_at to datetime
             scheduled_dt = self._parse_datetime(scheduled_at)
             if not scheduled_dt:
                 return f"Error: Could not parse scheduled_at '{scheduled_at}'"
 
-            # Generate notification ID
             notification_id = self._generate_id("n")
 
-            # Create cron job
-            schedule = CronSchedule(kind="at", at_ms=int(scheduled_dt.timestamp() * 1000))
-
-            cron_job = self.cron_service.add_job(
-                name=f"notification_{notification_id}",
-                schedule=schedule,
-                message=message,
-                deliver=True,
-                channel=self._channel,
-                to=self._chat_id,
-                delete_after_run=True,
-            )
-
-            # Create notification entry
             notifications_data = await self._load_notifications()
             notifications_list = notifications_data.get("notifications", [])
 
@@ -181,7 +116,6 @@ class ScheduleNotificationTool(BaseDashboardTool):
                 "related_task_id": related_task_id,
                 "related_question_id": related_question_id,
                 "status": "pending",
-                "cron_job_id": cron_job.id,
                 "created_at": self._now(),
                 "delivered_at": None,
                 "cancelled_at": None,
@@ -193,53 +127,14 @@ class ScheduleNotificationTool(BaseDashboardTool):
             notifications_list.append(notification)
             notifications_data["notifications"] = notifications_list
 
-            # Validate and save
             success, msg = await self._validate_and_save_notifications(notifications_data)
             if not success:
-                # Rollback cron job
-                if not self.cron_service.remove_job(cron_job.id):
-                    logger.warning(f"Cron rollback failed for {cron_job.id}")
                 return msg
-
-            # Google Calendar sync (best-effort, after save)
-            if self._gcal_client:
-                try:
-                    desc_parts = []
-                    if context:
-                        desc_parts.append(context)
-                    if related_task_id:
-                        desc_parts.append(f"Related Task: {related_task_id}")
-                    gcal_desc = "\n".join(desc_parts) if desc_parts else None
-
-                    gcal_event_id = await asyncio.to_thread(
-                        self._gcal_client.create_event,
-                        summary=message,
-                        start_iso=scheduled_dt.isoformat(),
-                        timezone=self._gcal_timezone,
-                        duration_minutes=self._gcal_duration_minutes,
-                        description=gcal_desc,
-                    )
-                    # Persist gcal_event_id back
-                    notification["gcal_event_id"] = gcal_event_id
-                    notifications_data["notifications"] = notifications_list
-                    ok2, msg2 = await self._validate_and_save_notifications(notifications_data)
-                    if not ok2:
-                        logger.warning(f"gcal_event_id save failed for {notification_id}: {msg2}")
-                except Exception as e:
-                    logger.warning(f"GCal sync failed (schedule): {e}")
-                    await self._send_telegram(f"⚠️ Google Calendar 동기화 실패 (schedule): {e}")
-
-            # Send instant Telegram notification
-            time_str = scheduled_dt.strftime("%Y-%m-%d %H:%M")
-            await self._send_telegram(
-                f"✅ 일정 추가: {message} ({time_str}, {self._gcal_timezone})"
-            )
 
             return (
                 f"\u2705 Notification scheduled: {notification_id}\n"
                 f"Message: {message}\n"
-                f"Scheduled at: {scheduled_dt.strftime('%Y-%m-%d %H:%M:%S')}\n"
-                f"Cron job: {cron_job.id}"
+                f"Scheduled at: {scheduled_dt.strftime('%Y-%m-%d %H:%M:%S')}"
             )
 
         except Exception as e:

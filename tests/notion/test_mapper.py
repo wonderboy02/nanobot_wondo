@@ -289,12 +289,12 @@ class TestNotificationMapping:
         assert result["gcal_event_id"] == "gcal_123"
 
     def test_notification_gcal_event_id_none_round_trip(self):
-        """gcal_event_id=None -> GCalEventID omitted from Notion props -> None on read."""
+        """gcal_event_id=None -> GCalEventID present with empty content -> None on read."""
         n = {**self.SAMPLE_NOTIFICATION, "gcal_event_id": None}
         notion_props = notification_to_notion(n)
-        # GCalEventID should NOT be included when value is None/empty
-        # (avoids Notion API error if property doesn't exist in DB)
-        assert "GCalEventID" not in notion_props
+        # GCalEventID is always included (empty string when None)
+        assert "GCalEventID" in notion_props
+        assert notion_props["GCalEventID"]["rich_text"][0]["text"]["content"] == ""
 
         page = _wrap_page(notion_props)
         result = notion_to_notification(page)

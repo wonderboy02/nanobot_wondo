@@ -28,31 +28,15 @@ from uuid import uuid4
 if TYPE_CHECKING:
     from nanobot.agent.tools.registry import ToolRegistry
     from nanobot.dashboard.storage import StorageBackend
-    from nanobot.google.calendar import GoogleCalendarClient
 
 from loguru import logger
+
+from nanobot.dashboard.utils import parse_datetime  # noqa: F401 — re-exported for back-compat
 
 
 def _generate_id(prefix: str) -> str:
     """Generate unique ID: {prefix}_xxxxxxxx (same pattern as BaseDashboardTool)."""
     return f"{prefix}_{str(uuid4())[:8]}"
-
-
-def parse_datetime(dt_str: str) -> datetime:
-    """Parse ISO datetime string to naive local-time datetime.
-
-    If the input is timezone-aware, converts to local time first, then
-    strips tzinfo so the result is comparable with datetime.now().
-    If naive, returns as-is (assumed local time).
-
-    Raises ValueError if dt_str is empty or not a valid ISO datetime.
-    """
-    if not isinstance(dt_str, str) or not dt_str:
-        raise ValueError(f"Invalid datetime string: {dt_str!r}")
-    dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-    if dt.tzinfo is not None:
-        dt = dt.astimezone().replace(tzinfo=None)
-    return dt
 
 
 class WorkerAgent:
@@ -92,25 +76,13 @@ class WorkerAgent:
         storage_backend: StorageBackend,
         provider: Any | None = None,
         model: str | None = None,
-        cron_service: Any | None = None,
-        bus: Any | None = None,
-        send_callback: Any | None = None,
-        notification_chat_id: str | None = None,
-        gcal_client: "GoogleCalendarClient | None" = None,
-        gcal_timezone: str = "Asia/Seoul",
-        gcal_duration_minutes: int = 30,
+        scheduler: Any | None = None,
     ):
         self.workspace = workspace
         self.storage_backend = storage_backend
         self.provider = provider
         self.model = model
-        self.cron_service = cron_service
-        self.bus = bus  # Reserved for future event bus integration
-        self.send_callback = send_callback
-        self.notification_chat_id = notification_chat_id
-        self.gcal_client = gcal_client
-        self.gcal_timezone = gcal_timezone
-        self.gcal_duration_minutes = gcal_duration_minutes
+        self.scheduler = scheduler  # ReconciliationScheduler (or None)
         # Recreated each _run_llm_cycle(); None when Phase 2 never runs.
         self.tools: ToolRegistry | None = None
 
@@ -176,6 +148,12 @@ class WorkerAgent:
         if skip_answered:
             reason = "extraction failed" if extraction_failed else "Phase 2 incomplete"
             logger.info("[Worker] Preserved answered question(s) for next cycle ({})", reason)
+
+        if self.scheduler:
+            try:
+                await self.scheduler.trigger()
+            except Exception:
+                logger.exception("[Worker] Scheduler trigger error")
 
         logger.info("[Worker] Cycle complete.")
 
@@ -276,11 +254,10 @@ class WorkerAgent:
                     # _save_entity_items() sees the mapping and calls
                     # update_page() instead of create_page() (prevents
                     # duplicate pages). No-op for JsonStorageBackend.
-                    # NOTE: runs outside asyncio lock. Worker executes on
-                    # 30-min heartbeat cycle; dashboard tools use
-                    # @with_dashboard_lock. Concurrent access is near-
-                    # impossible in single-user mode. If multi-user
-                    # support is added, this needs a shared lock.
+                    # NOTE: runs outside @with_dashboard_lock (tool-level lock).
+                    # Protected by _processing_lock when called from HeartbeatService.
+                    # CLI `nanobot dashboard worker` runs without any lock
+                    # (single-user, no event loop contention).
                     id_map_registered: list[tuple[str, str]] = []
                     save_ok = False
                     try:
@@ -896,7 +873,7 @@ class WorkerAgent:
         self.tools.register(UpdateQuestionTool(self.workspace, self.storage_backend))
         self.tools.register(RemoveQuestionTool(self.workspace, self.storage_backend))
 
-        # Notification management
+        # Notification management (ledger-only — GCal/delivery via Reconciler)
         from nanobot.agent.tools.dashboard.cancel_notification import (
             CancelNotificationTool,
         )
@@ -910,23 +887,9 @@ class WorkerAgent:
             UpdateNotificationTool,
         )
 
-        notif_kwargs = dict(
-            backend=self.storage_backend,
-            gcal_client=self.gcal_client,
-            send_callback=self.send_callback,
-            notification_chat_id=self.notification_chat_id,
-            gcal_timezone=self.gcal_timezone,
-            gcal_duration_minutes=self.gcal_duration_minutes,
-        )
-        self.tools.register(
-            ScheduleNotificationTool(self.workspace, self.cron_service, **notif_kwargs)
-        )
-        self.tools.register(
-            UpdateNotificationTool(self.workspace, self.cron_service, **notif_kwargs)
-        )
-        self.tools.register(
-            CancelNotificationTool(self.workspace, self.cron_service, **notif_kwargs)
-        )
+        self.tools.register(ScheduleNotificationTool(self.workspace, self.storage_backend))
+        self.tools.register(UpdateNotificationTool(self.workspace, self.storage_backend))
+        self.tools.register(CancelNotificationTool(self.workspace, self.storage_backend))
         self.tools.register(ListNotificationsTool(self.workspace, self.storage_backend))
 
         # Task management
@@ -940,11 +903,3 @@ class WorkerAgent:
         from nanobot.agent.tools.dashboard.save_insight import SaveInsightTool
 
         self.tools.register(SaveInsightTool(self.workspace, self.storage_backend))
-
-        # Set context for notification tools so Worker-created notifications
-        # can deliver via Telegram
-        if self.notification_chat_id:
-            for name in ("schedule_notification", "update_notification", "cancel_notification"):
-                tool = self.tools.get(name)
-                if tool and hasattr(tool, "set_context"):
-                    tool.set_context("telegram", self.notification_chat_id)

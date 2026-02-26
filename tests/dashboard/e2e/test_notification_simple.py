@@ -32,16 +32,8 @@ class TestNotificationCreation:
     async def test_schedule_notification_creates_entry(self, test_workspace):
         """Test that scheduling a notification creates entry in notifications.json."""
         from nanobot.agent.tools.dashboard.schedule_notification import ScheduleNotificationTool
-        from nanobot.cron.service import CronService
-        from unittest.mock import Mock
 
-        # Mock cron service
-        cron = Mock(spec=CronService)
-        mock_job = Mock()
-        mock_job.id = "cron_123"
-        cron.add_job = Mock(return_value=mock_job)
-
-        tool = ScheduleNotificationTool(test_workspace, cron)
+        tool = ScheduleNotificationTool(test_workspace)
 
         # Schedule notification
         scheduled_time = (datetime.now() + timedelta(hours=1)).isoformat()
@@ -65,10 +57,7 @@ class TestNotificationCreation:
         assert notif["type"] == "reminder"
         assert notif["priority"] == "medium"
         assert notif["status"] == "pending"
-        assert notif["cron_job_id"] == "cron_123"
-
-        # Verify cron job created
-        cron.add_job.assert_called_once()
+        assert notif.get("gcal_event_id") is None
 
     @pytest.mark.asyncio
     async def test_list_notifications_shows_pending(self, test_workspace):
@@ -105,8 +94,6 @@ class TestNotificationCreation:
     async def test_cancel_notification_marks_cancelled(self, test_workspace):
         """Test cancelling notification marks it as cancelled."""
         from nanobot.agent.tools.dashboard.cancel_notification import CancelNotificationTool
-        from nanobot.cron.service import CronService
-        from unittest.mock import Mock
 
         # Create test notification
         notifications_file = test_workspace / "dashboard" / "notifications.json"
@@ -120,7 +107,6 @@ class TestNotificationCreation:
                     "type": "reminder",
                     "priority": "medium",
                     "status": "pending",
-                    "cron_job_id": "cron_123",
                     "created_at": datetime.now().isoformat(),
                     "created_by": "worker",
                 }
@@ -128,11 +114,7 @@ class TestNotificationCreation:
         }
         notifications_file.write_text(json.dumps(data))
 
-        # Mock cron service
-        cron = Mock(spec=CronService)
-        cron.remove_job = Mock(return_value=True)
-
-        tool = CancelNotificationTool(test_workspace, cron)
+        tool = CancelNotificationTool(test_workspace)
         result = await tool.execute("n_001", reason="Task completed")
 
         assert "✅" in result
@@ -143,9 +125,6 @@ class TestNotificationCreation:
         notif = data["notifications"][0]
         assert notif["status"] == "cancelled"
         assert notif["cancelled_at"] is not None
-
-        # Verify cron job removed
-        cron.remove_job.assert_called_once_with("cron_123")
 
 
 class TestQuestionManagement:
@@ -225,8 +204,6 @@ class TestNotificationTaskIntegration:
     async def test_notification_linked_to_task(self, test_workspace):
         """Test notification can be linked to a task."""
         from nanobot.agent.tools.dashboard.schedule_notification import ScheduleNotificationTool
-        from nanobot.cron.service import CronService
-        from unittest.mock import Mock
 
         # Create test task
         tasks_file = test_workspace / "dashboard" / "tasks.json"
@@ -255,13 +232,7 @@ class TestNotificationTaskIntegration:
         }
         tasks_file.write_text(json.dumps(task_data))
 
-        # Mock cron service
-        cron = Mock(spec=CronService)
-        mock_job = Mock()
-        mock_job.id = "cron_123"
-        cron.add_job = Mock(return_value=mock_job)
-
-        tool = ScheduleNotificationTool(test_workspace, cron)
+        tool = ScheduleNotificationTool(test_workspace)
 
         # Schedule notification for task
         scheduled_time = (datetime.now() + timedelta(hours=1)).isoformat()

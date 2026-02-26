@@ -49,16 +49,18 @@
 
 ```
 nanobot/
-├── agent/loop.py          # Core loop (stateless)
-├── agent/context.py       # Prompt builder
-├── agent/subagent.py      # Background sub-agent
-├── agent/tools/dashboard/ # 12 dashboard tools
-├── dashboard/worker.py    # Unified WorkerAgent (Phase 1 + Phase 2)
-├── dashboard/storage.py   # StorageBackend ABC
-├── dashboard/helper.py    # Dashboard summary generator
-├── channels/telegram.py   # Primary channel (numbered answers, /questions, /tasks)
-├── notion/                # NotionStorageBackend + cache
-├── heartbeat/service.py   # 30-min periodic Worker execution
+├── agent/loop.py            # Core loop (stateless, _processing_lock, _scheduler)
+├── agent/context.py         # Prompt builder
+├── agent/subagent.py        # Background sub-agent
+├── agent/tools/dashboard/   # 12 dashboard tools
+├── dashboard/worker.py      # Unified WorkerAgent (Phase 1 + Phase 2)
+├── dashboard/storage.py     # StorageBackend ABC
+├── dashboard/reconciler.py  # NotificationReconciler + ReconciliationScheduler
+├── dashboard/utils.py       # Shared utilities (parse_datetime)
+├── dashboard/helper.py      # Dashboard summary generator
+├── channels/telegram.py     # Primary channel (numbered answers, /questions, /tasks)
+├── notion/                  # NotionStorageBackend + cache
+├── heartbeat/service.py     # 30-min periodic Worker execution
 └── config/, session/, cron/, skills/, cli/, utils/
 ```
 
@@ -66,7 +68,7 @@ nanobot/
 
 **Basic (8)**: create_task, update_task, archive_task, answer_question, create_question, update_question, remove_question, save_insight
 
-**Conditional (4, requires cron_service)**: schedule_notification, update_notification, cancel_notification, list_notifications
+**Notification (4)**: schedule_notification, update_notification, cancel_notification, list_notifications
 
 All tools are wrapped with `@with_dashboard_lock` (asyncio.Lock).
 
@@ -76,12 +78,12 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 ### Worker Agent (dashboard/worker.py)
 
-- **Phase 1** (deterministic, always): archive completed tasks, re-evaluate active/someday
+- **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency, archive completed/cancelled tasks, re-evaluate active/someday
 - **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
 - **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
 - **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
 - Runs automatically every 30 minutes via Heartbeat
-- **Notification delivery**: claim-before-publish pattern (mark delivered → save → publish → GCal delete). See WORKER.md for follow-up instructions
+- **Notification delivery**: Ledger-Based Delivery via `ReconciliationScheduler` — tools write to ledger only; Reconciler handles GCal sync, due detection, and delivery via `send_callback`. See WORKER.md for follow-up instructions
 
 ## Non-Negotiable Rules
 
@@ -205,16 +207,17 @@ bash tests/test_docker.sh                  # Docker integration test
 | 6 | `archive_task.py` | Archived tasks accumulate in tasks.json indefinitely | Medium |
 | 7 | `telegram.py` | `_is_quiet_hours()` depends on server timezone (mitigated by Docker TZ=Asia/Seoul) | Low |
 | 8 | `bus/events.py` | OutboundMessage has no explicit type field (reaction uses metadata convention) | Low |
-| 9 | Worker vs Main Agent | Dashboard file race condition (~0.056% probability, accepted trade-off) | Low |
-| 10 | `cli/commands.py` | Claim-before-publish: publish 실패 시 "delivered인데 미발송" 상태 가능. 반대(publish-first)는 cron one-shot 삭제로 notification loss 더 심각하여 claim-first 선택 | Medium |
-| 11 | `storage.py:18` | `load_json_file` 파싱 오류를 빈 default로 삼킴 → delivery guard가 notification 못 찾을 수 있음. 빈 리스트 감지로 완화했으나 부분 손상(일부 항목 누락)은 감지 불가 | Low |
-| 12 | `cli/commands.py` | GCal 이벤트 삭제 best-effort: 실패 시 warning 로그만, 재시도/정리 없음 → orphan event 누적 가능. cancel_notification과 동일 패턴 | Low |
-| 13 | `worker.py` | delivered notification 48h 유지: LLM이 completion_check 중복 생성 가능. WORKER.md 지침으로 완화하나 LLM 준수에 의존 | Low |
+| 9 | `storage.py:18` | `load_json_file` 파싱 오류를 빈 default로 삼킴 → 빈 리스트 감지로 완화했으나 부분 손상은 감지 불가 | Low |
+| 10 | `worker.py` | delivered notification 48h 유지: LLM이 completion_check 중복 생성 가능. WORKER.md 지침으로 완화하나 LLM 준수에 의존 | Low |
+| 11 | `reconciler.py` | update_notification으로 scheduled_at 변경 시 gcal_event_id=None으로 리셋 → 이전 GCal 이벤트는 다음 reconcile 때 삭제되나, reconcile 전 수동 삭제 없으면 일시적 orphan 가능 | Low |
+| 12 | `notifications.json` | delivered/cancelled notification 영구 보존 — archival 정책 없음. tasks.json과 동일 패턴 (#6). Worker Phase 1에 cleanup 추가 검토 | Low |
+| 13 | `reconciler.py` | SyncTarget 추상화 없음 — GCal 하드코딩. target 3개 이상 시 SyncTarget ABC 도입 필요 | Low |
 
 **Changes from previous doc**:
-- Removed: old #3 "Rule Worker not using StorageBackend" — resolved by Worker unification
-- Added: #8 OutboundMessage type field (tech debt from commit `8981642`)
-- Added: #10-13 Notification delivery pipeline trade-offs
+- Removed: old #9 "Dashboard file race condition" — resolved by `_processing_lock` (in-process asyncio.Lock; single-worker assumption)
+- Removed: old #10 "Claim-before-publish" — resolved by Ledger-Based Delivery (send-first + mark retry)
+- Removed: old #12 "GCal 삭제 best-effort in cli" — resolved by Reconciler (멱등 GCal sync)
+- Added: #11 GCal orphan on notification update, #12 notification accumulation, #13 SyncTarget abstraction
 
 ## Dev Runbook
 
@@ -245,6 +248,7 @@ docker compose logs -f nanobot             # Logs
 | Worker logic change | `worker.py` docstring, this doc Section 2 |
 | Storage interface change | JsonStorageBackend + NotionStorageBackend both |
 | Notion schema change | `notion/mapper.py` + `workspace/NOTION_SETUP.md` |
+| New sync target | `reconciler.py` ensure/remove, `schema.py` event_id field, this doc Ledger section |
 | Deploy pipeline change | `deploy.sh`, `docker-compose.yml`, `.github/workflows/deploy.yml` |
 | New Known Limitation | This doc Section 7 |
 | Feature release | `CHANGELOG.md` (no history in this doc) |

@@ -8,7 +8,7 @@ Tests the Phase 2 LLM-powered analysis:
 
 import json
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -57,25 +57,14 @@ def test_workspace(tmp_path):
     return workspace
 
 
-@pytest.fixture
-def mock_cron_service(tmp_path):
-    """Create a real CronService with temp storage."""
-    from nanobot.cron.service import CronService
-
-    cron_store = tmp_path / "cron" / "jobs.json"
-    cron_store.parent.mkdir(parents=True)
-    return CronService(cron_store)
-
-
 @pytest.mark.asyncio
-async def test_llm_cycle_runs_when_provider_available(test_workspace, mock_cron_service):
+async def test_llm_cycle_runs_when_provider_available(test_workspace):
     """LLM cycle should run when provider and model are provided."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
 
     # LLM returns no tool calls (simple analysis)
     mock_provider.chat = AsyncMock(return_value=_make_response("No maintenance needed."))
@@ -85,8 +74,6 @@ async def test_llm_cycle_runs_when_provider_available(test_workspace, mock_cron_
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     await worker.run_cycle()
@@ -119,14 +106,13 @@ async def test_llm_cycle_skipped_without_provider(test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_llm_cycle_with_tool_call(test_workspace, mock_cron_service):
+async def test_llm_cycle_with_tool_call(test_workspace):
     """LLM cycle should execute tool calls from LLM response."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
 
     # Set up task with deadline
     now = datetime.now()
@@ -175,8 +161,6 @@ async def test_llm_cycle_with_tool_call(test_workspace, mock_cron_service):
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     await worker.run_cycle()
@@ -188,14 +172,13 @@ async def test_llm_cycle_with_tool_call(test_workspace, mock_cron_service):
 
 
 @pytest.mark.asyncio
-async def test_llm_cycle_handles_error_gracefully(test_workspace, mock_cron_service):
+async def test_llm_cycle_handles_error_gracefully(test_workspace):
     """LLM cycle should handle provider errors gracefully."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
 
     # LLM raises an error
     mock_provider.chat = AsyncMock(side_effect=Exception("API Error"))
@@ -205,8 +188,6 @@ async def test_llm_cycle_handles_error_gracefully(test_workspace, mock_cron_serv
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     # Should not raise (error is caught and logged)
@@ -214,14 +195,13 @@ async def test_llm_cycle_handles_error_gracefully(test_workspace, mock_cron_serv
 
 
 @pytest.mark.asyncio
-async def test_context_includes_dashboard_summary(test_workspace, mock_cron_service):
+async def test_context_includes_dashboard_summary(test_workspace):
     """Context building should include dashboard summary."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
 
     # Add active task
     now = datetime.now()
@@ -249,8 +229,6 @@ async def test_context_includes_dashboard_summary(test_workspace, mock_cron_serv
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     await worker.run_cycle()
@@ -264,14 +242,13 @@ async def test_context_includes_dashboard_summary(test_workspace, mock_cron_serv
 
 
 @pytest.mark.asyncio
-async def test_worker_tools_registered(test_workspace, mock_cron_service):
+async def test_worker_tools_registered(test_workspace):
     """Worker should register expected tools for LLM cycle."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
 
     mock_provider.chat = AsyncMock(return_value=_make_response("Done."))
 
@@ -280,8 +257,6 @@ async def test_worker_tools_registered(test_workspace, mock_cron_service):
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     await worker.run_cycle()
@@ -308,7 +283,7 @@ async def test_worker_tools_registered(test_workspace, mock_cron_service):
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_empty(test_workspace, mock_cron_service):
+async def test_notifications_summary_empty(test_workspace):
     """_build_notifications_summary returns 'no notifications' when list is empty."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
@@ -319,8 +294,6 @@ async def test_notifications_summary_empty(test_workspace, mock_cron_service):
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     result = worker._build_notifications_summary()
@@ -328,7 +301,7 @@ async def test_notifications_summary_empty(test_workspace, mock_cron_service):
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_no_pending(test_workspace, mock_cron_service):
+async def test_notifications_summary_no_pending(test_workspace):
     """_build_notifications_summary returns 'no pending' when all are delivered."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
@@ -357,8 +330,6 @@ async def test_notifications_summary_no_pending(test_workspace, mock_cron_servic
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     result = worker._build_notifications_summary()
@@ -366,7 +337,7 @@ async def test_notifications_summary_no_pending(test_workspace, mock_cron_servic
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_with_pending(test_workspace, mock_cron_service):
+async def test_notifications_summary_with_pending(test_workspace):
     """_build_notifications_summary lists pending notifications."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
@@ -396,8 +367,6 @@ async def test_notifications_summary_with_pending(test_workspace, mock_cron_serv
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     result = worker._build_notifications_summary()
@@ -412,14 +381,13 @@ async def test_notifications_summary_with_pending(test_workspace, mock_cron_serv
 
 
 @pytest.mark.asyncio
-async def test_llm_cycle_stops_at_max_iterations(test_workspace, mock_cron_service):
+async def test_llm_cycle_stops_at_max_iterations(test_workspace):
     """LLM cycle should stop after max_iterations even if LLM keeps calling tools."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
 
     # LLM always returns a tool call (never stops on its own)
     mock_provider.chat = AsyncMock(
@@ -440,8 +408,6 @@ async def test_llm_cycle_stops_at_max_iterations(test_workspace, mock_cron_servi
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     await worker.run_cycle()
@@ -456,14 +422,13 @@ async def test_llm_cycle_stops_at_max_iterations(test_workspace, mock_cron_servi
 
 
 @pytest.mark.asyncio
-async def test_llm_cycle_tool_error_returns_error_message(test_workspace, mock_cron_service):
+async def test_llm_cycle_tool_error_returns_error_message(test_workspace):
     """Tool execution error should be returned to LLM as error message, not crash."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
 
     # LLM calls a tool with invalid arguments, then finishes
     mock_provider.chat = AsyncMock(
@@ -490,8 +455,6 @@ async def test_llm_cycle_tool_error_returns_error_message(test_workspace, mock_c
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     # Should not raise
@@ -563,7 +526,7 @@ async def test_maintenance_no_change_does_not_save(test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_maintenance_task_error_does_not_block_questions(test_workspace, mock_cron_service):
+async def test_maintenance_task_error_does_not_block_questions(test_workspace):
     """If task maintenance fails, question cleanup should still run."""
     from unittest.mock import patch
 
@@ -602,7 +565,7 @@ async def test_maintenance_task_error_does_not_block_questions(test_workspace, m
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_handles_load_error(test_workspace, mock_cron_service):
+async def test_notifications_summary_handles_load_error(test_workspace):
     """_build_notifications_summary returns error message when load fails."""
     from unittest.mock import patch
 
@@ -615,8 +578,6 @@ async def test_notifications_summary_handles_load_error(test_workspace, mock_cro
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     with patch.object(backend, "load_notifications", side_effect=RuntimeError("broken")):
@@ -688,7 +649,7 @@ async def test_reevaluate_skips_malformed_deadline(test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_context_uses_fallback_when_worker_md_missing(test_workspace, mock_cron_service):
+async def test_context_uses_fallback_when_worker_md_missing(test_workspace):
     """Context should use fallback system prompt when WORKER.md doesn't exist."""
     import os
 
@@ -697,7 +658,6 @@ async def test_context_uses_fallback_when_worker_md_missing(test_workspace, mock
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
 
     # Remove WORKER.md
     worker_md = test_workspace / "WORKER.md"
@@ -711,8 +671,6 @@ async def test_context_uses_fallback_when_worker_md_missing(test_workspace, mock
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     await worker.run_cycle()
@@ -732,14 +690,13 @@ async def test_context_uses_fallback_when_worker_md_missing(test_workspace, mock
 
 
 @pytest.mark.asyncio
-async def test_context_includes_answered_questions(test_workspace, mock_cron_service):
+async def test_context_includes_answered_questions(test_workspace):
     """LLM context should include answered questions summary."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
     now = datetime.now()
 
     # Set up an answered question
@@ -764,8 +721,6 @@ async def test_context_includes_answered_questions(test_workspace, mock_cron_ser
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     await worker.run_cycle()
@@ -812,7 +767,7 @@ async def test_answered_questions_summary_handles_none_answer(test_workspace):
 
 @pytest.mark.asyncio
 async def test_answer_without_checkbox_excluded_from_unanswered_summary(
-    test_workspace, mock_cron_service
+    test_workspace,
 ):
     """Question with answer text but answered=False should NOT appear in Unanswered section."""
     from nanobot.dashboard.storage import JsonStorageBackend
@@ -820,7 +775,6 @@ async def test_answer_without_checkbox_excluded_from_unanswered_summary(
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
     now = datetime.now()
 
     # answer filled but checkbox not checked
@@ -844,8 +798,6 @@ async def test_answer_without_checkbox_excluded_from_unanswered_summary(
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     await worker.run_cycle()
@@ -869,14 +821,13 @@ async def test_answer_without_checkbox_excluded_from_unanswered_summary(
 
 
 @pytest.mark.asyncio
-async def test_worker_registers_save_insight_tool(test_workspace, mock_cron_service):
+async def test_worker_registers_save_insight_tool(test_workspace):
     """Worker should register save_insight tool for processing answered questions."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-    mock_bus = Mock()
 
     mock_provider.chat = AsyncMock(return_value=_make_response("Done."))
 
@@ -885,8 +836,6 @@ async def test_worker_registers_save_insight_tool(test_workspace, mock_cron_serv
         storage_backend=backend,
         provider=mock_provider,
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=mock_bus,
     )
 
     await worker.run_cycle()
@@ -900,7 +849,7 @@ async def test_worker_registers_save_insight_tool(test_workspace, mock_cron_serv
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_with_recent_delivered(test_workspace, mock_cron_service):
+async def test_notifications_summary_with_recent_delivered(test_workspace):
     """_build_notifications_summary includes recently delivered notifications."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
@@ -931,8 +880,6 @@ async def test_notifications_summary_with_recent_delivered(test_workspace, mock_
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     result = worker._build_notifications_summary()
@@ -945,7 +892,7 @@ async def test_notifications_summary_with_recent_delivered(test_workspace, mock_
 
 @pytest.mark.asyncio
 async def test_notifications_summary_invalid_delivered_at_skipped(
-    test_workspace, mock_cron_service
+    test_workspace,
 ):
     """Delivered notification with invalid delivered_at is excluded (not included forever)."""
     from nanobot.dashboard.storage import JsonStorageBackend
@@ -984,8 +931,6 @@ async def test_notifications_summary_invalid_delivered_at_skipped(
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     result = worker._build_notifications_summary()
@@ -995,7 +940,7 @@ async def test_notifications_summary_invalid_delivered_at_skipped(
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_old_delivered_excluded(test_workspace, mock_cron_service):
+async def test_notifications_summary_old_delivered_excluded(test_workspace):
     """_build_notifications_summary excludes delivered notifications older than 48h."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
@@ -1025,8 +970,6 @@ async def test_notifications_summary_old_delivered_excluded(test_workspace, mock
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     result = worker._build_notifications_summary()
@@ -1035,7 +978,7 @@ async def test_notifications_summary_old_delivered_excluded(test_workspace, mock
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_pending_and_delivered(test_workspace, mock_cron_service):
+async def test_notifications_summary_pending_and_delivered(test_workspace):
     """_build_notifications_summary shows both pending and recently delivered sections."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
@@ -1075,8 +1018,6 @@ async def test_notifications_summary_pending_and_delivered(test_workspace, mock_
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     result = worker._build_notifications_summary()
@@ -1092,7 +1033,7 @@ async def test_notifications_summary_pending_and_delivered(test_workspace, mock_
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_delivered_at_boundary_48h(test_workspace, mock_cron_service):
+async def test_notifications_summary_delivered_at_boundary_48h(test_workspace):
     """Boundary test: just inside vs just outside 48h window."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
@@ -1131,8 +1072,6 @@ async def test_notifications_summary_delivered_at_boundary_48h(test_workspace, m
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     result = worker._build_notifications_summary()
@@ -1143,7 +1082,7 @@ async def test_notifications_summary_delivered_at_boundary_48h(test_workspace, m
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_delivered_with_timezone(test_workspace, mock_cron_service):
+async def test_notifications_summary_delivered_with_timezone(test_workspace):
     """Delivered notifications with timezone-aware delivered_at should be handled."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
@@ -1186,8 +1125,6 @@ async def test_notifications_summary_delivered_with_timezone(test_workspace, moc
         storage_backend=backend,
         provider=AsyncMock(),
         model="test-model",
-        cron_service=mock_cron_service,
-        bus=Mock(),
     )
 
     result = worker._build_notifications_summary()

@@ -18,8 +18,8 @@ class ContextBuilder:
     """
     Builds the context (system prompt + messages) for the agent.
 
-    Assembles bootstrap files, memory, skills, and conversation history
-    into a coherent prompt for the LLM.
+    Assembles bootstrap files, memory, skills, and dashboard state
+    into a coherent prompt for the LLM (stateless — no session history).
     """
 
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", "USER.md", "TOOLS.md", "DASHBOARD.md"]
@@ -103,7 +103,7 @@ Skills with available="false" need dependencies installed first - you can try in
 - Memory: {workspace_path}/memory/MEMORY.md
 - Daily notes: {workspace_path}/memory/YYYY-MM-DD.md
 
-Reply directly with text for conversations. Only use the 'message' tool for chat channel delivery."""
+Reply directly with text for conversations."""
 
     def _load_bootstrap_files(self) -> str:
         """Load all bootstrap files from workspace."""

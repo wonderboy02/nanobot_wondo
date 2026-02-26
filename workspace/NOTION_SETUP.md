@@ -77,7 +77,7 @@ You can create them in a single page for organization.
 | Status | select | Options: Pending, Delivered, Cancelled |
 | RelatedTaskID | text | Related task ID |
 | RelatedQuestionID | text | Related question ID |
-| CronJobID | text | Linked cron job ID (for recurring) |
+| CronJobID | text | **DEPRECATED** — no longer read/written by mapper (Ledger-Based Delivery) |
 | Context | text | Additional context |
 | CreatedBy | select | Options: worker, user, main_agent |
 | CreatedAt | date | Creation date |

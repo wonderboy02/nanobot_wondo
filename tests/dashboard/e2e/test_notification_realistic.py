@@ -8,18 +8,15 @@ import json
 import pytest
 from pathlib import Path
 from datetime import datetime, timedelta
-from unittest.mock import Mock
-
 from nanobot.agent.tools.dashboard.schedule_notification import ScheduleNotificationTool
 from nanobot.agent.tools.dashboard.update_notification import UpdateNotificationTool
 from nanobot.agent.tools.dashboard.cancel_notification import CancelNotificationTool
 from nanobot.agent.tools.dashboard.list_notifications import ListNotificationsTool
-from nanobot.cron.service import CronService
 
 
 @pytest.fixture
 def test_workspace(tmp_path):
-    """Create test workspace with dashboard and cron service."""
+    """Create test workspace with dashboard."""
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
@@ -33,24 +30,18 @@ def test_workspace(tmp_path):
         json.dumps({"version": "1.0", "notifications": []})
     )
 
-    # Create cron service
-    cron_path = tmp_path / "cron" / "jobs.json"
-    cron_path.parent.mkdir(parents=True)
-    cron_service = CronService(cron_path)
-
-    return {"workspace": workspace, "dashboard": dashboard, "cron_service": cron_service}
+    return {"workspace": workspace, "dashboard": dashboard}
 
 
 class TestNotificationTools:
     """Test notification tools with real Cron Service integration."""
 
     @pytest.mark.asyncio
-    async def test_schedule_notification_creates_cron_job(self, test_workspace):
-        """Test that scheduling a notification creates a cron job."""
+    async def test_schedule_notification_creates_entry(self, test_workspace):
+        """Test that scheduling a notification creates an entry in storage."""
         workspace = test_workspace["workspace"]
-        cron_service = test_workspace["cron_service"]
 
-        tool = ScheduleNotificationTool(workspace, cron_service)
+        tool = ScheduleNotificationTool(workspace)
 
         # Schedule notification
         scheduled_time = (datetime.now() + timedelta(hours=2)).isoformat()
@@ -71,19 +62,15 @@ class TestNotificationTools:
         assert notif["type"] == "reminder"
         assert notif["priority"] == "medium"
         assert notif["status"] == "pending"
-        assert notif["cron_job_id"] is not None
-
-        # Verify cron job created
-        assert notif["cron_job_id"] in [job.id for job in cron_service.list_jobs()]
+        assert notif.get("gcal_event_id") is None
 
     @pytest.mark.asyncio
-    async def test_update_notification_updates_cron_job(self, test_workspace):
-        """Test that updating notification time updates the cron job."""
+    async def test_update_notification_updates_time(self, test_workspace):
+        """Test that updating notification time updates the entry."""
         workspace = test_workspace["workspace"]
-        cron_service = test_workspace["cron_service"]
 
-        schedule_tool = ScheduleNotificationTool(workspace, cron_service)
-        update_tool = UpdateNotificationTool(workspace, cron_service)
+        schedule_tool = ScheduleNotificationTool(workspace)
+        update_tool = UpdateNotificationTool(workspace)
 
         # Schedule notification
         scheduled_time = (datetime.now() + timedelta(hours=2)).isoformat()
@@ -98,7 +85,6 @@ class TestNotificationTools:
         notifications_file = workspace / "dashboard" / "notifications.json"
         data = json.loads(notifications_file.read_text(encoding="utf-8"))
         notif_id = data["notifications"][0]["id"]
-        old_cron_id = data["notifications"][0]["cron_job_id"]
 
         # Update scheduled time
         new_time = (datetime.now() + timedelta(hours=3)).isoformat()
@@ -111,21 +97,16 @@ class TestNotificationTools:
         data = json.loads(notifications_file.read_text(encoding="utf-8"))
         notif = data["notifications"][0]
         assert notif["scheduled_at"] == new_time
-
-        # Verify cron job updated (new job ID)
-        new_cron_id = notif["cron_job_id"]
-        assert new_cron_id != old_cron_id
-        assert new_cron_id in [job.id for job in cron_service.list_jobs()]
-        assert old_cron_id not in [job.id for job in cron_service.list_jobs()]
+        # gcal_event_id reset to None when time changes (Reconciler will recreate)
+        assert notif.get("gcal_event_id") is None
 
     @pytest.mark.asyncio
-    async def test_cancel_notification_removes_cron_job(self, test_workspace):
-        """Test that cancelling a notification removes the cron job."""
+    async def test_cancel_notification_marks_cancelled(self, test_workspace):
+        """Test that cancelling a notification marks it as cancelled."""
         workspace = test_workspace["workspace"]
-        cron_service = test_workspace["cron_service"]
 
-        schedule_tool = ScheduleNotificationTool(workspace, cron_service)
-        cancel_tool = CancelNotificationTool(workspace, cron_service)
+        schedule_tool = ScheduleNotificationTool(workspace)
+        cancel_tool = CancelNotificationTool(workspace)
 
         # Schedule notification
         scheduled_time = (datetime.now() + timedelta(hours=2)).isoformat()
@@ -136,14 +117,10 @@ class TestNotificationTools:
             priority="medium",
         )
 
-        # Get notification ID and cron job ID
+        # Get notification ID
         notifications_file = workspace / "dashboard" / "notifications.json"
         data = json.loads(notifications_file.read_text(encoding="utf-8"))
         notif_id = data["notifications"][0]["id"]
-        cron_job_id = data["notifications"][0]["cron_job_id"]
-
-        # Verify cron job exists
-        assert cron_job_id in [job.id for job in cron_service.list_jobs()]
 
         # Cancel notification
         result = await cancel_tool.execute(notification_id=notif_id, reason="Task completed")
@@ -157,16 +134,12 @@ class TestNotificationTools:
         assert notif["status"] == "cancelled"
         assert notif["cancelled_at"] is not None
 
-        # Verify cron job removed
-        assert cron_job_id not in [job.id for job in cron_service.list_jobs()]
-
     @pytest.mark.asyncio
     async def test_list_notifications_filters_correctly(self, test_workspace):
         """Test that list_notifications filters by status and task."""
         workspace = test_workspace["workspace"]
-        cron_service = test_workspace["cron_service"]
 
-        schedule_tool = ScheduleNotificationTool(workspace, cron_service)
+        schedule_tool = ScheduleNotificationTool(workspace)
         list_tool = ListNotificationsTool(workspace)
 
         # Schedule multiple notifications
@@ -208,7 +181,6 @@ class TestNotificationTaskIntegration:
     async def test_notification_with_deadline_task(self, test_workspace):
         """Test creating notification for a task with deadline."""
         workspace = test_workspace["workspace"]
-        cron_service = test_workspace["cron_service"]
 
         # Create task with deadline
         tasks_file = workspace / "dashboard" / "tasks.json"
@@ -241,7 +213,7 @@ class TestNotificationTaskIntegration:
         tasks_file.write_text(json.dumps(tasks_data), encoding="utf-8")
 
         # Schedule deadline notification
-        tool = ScheduleNotificationTool(workspace, cron_service)
+        tool = ScheduleNotificationTool(workspace)
 
         # Schedule for tomorrow morning
         tomorrow_morning = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=0, second=0)
@@ -269,9 +241,7 @@ class TestNotificationTaskIntegration:
     async def test_multiple_notifications_for_same_task(self, test_workspace):
         """Test creating multiple notifications for the same task."""
         workspace = test_workspace["workspace"]
-        cron_service = test_workspace["cron_service"]
-
-        tool = ScheduleNotificationTool(workspace, cron_service)
+        tool = ScheduleNotificationTool(workspace)
 
         # Schedule deadline alert
         deadline_time = (datetime.now() + timedelta(days=1, hours=9)).isoformat()
@@ -316,9 +286,7 @@ class TestNotificationPriority:
     async def test_high_priority_notification(self, test_workspace):
         """Test creating high priority notification."""
         workspace = test_workspace["workspace"]
-        cron_service = test_workspace["cron_service"]
-
-        tool = ScheduleNotificationTool(workspace, cron_service)
+        tool = ScheduleNotificationTool(workspace)
 
         scheduled_time = (datetime.now() + timedelta(hours=1)).isoformat()
         result = await tool.execute(
@@ -342,9 +310,7 @@ class TestNotificationPriority:
     async def test_low_priority_notification(self, test_workspace):
         """Test creating low priority notification."""
         workspace = test_workspace["workspace"]
-        cron_service = test_workspace["cron_service"]
-
-        tool = ScheduleNotificationTool(workspace, cron_service)
+        tool = ScheduleNotificationTool(workspace)
 
         scheduled_time = (datetime.now() + timedelta(days=7)).isoformat()
         result = await tool.execute(
