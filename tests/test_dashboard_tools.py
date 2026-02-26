@@ -29,9 +29,7 @@ def temp_workspace():
     tasks_data = {"version": "1.0", "tasks": []}
     questions_data = {"version": "1.0", "questions": []}
 
-    (dashboard_dir / "tasks.json").write_text(
-        json.dumps(tasks_data, indent=2), encoding="utf-8"
-    )
+    (dashboard_dir / "tasks.json").write_text(json.dumps(tasks_data, indent=2), encoding="utf-8")
     (dashboard_dir / "questions.json").write_text(
         json.dumps(questions_data, indent=2), encoding="utf-8"
     )
@@ -47,9 +45,7 @@ async def test_create_task_tool(temp_workspace):
     """Test CreateTaskTool creates valid task."""
     tool = CreateTaskTool(workspace=temp_workspace)
 
-    result = await tool.execute(
-        title="Test task", deadline="내일", priority="high", tags=["test"]
-    )
+    result = await tool.execute(title="Test task", deadline="내일", priority="high", tags=["test"])
 
     # Should return success message
     assert "Created task_" in result
@@ -184,9 +180,7 @@ async def test_archive_task_tool(temp_workspace):
 
     # Archive the task
     archive_tool = ArchiveTaskTool(workspace=temp_workspace)
-    result = await archive_tool.execute(
-        task_id=task_id, reflection="Task completed successfully"
-    )
+    result = await archive_tool.execute(task_id=task_id, reflection="Task completed successfully")
 
     assert f"Archived {task_id}" in result
 
@@ -234,8 +228,9 @@ async def test_json_structure_validation(temp_workspace):
 
     # links should not contain "people" field
     for task in tasks_data["tasks"]:
-        assert "people" not in task.get("links", {}), \
+        assert "people" not in task.get("links", {}), (
             "links should not contain removed 'people' field"
+        )
 
 
 @pytest.mark.asyncio
@@ -269,20 +264,22 @@ async def test_archive_task_missing_progress_key(temp_workspace):
     tasks_path = temp_workspace / "dashboard" / "tasks.json"
     tasks_data = {
         "version": "1.0",
-        "tasks": [{
-            "id": "task_legacy",
-            "title": "Legacy task",
-            "status": "completed",
-            "priority": "medium",
-            "context": "",
-            "tags": [],
-            "links": {"projects": [], "insights": [], "resources": []},
-            "created_at": "2026-02-20T00:00:00",
-            "updated_at": "2026-02-20T00:00:00",
-            "completed_at": "2026-02-20T00:00:00",
-            "reflection": "",
-            # No "progress" key
-        }],
+        "tasks": [
+            {
+                "id": "task_legacy",
+                "title": "Legacy task",
+                "status": "completed",
+                "priority": "medium",
+                "context": "",
+                "tags": [],
+                "links": {"projects": [], "insights": [], "resources": []},
+                "created_at": "2026-02-20T00:00:00",
+                "updated_at": "2026-02-20T00:00:00",
+                "completed_at": "2026-02-20T00:00:00",
+                "reflection": "",
+                # No "progress" key
+            }
+        ],
     }
     tasks_path.write_text(json.dumps(tasks_data, indent=2), encoding="utf-8")
 

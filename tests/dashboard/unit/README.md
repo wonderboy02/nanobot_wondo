@@ -1,30 +1,33 @@
-# Unit Tests
+# Dashboard Unit Tests
 
-Dashboard 컴포넌트의 단위 테스트입니다.
+이 디렉토리는 Dashboard 영역의 결정론 단위 테스트를 포함합니다.
 
-## 테스트 파일
+## 1) 포함 범위
 
-- **test_manager.py** - DashboardManager CRUD 작업
-- **test_worker_cases.py** - Worker의 7가지 진행률 체크 Case
-- **test_schema.py** - Pydantic 스키마 검증
-- **test_links.py** - Link 시스템 검증
-- **test_edge_cases.py** - Edge cases 처리
+1. Worker deterministic phase (`maintenance`, `bootstrap`, `llm_cycle`의 mock 기반 경로)
+2. Reconciler / Scheduler 단위 동작
+3. Notification / Question 도구 단위 검증
+4. 공통 유틸리티 (`utils`) 검증
 
-## 실행
+## 2) 실행
 
 ```bash
-# 모든 단위 테스트
-pytest tests/dashboard/unit/ -v
-
-# 특정 파일만
-pytest tests/dashboard/unit/test_worker_cases.py -v
-
-# Coverage와 함께
-pytest tests/dashboard/unit/ --cov=nanobot.dashboard --cov-report=term
+python -m pytest tests/dashboard/unit -v
 ```
 
-## 목표
+특정 파일 실행 예시:
 
-- 90%+ code coverage
-- 모든 Worker Cases 검증
-- Edge cases 처리 확인
+```bash
+python -m pytest tests/dashboard/unit/test_worker_maintenance.py -v
+```
+
+## 3) 품질 규칙
+
+1. 외부 API/실제 LLM 호출 금지
+2. 실패 은닉 금지 (`assert True`, broad except 후 pass)
+3. 상태 검증 우선 (문자열 응답 검증만으로 통과 금지)
+
+## 4) 문서 참조
+
+1. 전체 테스트 구조/정책: `tests/README.md`
+2. 재구성 실행 계획: `tests/TEST_REVIEW_RESTRUCTURE_PLAN.md`

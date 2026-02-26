@@ -40,9 +40,7 @@ class ArchiveTaskTool(BaseDashboardTool):
         }
 
     @with_dashboard_lock
-    async def execute(
-        self, task_id: str, reflection: str = "", **kwargs: Any
-    ) -> str:
+    async def execute(self, task_id: str, reflection: str = "") -> str:
         try:
             tasks_data = await self._load_tasks()
 

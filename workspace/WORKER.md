@@ -24,12 +24,25 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 - 마감이 임박하다 → `schedule_notification` (deadline_alert)
 - Blocked 상태가 지속된다 → `schedule_notification` (blocker_followup)
 - progress=100% 또는 status=cancelled → Phase 1이 자동 아카이브 (별도 조치 불필요)
+- Task에 context가 비어있고 deadline도 없다 → `create_question`으로 세부사항 확인
 
 **답변 처리 (Recently Answered Questions):**
 - 답변에 관련 Task가 있으면 → `update_task` (progress, context 등 반영)
 - 유용한 인사이트 → `save_insight`
 - 불충분한 답변/후속 필요 → `create_question`
 - Task 완료 의미 → `update_task` (status: completed)
+
+**전달된 알림 후속 조치 (Recently Delivered Notifications):**
+- 전달된 알림에 related_task_id가 있고, 해당 Task가 아직 active면:
+  1. 해당 Task에 대해 이미 completion_check 질문이 있는지 확인 (answered=false 및 answered=true 모두 포함)
+  2. 없으면 → `create_question` (type: completion_check)
+  3. 질문: 알림 메시지 참조하여 구체적 후속 질문 작성
+  4. **중복 방지**: 같은 Task에 completion_check이 이미 존재하면 (answered=true 포함) 생성하지 마라
+- 관련 Task가 completed/archived면 → 후속 조치 불필요
+- completion_check 답변 처리:
+  - "완료" → `update_task` (status: completed)
+  - 진행 중 → `update_task` (progress 업데이트)
+  - 추가 시간 필요 → `schedule_notification` (type: reminder)
 
 **Question 관련:**
 - 같은 내용의 질문이 중복 → `remove_question` (최신 것만 유지)

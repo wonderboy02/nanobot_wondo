@@ -18,7 +18,9 @@ def test_workspace(tmp_path):
     # Initialize files
     (dashboard / "tasks.json").write_text(json.dumps({"version": "1.0", "tasks": []}))
     (dashboard / "questions.json").write_text(json.dumps({"version": "1.0", "questions": []}))
-    (dashboard / "notifications.json").write_text(json.dumps({"version": "1.0", "notifications": []}))
+    (dashboard / "notifications.json").write_text(
+        json.dumps({"version": "1.0", "notifications": []})
+    )
 
     return workspace
 
@@ -30,16 +32,8 @@ class TestNotificationCreation:
     async def test_schedule_notification_creates_entry(self, test_workspace):
         """Test that scheduling a notification creates entry in notifications.json."""
         from nanobot.agent.tools.dashboard.schedule_notification import ScheduleNotificationTool
-        from nanobot.cron.service import CronService
-        from unittest.mock import Mock
 
-        # Mock cron service
-        cron = Mock(spec=CronService)
-        mock_job = Mock()
-        mock_job.id = "cron_123"
-        cron.add_job = Mock(return_value=mock_job)
-
-        tool = ScheduleNotificationTool(test_workspace, cron)
+        tool = ScheduleNotificationTool(test_workspace)
 
         # Schedule notification
         scheduled_time = (datetime.now() + timedelta(hours=1)).isoformat()
@@ -47,7 +41,7 @@ class TestNotificationCreation:
             message="Test notification",
             scheduled_at=scheduled_time,
             type="reminder",
-            priority="medium"
+            priority="medium",
         )
 
         assert "✅" in result
@@ -63,10 +57,7 @@ class TestNotificationCreation:
         assert notif["type"] == "reminder"
         assert notif["priority"] == "medium"
         assert notif["status"] == "pending"
-        assert notif["cron_job_id"] == "cron_123"
-
-        # Verify cron job created
-        cron.add_job.assert_called_once()
+        assert notif.get("gcal_event_id") is None
 
     @pytest.mark.asyncio
     async def test_list_notifications_shows_pending(self, test_workspace):
@@ -77,16 +68,18 @@ class TestNotificationCreation:
         notifications_file = test_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
-            "notifications": [{
-                "id": "n_001",
-                "message": "Test notification",
-                "scheduled_at": (datetime.now() + timedelta(hours=1)).isoformat(),
-                "type": "reminder",
-                "priority": "medium",
-                "status": "pending",
-                "created_at": datetime.now().isoformat(),
-                "created_by": "worker"
-            }]
+            "notifications": [
+                {
+                    "id": "n_001",
+                    "message": "Test notification",
+                    "scheduled_at": (datetime.now() + timedelta(hours=1)).isoformat(),
+                    "type": "reminder",
+                    "priority": "medium",
+                    "status": "pending",
+                    "created_at": datetime.now().isoformat(),
+                    "created_by": "worker",
+                }
+            ],
         }
         notifications_file.write_text(json.dumps(data))
 
@@ -101,32 +94,27 @@ class TestNotificationCreation:
     async def test_cancel_notification_marks_cancelled(self, test_workspace):
         """Test cancelling notification marks it as cancelled."""
         from nanobot.agent.tools.dashboard.cancel_notification import CancelNotificationTool
-        from nanobot.cron.service import CronService
-        from unittest.mock import Mock
 
         # Create test notification
         notifications_file = test_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
-            "notifications": [{
-                "id": "n_001",
-                "message": "Test notification",
-                "scheduled_at": (datetime.now() + timedelta(hours=1)).isoformat(),
-                "type": "reminder",
-                "priority": "medium",
-                "status": "pending",
-                "cron_job_id": "cron_123",
-                "created_at": datetime.now().isoformat(),
-                "created_by": "worker"
-            }]
+            "notifications": [
+                {
+                    "id": "n_001",
+                    "message": "Test notification",
+                    "scheduled_at": (datetime.now() + timedelta(hours=1)).isoformat(),
+                    "type": "reminder",
+                    "priority": "medium",
+                    "status": "pending",
+                    "created_at": datetime.now().isoformat(),
+                    "created_by": "worker",
+                }
+            ],
         }
         notifications_file.write_text(json.dumps(data))
 
-        # Mock cron service
-        cron = Mock(spec=CronService)
-        cron.remove_job = Mock(return_value=True)
-
-        tool = CancelNotificationTool(test_workspace, cron)
+        tool = CancelNotificationTool(test_workspace)
         result = await tool.execute("n_001", reason="Task completed")
 
         assert "✅" in result
@@ -137,9 +125,6 @@ class TestNotificationCreation:
         notif = data["notifications"][0]
         assert notif["status"] == "cancelled"
         assert notif["cancelled_at"] is not None
-
-        # Verify cron job removed
-        cron.remove_job.assert_called_once_with("cron_123")
 
 
 class TestQuestionManagement:
@@ -154,15 +139,17 @@ class TestQuestionManagement:
         questions_file = test_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "low",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": datetime.now().isoformat(),
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "low",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": datetime.now().isoformat(),
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data))
 
@@ -185,15 +172,17 @@ class TestQuestionManagement:
         questions_file = test_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "medium",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": datetime.now().isoformat(),
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "medium",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": datetime.now().isoformat(),
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data))
 
@@ -215,36 +204,35 @@ class TestNotificationTaskIntegration:
     async def test_notification_linked_to_task(self, test_workspace):
         """Test notification can be linked to a task."""
         from nanobot.agent.tools.dashboard.schedule_notification import ScheduleNotificationTool
-        from nanobot.cron.service import CronService
-        from unittest.mock import Mock
 
         # Create test task
         tasks_file = test_workspace / "dashboard" / "tasks.json"
         task_data = {
             "version": "1.0",
-            "tasks": [{
-                "id": "task_001",
-                "title": "Test task",
-                "status": "active",
-                "priority": "high",
-                "progress": {"percentage": 50, "last_update": datetime.now().isoformat(), "note": "", "blocked": False},
-                "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
-                "context": "",
-                "tags": [],
-                "links": {"projects": [], "insights": [], "resources": []},
-                "created_at": datetime.now().isoformat(),
-                "updated_at": datetime.now().isoformat()
-            }]
+            "tasks": [
+                {
+                    "id": "task_001",
+                    "title": "Test task",
+                    "status": "active",
+                    "priority": "high",
+                    "progress": {
+                        "percentage": 50,
+                        "last_update": datetime.now().isoformat(),
+                        "note": "",
+                        "blocked": False,
+                    },
+                    "estimation": {"hours": None, "complexity": "medium", "confidence": "medium"},
+                    "context": "",
+                    "tags": [],
+                    "links": {"projects": [], "insights": [], "resources": []},
+                    "created_at": datetime.now().isoformat(),
+                    "updated_at": datetime.now().isoformat(),
+                }
+            ],
         }
         tasks_file.write_text(json.dumps(task_data))
 
-        # Mock cron service
-        cron = Mock(spec=CronService)
-        mock_job = Mock()
-        mock_job.id = "cron_123"
-        cron.add_job = Mock(return_value=mock_job)
-
-        tool = ScheduleNotificationTool(test_workspace, cron)
+        tool = ScheduleNotificationTool(test_workspace)
 
         # Schedule notification for task
         scheduled_time = (datetime.now() + timedelta(hours=1)).isoformat()
@@ -253,7 +241,7 @@ class TestNotificationTaskIntegration:
             scheduled_at=scheduled_time,
             type="deadline_alert",
             priority="high",
-            related_task_id="task_001"
+            related_task_id="task_001",
         )
 
         assert "✅" in result

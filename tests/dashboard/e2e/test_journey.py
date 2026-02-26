@@ -44,23 +44,21 @@ def agent_setup(tmp_path):
     dashboard_path.mkdir()
 
     (dashboard_path / "tasks.json").write_text(
-        json.dumps({"version": "1.0", "tasks": []}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+        json.dumps({"version": "1.0", "tasks": []}, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     (dashboard_path / "questions.json").write_text(
         json.dumps({"version": "1.0", "questions": []}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+        encoding="utf-8",
     )
     (dashboard_path / "notifications.json").write_text(
         json.dumps({"version": "1.0", "notifications": []}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     knowledge_dir = dashboard_path / "knowledge"
     knowledge_dir.mkdir()
     (knowledge_dir / "insights.json").write_text(
-        json.dumps({"version": "1.0", "insights": []}, indent=2),
-        encoding="utf-8"
+        json.dumps({"version": "1.0", "insights": []}, indent=2), encoding="utf-8"
     )
 
     # Use latest DASHBOARD.md (v0.1.5 - Dashboard Tools)
@@ -91,7 +89,7 @@ def agent_setup(tmp_path):
         "User: '완료했어요!'\n"
         "→ update_task(task_id='task_xxx', status='completed', progress=100)\n"
         "→ archive_task(task_id='task_xxx', reflection='Successfully completed')\n",
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     memory_dir = workspace / "memory"
@@ -110,14 +108,10 @@ def agent_setup(tmp_path):
         provider=provider,
         workspace=workspace,
         model=config.agents.defaults.model,
-        max_iterations=10
+        max_iterations=10,
     )
 
-    return {
-        "agent": agent_loop,
-        "workspace": workspace,
-        "dashboard": dashboard_path
-    }
+    return {"agent": agent_loop, "workspace": workspace, "dashboard": dashboard_path}
 
 
 @pytest.mark.e2e
@@ -169,10 +163,12 @@ def test_journey_01_one_week_lifecycle(agent_setup):
     )
 
     import asyncio
+
     response = asyncio.run(agent.process_direct(message_day1, session_key="journey01"))
     print(f"Agent: {response[:100] if response else 'SILENT'}...")
 
     import time
+
     time.sleep(2)  # LLM 호출 간격
 
     # Verify: 3개 task 생성되었는지
@@ -222,7 +218,9 @@ def test_journey_01_one_week_lifecycle(agent_setup):
     if react_task:
         print(f"[OK] React task found: {react_task['title']}")
         if react_task["progress"].get("blocked"):
-            print(f"[OK] React task blocked: {react_task['progress'].get('blocker_note', 'No note')}")
+            print(
+                f"[OK] React task blocked: {react_task['progress'].get('blocker_note', 'No note')}"
+            )
         else:
             print(f"[WARNING]  React blocker not detected (Agent may need clearer signal)")
 
@@ -242,18 +240,20 @@ def test_journey_01_one_week_lifecycle(agent_setup):
 
     # Worker가 생성했을 법한 질문 시뮬레이션
     now = datetime.now()
-    questions["questions"].append({
-        "id": f"q_worker_{now.strftime('%Y%m%d')}",
-        "question": "React Hooks 공부 진행이 좀 느린데, 괜찮아? 도움 필요해?",
-        "priority": "high",
-        "type": "progress_check",
-        "related_task_id": react_task["id"] if react_task else "unknown",
-        "answered": False,
-        "created_at": now.isoformat(),
-        "asked_count": 1,
-        "last_asked": now.isoformat(),
-        "context": "Progress slower than expected (50% with 2 days left)"
-    })
+    questions["questions"].append(
+        {
+            "id": f"q_worker_{now.strftime('%Y%m%d')}",
+            "question": "React Hooks 공부 진행이 좀 느린데, 괜찮아? 도움 필요해?",
+            "priority": "high",
+            "type": "progress_check",
+            "related_task_id": react_task["id"] if react_task else "unknown",
+            "answered": False,
+            "created_at": now.isoformat(),
+            "asked_count": 1,
+            "last_asked": now.isoformat(),
+            "context": "Progress slower than expected (50% with 2 days left)",
+        }
+    )
 
     with open(dashboard / "questions.json", "w", encoding="utf-8") as f:
         json.dump(questions, f, indent=2, ensure_ascii=False)
@@ -301,7 +301,9 @@ def test_journey_01_one_week_lifecycle(agent_setup):
         if "React" in task["title"] or "Hooks" in task["title"]:
             print(f"[OK] React priority: {task.get('priority', 'not set')}")
         if "블로그" in task["title"] and task["status"] != "completed":
-            print(f"[OK] Blog status: {task['status']}, deadline: {task.get('deadline_text', 'not set')}")
+            print(
+                f"[OK] Blog status: {task['status']}, deadline: {task.get('deadline_text', 'not set')}"
+            )
 
     # ==========================================
     # Day 5 (금요일): 완료 및 회고
@@ -333,13 +335,13 @@ def test_journey_01_one_week_lifecycle(agent_setup):
     print(f"[OK] Active (not completed): {len(active_tasks)}")
 
     # At least 1 task should be completed
-    assert len(all_completed_tasks) >= 1, \
+    assert len(all_completed_tasks) >= 1, (
         f"Should complete at least 1 task in the week, got {len(all_completed_tasks)}"
+    )
 
     # Verify React task is completed (check all completed tasks)
     react_completed = any(
-        "React" in t["title"] or "Hooks" in t["title"]
-        for t in all_completed_tasks
+        "React" in t["title"] or "Hooks" in t["title"] for t in all_completed_tasks
     )
 
     if react_completed:
@@ -386,10 +388,12 @@ def test_journey_02_complex_project(agent_setup):
     )
 
     import asyncio
+
     response = asyncio.run(agent.process_direct(message_start, session_key="journey02"))
     print(f"Agent: {response[:100] if response else 'SILENT'}...")
 
     import time
+
     time.sleep(2)
 
     # Verify: Multiple tasks created with dependencies
@@ -419,7 +423,9 @@ def test_journey_02_complex_project(agent_setup):
         tasks = json.load(f).get("tasks", [])
 
     design_task = next((t for t in tasks if "디자인" in t["title"] or "UI" in t["title"]), None)
-    frontend_task = next((t for t in tasks if "프론트" in t["title"] or "Frontend" in t["title"]), None)
+    frontend_task = next(
+        (t for t in tasks if "프론트" in t["title"] or "Frontend" in t["title"]), None
+    )
 
     if design_task:
         print(f"[OK] Design task: {design_task['status']}")
@@ -445,7 +451,9 @@ def test_journey_02_complex_project(agent_setup):
     with open(dashboard / "tasks.json", "r", encoding="utf-8") as f:
         tasks = json.load(f).get("tasks", [])
 
-    frontend_task = next((t for t in tasks if "프론트" in t["title"] or "Frontend" in t["title"]), None)
+    frontend_task = next(
+        (t for t in tasks if "프론트" in t["title"] or "Frontend" in t["title"]), None
+    )
 
     if frontend_task and frontend_task["progress"].get("blocked"):
         print(f"[OK] Frontend blocked: {frontend_task['progress'].get('blocker_note', '')}")
@@ -471,7 +479,9 @@ def test_journey_02_complex_project(agent_setup):
     with open(dashboard / "tasks.json", "r", encoding="utf-8") as f:
         tasks = json.load(f).get("tasks", [])
 
-    frontend_task = next((t for t in tasks if "프론트" in t["title"] or "Frontend" in t["title"]), None)
+    frontend_task = next(
+        (t for t in tasks if "프론트" in t["title"] or "Frontend" in t["title"]), None
+    )
 
     if frontend_task:
         blocker_note = frontend_task["progress"].get("blocker_note", "")
@@ -548,10 +558,12 @@ def test_journey_03_multitasking_priorities(agent_setup):
     )
 
     import asyncio
+
     response = asyncio.run(agent.process_direct(message_start, session_key="journey03"))
     print(f"Agent: {response[:100] if response else 'SILENT'}...")
 
     import time
+
     time.sleep(2)
 
     with open(dashboard / "tasks.json", "r", encoding="utf-8") as f:
@@ -581,7 +593,9 @@ def test_journey_03_multitasking_priorities(agent_setup):
     urgent_task = next((t for t in tasks if "프레젠테이션" in t["title"]), None)
 
     if urgent_task:
-        print(f"[OK] Urgent task: priority={urgent_task.get('priority')}, deadline={urgent_task.get('deadline_text', 'N/A')}")
+        print(
+            f"[OK] Urgent task: priority={urgent_task.get('priority')}, deadline={urgent_task.get('deadline_text', 'N/A')}"
+        )
 
     # ==========================================
     # Phase 3: 진행 상황 업데이트 (멀티)

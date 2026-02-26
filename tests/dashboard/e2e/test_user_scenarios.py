@@ -41,24 +41,22 @@ def agent_setup(tmp_path):
     dashboard_path.mkdir()
 
     (dashboard_path / "tasks.json").write_text(
-        json.dumps({"version": "1.0", "tasks": []}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+        json.dumps({"version": "1.0", "tasks": []}, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     (dashboard_path / "questions.json").write_text(
         json.dumps({"version": "1.0", "questions": []}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+        encoding="utf-8",
     )
     (dashboard_path / "notifications.json").write_text(
         json.dumps({"version": "1.0", "notifications": []}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     # Knowledge
     knowledge_dir = dashboard_path / "knowledge"
     knowledge_dir.mkdir()
     (knowledge_dir / "insights.json").write_text(
-        json.dumps({"version": "1.0", "insights": []}, indent=2),
-        encoding="utf-8"
+        json.dumps({"version": "1.0", "insights": []}, indent=2), encoding="utf-8"
     )
 
     # Create DASHBOARD.md (v0.1.5 - Dashboard Tools)
@@ -74,7 +72,7 @@ def agent_setup(tmp_path):
         "**Note**: Worker Agent handles question creation and notification scheduling automatically.\n"
         "You only need to respond to user messages and update dashboard based on conversation.\n\n"
         "Reply SILENT for regular updates.",
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     # Create memory
@@ -100,14 +98,10 @@ def agent_setup(tmp_path):
         provider=provider,
         workspace=workspace,
         model=config.agents.defaults.model,
-        max_iterations=10
+        max_iterations=10,
     )
 
-    return {
-        "agent": agent_loop,
-        "workspace": workspace,
-        "dashboard": dashboard_path
-    }
+    return {"agent": agent_loop, "workspace": workspace, "dashboard": dashboard_path}
 
 
 @pytest.mark.asyncio
@@ -139,8 +133,9 @@ async def test_scenario_01_add_new_task(agent_setup):
     assert len(tasks) >= 1, f"Should add at least 1 task, got {len(tasks)}"
 
     task = tasks[0]
-    assert "블로그" in task["title"] or "글" in task["title"], \
+    assert "블로그" in task["title"] or "글" in task["title"], (
         f"Task title should mention blog/writing: {task['title']}"
+    )
     assert task["status"] == "active", "Task should be active"
 
 
@@ -184,8 +179,9 @@ async def test_scenario_02_update_progress(agent_setup):
             break
 
     assert blog_task is not None, "Should find blog task"
-    assert blog_task["progress"]["percentage"] >= 40, \
+    assert blog_task["progress"]["percentage"] >= 40, (
         f"Progress should be around 50%, got {blog_task['progress']['percentage']}"
+    )
 
 
 @pytest.mark.asyncio
@@ -232,11 +228,13 @@ async def test_scenario_03_complete_task(agent_setup):
                 break
 
     assert blog_task is not None, "Should find blog task"
-    assert blog_task["status"] in ("completed", "archived"), \
+    assert blog_task["status"] in ("completed", "archived"), (
         f"Task should be completed or archived, got {blog_task['status']}"
+    )
     assert blog_task.get("completed_at") is not None, "Should have completed_at"
-    assert blog_task["progress"]["percentage"] == 100, \
+    assert blog_task["progress"]["percentage"] == 100, (
         f"Progress should be 100%, got {blog_task['progress']['percentage']}"
+    )
 
 
 @pytest.mark.asyncio
@@ -290,8 +288,9 @@ async def test_scenario_04_answer_question(agent_setup):
     assert blog_task is not None, "Should find blog task"
     # Verify topic mentioned in task context or note
     task_str = json.dumps(blog_task, ensure_ascii=False)
-    assert "React" in task_str or "RSC" in task_str or "Server" in task_str, \
+    assert "React" in task_str or "RSC" in task_str or "Server" in task_str, (
         "Task should reference the topic"
+    )
 
 
 @pytest.mark.asyncio
@@ -328,8 +327,9 @@ async def test_scenario_05_cancel_task(agent_setup):
             break
 
     assert blog_task is not None, "Should find blog task"
-    assert blog_task["status"] in ["cancelled", "canceled", "someday"], \
+    assert blog_task["status"] in ["cancelled", "canceled", "someday"], (
         f"Task should be cancelled, got {blog_task['status']}"
+    )
 
 
 @pytest.mark.asyncio
@@ -369,8 +369,9 @@ async def test_scenario_06_change_deadline(agent_setup):
 
     new_deadline = blog_task.get("deadline")
     # Deadline should be different (or task should be someday)
-    assert new_deadline != original_deadline or blog_task["status"] == "someday", \
+    assert new_deadline != original_deadline or blog_task["status"] == "someday", (
         "Deadline should change or status should become someday"
+    )
 
 
 @pytest.mark.asyncio
@@ -407,8 +408,9 @@ async def test_scenario_07_block_task(agent_setup):
             break
 
     assert blog_task is not None, "Should find blog task"
-    assert blog_task["progress"].get("blocked") == True, \
+    assert blog_task["progress"].get("blocked") == True, (
         f"Task should be blocked, got {blog_task['progress'].get('blocked')}"
+    )
     assert blog_task["progress"].get("blocker_note"), "Should have blocker note"
 
 
@@ -451,8 +453,9 @@ async def test_scenario_08_multiple_tasks(agent_setup):
     if "React" in titles_str or "공부" in titles_str:
         topics_mentioned += 1
 
-    assert topics_mentioned >= 2, \
+    assert topics_mentioned >= 2, (
         f"Should mention at least 2 topics, got {topics_mentioned}: {titles}"
+    )
 
 
 @pytest.mark.asyncio
@@ -487,7 +490,9 @@ async def test_scenario_09_natural_language_dates(agent_setup):
     next_week = now + timedelta(days=7)
 
     # Check for urgent task (tomorrow)
-    urgent_tasks = [t for t in tasks if "급한" in t["title"] or "내일" in t.get("deadline_text", "")]
+    urgent_tasks = [
+        t for t in tasks if "급한" in t["title"] or "내일" in t.get("deadline_text", "")
+    ]
     if urgent_tasks:
         task = urgent_tasks[0]
         assert task["status"] == "active", "Urgent task should be active"
@@ -498,7 +503,9 @@ async def test_scenario_09_natural_language_dates(agent_setup):
             assert days_until <= 2, "Tomorrow task should have deadline within 2 days"
 
     # Check for someday task
-    someday_tasks = [t for t in tasks if t["status"] == "someday" or "언젠가" in t.get("deadline_text", "")]
+    someday_tasks = [
+        t for t in tasks if t["status"] == "someday" or "언젠가" in t.get("deadline_text", "")
+    ]
     # Someday task may or may not be created depending on Agent's interpretation
 
 
@@ -541,8 +548,7 @@ async def test_scenario_10_add_links(agent_setup):
     links = blog_task.get("links", {})
     # May have project link, or context mentioning React project
     task_str = json.dumps(blog_task, ensure_ascii=False)
-    assert "React" in task_str or "프로젝트" in task_str, \
-        "Task should reference the project"
+    assert "React" in task_str or "프로젝트" in task_str, "Task should reference the project"
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@
 ### Added
 
 - **Notion Integration (StorageBackend)**: `StorageBackend` ABC with `JsonStorageBackend` (default) and `NotionStorageBackend` (Notion API + 5-min TTL memory cache). Dashboard tools unchanged — backend swap only.
-- **Notification Tools (4)**: `schedule_notification`, `update_notification`, `cancel_notification`, `list_notifications` — conditional on `cron_service` availability. Dashboard tools: 6 -> 12.
+- **Notification Tools (4)**: `schedule_notification`, `update_notification`, `cancel_notification`, `list_notifications` — always registered (ledger-only). Dashboard tools: 6 -> 12.
 - **Numbered Answer System**: Telegram `/questions` returns numbered list; user replies `"1. answer\n2. answer"` format. Full auto-process skips LLM call (token savings). Cache: TTL 1h, max 100.
 - **Reaction Mode**: Replaces plain SILENT — sends emoji reaction to original message on dashboard updates. Implementation in `loop.py` `_reaction_message()` and each channel's reaction guard.
 - **CI/CD Pipeline**: GH Actions (`deploy.yml`) -> SSH -> `deploy.sh` with first-run config bootstrap and `docker compose up --build --force-recreate -d`.

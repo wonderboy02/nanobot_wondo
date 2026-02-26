@@ -21,7 +21,7 @@ def test_is_read_only_detects_instruction_files(tmp_path):
         "IDENTITY.md",
         "HEARTBEAT.md",
         "config.json",
-        ".env"
+        ".env",
     ]
 
     for filename in instruction_files:
@@ -47,7 +47,9 @@ def test_is_read_only_allows_data_files(tmp_path):
     for file_path in dashboard_files:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.touch()
-        assert _is_read_only(file_path, workspace), f"{file_path.name} should be read-only (use dashboard tools)"
+        assert _is_read_only(file_path, workspace), (
+            f"{file_path.name} should be read-only (use dashboard tools)"
+        )
 
     # Memory files should NOT be read-only
     memory_file = workspace / "memory" / "MEMORY.md"
@@ -102,9 +104,7 @@ async def test_edit_tool_blocks_instruction_files(tmp_path):
 
     # Try to edit DASHBOARD.md (should fail)
     result = await tool.execute(
-        path=str(dashboard_path),
-        old_text="Original content",
-        new_text="Modified content"
+        path=str(dashboard_path), old_text="Original content", new_text="Modified content"
     )
 
     assert "Error:" in result
@@ -127,9 +127,7 @@ async def test_edit_tool_blocks_dashboard_json(tmp_path):
 
     # Edit tasks.json (should fail - use dashboard tools)
     result = await tool.execute(
-        path=str(tasks_path),
-        old_text='{"tasks": []}',
-        new_text='{"tasks": ["task1"]}'
+        path=str(tasks_path), old_text='{"tasks": []}', new_text='{"tasks": ["task1"]}'
     )
 
     assert "Error:" in result

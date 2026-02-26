@@ -79,7 +79,6 @@ class UpdateTaskTool(BaseDashboardTool):
         deadline: str | None = None,
         priority: str | None = None,
         tags: list[str] | None = None,
-        **kwargs: Any,
     ) -> str:
         try:
             # Load existing tasks

@@ -1,3 +1,34 @@
+# Codex Agent Instructions
+
+> This file is the Codex-specific superset of CLAUDE.md.
+> Keep all sections below "---" in sync with CLAUDE.md.
+> Codex-only rules are above the separator.
+
+## Codex Tool Usage Rules
+
+### Encoding and Newline Safety
+
+- Preserve each file's existing encoding and newline style.
+- Do not rewrite non-ASCII text (Korean, emoji, symbols) unless explicitly requested.
+- For text edits, use UTF-8 and avoid introducing BOM.
+- Do not mass-normalize files when touching a small section.
+- If an edit would change unrelated lines because of encoding/newline conversion, stop and report it.
+
+### Editing Method
+
+- Prefer patch-based edits over shell redirection for text files.
+- On Windows PowerShell, avoid write commands that default to UTF-16 or BOM output.
+- Keep changes minimal and scoped to requested lines only.
+
+### Code Modifications
+
+- 코드 수정하기 전에 반드시 설명을 하고 수정할 것.
+- Read files before modifying them. Understand existing code before suggesting changes.
+- Run `ruff format . && ruff check .` after code changes.
+- Run `pytest tests/dashboard/unit/ -v` to verify changes.
+
+---
+
 # nanobot_wondo — Fork of HKUDS/nanobot
 
 - Dashboard-centric personal AI assistant (Korean workflow)
@@ -18,16 +49,18 @@
 
 ```
 nanobot/
-├── agent/loop.py          # Core loop (stateless)
-├── agent/context.py       # Prompt builder
-├── agent/subagent.py      # Background sub-agent
-├── agent/tools/dashboard/ # 12 dashboard tools
-├── dashboard/worker.py    # Unified WorkerAgent (Phase 1 + Phase 2)
-├── dashboard/storage.py   # StorageBackend ABC
-├── dashboard/helper.py    # Dashboard summary generator
-├── channels/telegram.py   # Primary channel (numbered answers, /questions, /tasks)
-├── notion/                # NotionStorageBackend + cache
-├── heartbeat/service.py   # 30-min periodic Worker execution
+├── agent/loop.py            # Core loop (stateless, _processing_lock, _scheduler)
+├── agent/context.py         # Prompt builder
+├── agent/subagent.py        # Background sub-agent
+├── agent/tools/dashboard/   # 12 dashboard tools
+├── dashboard/worker.py      # Unified WorkerAgent (Phase 1 + Phase 2)
+├── dashboard/storage.py     # StorageBackend ABC
+├── dashboard/reconciler.py  # NotificationReconciler + ReconciliationScheduler
+├── dashboard/utils.py       # Shared utilities (parse_datetime)
+├── dashboard/helper.py      # Dashboard summary generator
+├── channels/telegram.py     # Primary channel (numbered answers, /questions, /tasks)
+├── notion/                  # NotionStorageBackend + cache
+├── heartbeat/service.py     # 30-min periodic Worker execution
 └── config/, session/, cron/, skills/, cli/, utils/
 ```
 
@@ -35,7 +68,7 @@ nanobot/
 
 **Basic (8)**: create_task, update_task, archive_task, answer_question, create_question, update_question, remove_question, save_insight
 
-**Conditional (4, requires cron_service)**: schedule_notification, update_notification, cancel_notification, list_notifications
+**Notification (4)**: schedule_notification, update_notification, cancel_notification, list_notifications
 
 All tools are wrapped with `@with_dashboard_lock` (asyncio.Lock).
 
@@ -45,9 +78,12 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 ### Worker Agent (dashboard/worker.py)
 
-- **Phase 1** (deterministic, always): archive completed tasks, re-evaluate active/someday, clean answered/stale questions
-- **Phase 2** (LLM, when provider/model configured): notifications, question generation, data cleanup (tool calls)
+- **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency, archive completed/cancelled tasks, re-evaluate active/someday
+- **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
+- **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
+- **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
 - Runs automatically every 30 minutes via Heartbeat
+- **Notification delivery**: Ledger-Based Delivery via `ReconciliationScheduler` — tools write to ledger only; Reconciler handles GCal sync, due detection, and delivery via `send_callback`. See WORKER.md for follow-up instructions
 
 ## Non-Negotiable Rules
 
@@ -171,11 +207,19 @@ bash tests/test_docker.sh                  # Docker integration test
 | 6 | `archive_task.py` | Archived tasks accumulate in tasks.json indefinitely | Medium |
 | 7 | `telegram.py` | `_is_quiet_hours()` depends on server timezone (mitigated by Docker TZ=Asia/Seoul) | Low |
 | 8 | `bus/events.py` | OutboundMessage has no explicit type field (reaction uses metadata convention) | Low |
-| 9 | Worker vs Main Agent | Dashboard file race condition (~0.056% probability, accepted trade-off) | Low |
+| 9 | `storage.py:18` | `load_json_file` 파싱 오류를 빈 default로 삼킴 → 빈 리스트 감지로 완화했으나 부분 손상은 감지 불가 | Low |
+| 10 | `worker.py` | delivered notification 48h 유지: LLM이 completion_check 중복 생성 가능. WORKER.md 지침으로 완화하나 LLM 준수에 의존 | Low |
+| 11 | `reconciler.py` | update_notification으로 scheduled_at 변경 시 gcal_event_id=None으로 리셋 → 이전 GCal 이벤트 ID 유실로 Reconciler가 삭제 불가 (영구 orphan). 빈도 낮고 GCal 자체 피해 경미하나, 해결하려면 Reconciler에 old_gcal_event_id 추적 로직 필요 | Low |
+| 12 | `notifications.json` | delivered/cancelled notification 영구 보존 — archival 정책 없음. tasks.json과 동일 패턴 (#6). Worker Phase 1에 cleanup 추가 검토 | Low |
+| 13 | `reconciler.py` | SyncTarget 추상화 없음 — GCal 하드코딩. target 3개 이상 시 SyncTarget ABC 도입 필요 | Low |
+| 14 | `reconciler.py` | `reconcile()`에서 GCal create/delete 후 ledger save 실패 시 다음 reconcile에서 중복 GCal 이벤트 생성 가능. `_ensure_gcal()` 멱등성이 gcal_event_id 존재 여부에 의존하므로, save 안 된 상태에서 재실행 시 ID 없음 → 재생성. save 실패 자체가 극히 드물어 실질적 영향 미미 | Low |
 
 **Changes from previous doc**:
-- Removed: old #3 "Rule Worker not using StorageBackend" — resolved by Worker unification
-- Added: #8 OutboundMessage type field (tech debt from commit `8981642`)
+- Removed: old #9 "Dashboard file race condition" — resolved by `_processing_lock` (in-process asyncio.Lock; single-worker assumption)
+- Removed: old #10 "Claim-before-publish" — resolved by Ledger-Based Delivery (send-first + mark retry)
+- Removed: old #12 "GCal 삭제 best-effort in cli" — resolved by Reconciler (멱등 GCal sync)
+- Added: #11 GCal orphan on notification update, #12 notification accumulation, #13 SyncTarget abstraction
+- Added: #14 GCal duplicate on reconcile save failure (Low)
 
 ## Dev Runbook
 
@@ -206,11 +250,12 @@ docker compose logs -f nanobot             # Logs
 | Worker logic change | `worker.py` docstring, this doc Section 2 |
 | Storage interface change | JsonStorageBackend + NotionStorageBackend both |
 | Notion schema change | `notion/mapper.py` + `workspace/NOTION_SETUP.md` |
+| New sync target | `reconciler.py` ensure/remove, `schema.py` event_id field, this doc Ledger section |
 | Deploy pipeline change | `deploy.sh`, `docker-compose.yml`, `.github/workflows/deploy.yml` |
 | New Known Limitation | This doc Section 7 |
 | Feature release | `CHANGELOG.md` (no history in this doc) |
 | Test structure change | This doc Section 4 |
-| CLAUDE.md content change | `.github/copilot-instructions.md` (manual sync, identical copy) |
+| CLAUDE.md content change | `AGENTS.md` (sync project sections below "---" separator) |
 
 ## Document Map
 

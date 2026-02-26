@@ -1,7 +1,5 @@
 """List notifications tool."""
 
-from typing import Optional
-
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool
 
 
@@ -27,30 +25,24 @@ class ListNotificationsTool(BaseDashboardTool):
                 "status": {
                     "type": "string",
                     "enum": ["pending", "delivered", "cancelled"],
-                    "description": "Filter by notification status (optional)"
+                    "description": "Filter by notification status (optional)",
                 },
                 "related_task_id": {
                     "type": "string",
-                    "description": "Filter by related task ID (optional)"
-                }
-            }
+                    "description": "Filter by related task ID (optional)",
+                },
+            },
         }
 
-    async def execute(
-        self,
-        status: Optional[str] = None,
-        related_task_id: Optional[str] = None
-    ) -> str:
+    async def execute(self, status: str | None = None, related_task_id: str | None = None) -> str:
         """List notifications."""
         try:
-            # Load notifications
             notifications_data = await self._load_notifications()
             notifications_list = notifications_data.get("notifications", [])
 
             if not notifications_list:
                 return "No notifications found."
 
-            # Filter notifications
             filtered = notifications_list
 
             if status:
@@ -67,8 +59,17 @@ class ListNotificationsTool(BaseDashboardTool):
                     filters.append(f"task={related_task_id}")
                 return f"No notifications found with filters: {', '.join(filters)}"
 
-            # Format output
             from datetime import datetime
+
+            def _fmt_dt(value: str | None, label: str) -> str | None:
+                """Format an ISO datetime field, falling back to raw string."""
+                if not value:
+                    return None
+                try:
+                    dt = datetime.fromisoformat(value)
+                    return f"  - {label}: {dt.strftime('%Y-%m-%d %H:%M:%S')}"
+                except (ValueError, TypeError):
+                    return f"  - {label}: {value}"
 
             result = []
             result.append(f"Found {len(filtered)} notification(s):\n")
@@ -79,14 +80,9 @@ class ListNotificationsTool(BaseDashboardTool):
                 result.append(f"  - Type: {notif['type']}")
                 result.append(f"  - Priority: {notif['priority']}")
 
-                # Format scheduled time
-                scheduled_at = notif.get("scheduled_at")
-                if scheduled_at:
-                    try:
-                        dt = datetime.fromisoformat(scheduled_at)
-                        result.append(f"  - Scheduled: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
-                    except (ValueError, TypeError):
-                        result.append(f"  - Scheduled: {scheduled_at}")
+                line = _fmt_dt(notif.get("scheduled_at"), "Scheduled")
+                if line:
+                    result.append(line)
 
                 if notif.get("scheduled_at_text"):
                     result.append(f"  - Original: {notif['scheduled_at_text']}")
@@ -97,19 +93,13 @@ class ListNotificationsTool(BaseDashboardTool):
                 if notif.get("related_question_id"):
                     result.append(f"  - Related Question: {notif['related_question_id']}")
 
-                if notif.get("delivered_at"):
-                    try:
-                        dt = datetime.fromisoformat(notif["delivered_at"])
-                        result.append(f"  - Delivered: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
-                    except (ValueError, TypeError):
-                        result.append(f"  - Delivered: {notif['delivered_at']}")
+                line = _fmt_dt(notif.get("delivered_at"), "Delivered")
+                if line:
+                    result.append(line)
 
-                if notif.get("cancelled_at"):
-                    try:
-                        dt = datetime.fromisoformat(notif["cancelled_at"])
-                        result.append(f"  - Cancelled: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
-                    except (ValueError, TypeError):
-                        result.append(f"  - Cancelled: {notif['cancelled_at']}")
+                line = _fmt_dt(notif.get("cancelled_at"), "Cancelled")
+                if line:
+                    result.append(line)
 
                 if notif.get("context"):
                     result.append(f"  - Context: {notif['context']}")

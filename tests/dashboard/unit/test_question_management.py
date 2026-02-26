@@ -16,10 +16,7 @@ def temp_workspace(tmp_path):
 
     # Initialize questions.json
     questions_file = dashboard_path / "questions.json"
-    questions_file.write_text(json.dumps({
-        "version": "1.0",
-        "questions": []
-    }), encoding="utf-8")
+    questions_file.write_text(json.dumps({"version": "1.0", "questions": []}), encoding="utf-8")
 
     return tmp_path
 
@@ -34,24 +31,23 @@ class TestUpdateQuestionTool:
         questions_file = temp_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "low",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": "2026-02-08T10:00:00",
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "low",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": "2026-02-08T10:00:00",
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = UpdateQuestionTool(temp_workspace)
 
-        result = await tool.execute(
-            question_id="q_001",
-            priority="high"
-        )
+        result = await tool.execute(question_id="q_001", priority="high")
 
         assert "✅" in result
         assert "priority: low → high" in result
@@ -67,24 +63,23 @@ class TestUpdateQuestionTool:
         questions_file = temp_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "medium",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": "2026-02-08T10:00:00",
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "medium",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": "2026-02-08T10:00:00",
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = UpdateQuestionTool(temp_workspace)
 
-        result = await tool.execute(
-            question_id="q_001",
-            type="progress_check"
-        )
+        result = await tool.execute(question_id="q_001", type="progress_check")
 
         assert "✅" in result
         assert "type: info_gather → progress_check" in result
@@ -99,24 +94,23 @@ class TestUpdateQuestionTool:
         questions_file = temp_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "medium",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": "2026-02-08T10:00:00",
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "medium",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": "2026-02-08T10:00:00",
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = UpdateQuestionTool(temp_workspace)
 
-        result = await tool.execute(
-            question_id="q_001",
-            cooldown_hours=12
-        )
+        result = await tool.execute(question_id="q_001", cooldown_hours=12)
 
         assert "✅" in result
         assert "cooldown: 24h → 12h" in result
@@ -131,25 +125,24 @@ class TestUpdateQuestionTool:
         questions_file = temp_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "medium",
-                "type": "info_gather",
-                "context": "Old context",
-                "answered": False,
-                "created_at": "2026-02-08T10:00:00",
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "medium",
+                    "type": "info_gather",
+                    "context": "Old context",
+                    "answered": False,
+                    "created_at": "2026-02-08T10:00:00",
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = UpdateQuestionTool(temp_workspace)
 
-        result = await tool.execute(
-            question_id="q_001",
-            context="New context with additional info"
-        )
+        result = await tool.execute(question_id="q_001", context="New context with additional info")
 
         assert "✅" in result
         assert "context updated" in result
@@ -164,25 +157,24 @@ class TestUpdateQuestionTool:
         questions_file = temp_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "low",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": "2026-02-08T10:00:00",
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "low",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": "2026-02-08T10:00:00",
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = UpdateQuestionTool(temp_workspace)
 
         result = await tool.execute(
-            question_id="q_001",
-            priority="high",
-            type="progress_check",
-            cooldown_hours=12
+            question_id="q_001", priority="high", type="progress_check", cooldown_hours=12
         )
 
         assert "✅" in result
@@ -201,10 +193,7 @@ class TestUpdateQuestionTool:
         """Test updating non-existent question."""
         tool = UpdateQuestionTool(temp_workspace)
 
-        result = await tool.execute(
-            question_id="q_nonexistent",
-            priority="high"
-        )
+        result = await tool.execute(question_id="q_nonexistent", priority="high")
 
         assert "Error" in result
         assert "not found" in result
@@ -215,26 +204,25 @@ class TestUpdateQuestionTool:
         questions_file = temp_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "medium",
-                "type": "info_gather",
-                "answered": True,
-                "answer": "Test answer",
-                "answered_at": "2026-02-09T10:00:00",
-                "created_at": "2026-02-08T10:00:00",
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "medium",
+                    "type": "info_gather",
+                    "answered": True,
+                    "answer": "Test answer",
+                    "answered_at": "2026-02-09T10:00:00",
+                    "created_at": "2026-02-08T10:00:00",
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = UpdateQuestionTool(temp_workspace)
 
-        result = await tool.execute(
-            question_id="q_001",
-            priority="high"
-        )
+        result = await tool.execute(question_id="q_001", priority="high")
 
         assert "Warning" in result
         assert "already answered" in result
@@ -245,15 +233,17 @@ class TestUpdateQuestionTool:
         questions_file = temp_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "medium",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": "2026-02-08T10:00:00",
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "medium",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": "2026-02-08T10:00:00",
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
@@ -273,24 +263,23 @@ class TestRemoveQuestionTool:
         questions_file = temp_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Test question?",
-                "priority": "medium",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": "2026-02-08T10:00:00",
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Test question?",
+                    "priority": "medium",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": "2026-02-08T10:00:00",
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = RemoveQuestionTool(temp_workspace)
 
-        result = await tool.execute(
-            question_id="q_001",
-            reason="duplicate"
-        )
+        result = await tool.execute(question_id="q_001", reason="duplicate")
 
         assert "✅" in result
         assert "removed" in result
@@ -315,7 +304,7 @@ class TestRemoveQuestionTool:
                     "type": "info_gather",
                     "answered": False,
                     "created_at": "2026-02-08T10:00:00",
-                    "cooldown_hours": 24
+                    "cooldown_hours": 24,
                 },
                 {
                     "id": "q_002",
@@ -324,9 +313,9 @@ class TestRemoveQuestionTool:
                     "type": "info_gather",
                     "answered": False,
                     "created_at": "2026-02-08T11:00:00",
-                    "cooldown_hours": 24
-                }
-            ]
+                    "cooldown_hours": 24,
+                },
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
@@ -357,24 +346,23 @@ class TestRemoveQuestionTool:
         questions_file = temp_workspace / "dashboard" / "questions.json"
         data = {
             "version": "1.0",
-            "questions": [{
-                "id": "q_001",
-                "question": "Old question?",
-                "priority": "low",
-                "type": "info_gather",
-                "answered": False,
-                "created_at": "2026-01-01T10:00:00",
-                "cooldown_hours": 24
-            }]
+            "questions": [
+                {
+                    "id": "q_001",
+                    "question": "Old question?",
+                    "priority": "low",
+                    "type": "info_gather",
+                    "answered": False,
+                    "created_at": "2026-01-01T10:00:00",
+                    "cooldown_hours": 24,
+                }
+            ],
         }
         questions_file.write_text(json.dumps(data), encoding="utf-8")
 
         tool = RemoveQuestionTool(temp_workspace)
 
-        result = await tool.execute(
-            question_id="q_001",
-            reason="obsolete - related task completed"
-        )
+        result = await tool.execute(question_id="q_001", reason="obsolete - related task completed")
 
         assert "✅" in result
         assert "obsolete - related task completed" in result

@@ -16,6 +16,7 @@ from nanobot.channels.telegram import TelegramNotificationManager
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def policy():
     return NotificationPolicyConfig(
@@ -36,6 +37,7 @@ def manager(policy):
 # should_send — basic
 # ---------------------------------------------------------------------------
 
+
 def test_should_send_normal_message(manager):
     """Normal message outside quiet hours should be sendable."""
     with patch("nanobot.channels.telegram.datetime") as mock_dt:
@@ -47,6 +49,7 @@ def test_should_send_normal_message(manager):
 # ---------------------------------------------------------------------------
 # Quiet hours
 # ---------------------------------------------------------------------------
+
 
 def test_quiet_hours_blocks_medium_priority(manager):
     """Medium priority messages should be blocked during quiet hours."""
@@ -80,6 +83,7 @@ def test_quiet_hours_wraps_midnight(manager):
 # ---------------------------------------------------------------------------
 # Dedup
 # ---------------------------------------------------------------------------
+
 
 def test_duplicate_message_blocked(manager):
     """Same message sent twice within dedup window should be blocked."""
@@ -129,6 +133,7 @@ def test_dedup_blocks_high_priority_too(manager):
 # Daily limit
 # ---------------------------------------------------------------------------
 
+
 def test_daily_limit_blocks(manager):
     """Messages should be blocked after daily limit is reached."""
     with patch("nanobot.channels.telegram.datetime") as mock_dt:
@@ -155,6 +160,7 @@ def test_daily_limit_allows_high_priority(manager):
 # ---------------------------------------------------------------------------
 # Batch
 # ---------------------------------------------------------------------------
+
 
 def test_batch_add_and_flush(manager):
     """add_to_batch + flush_batch returns formatted message."""
@@ -207,6 +213,7 @@ def test_batch_multiple_format(manager):
 # ---------------------------------------------------------------------------
 # _msg_hash
 # ---------------------------------------------------------------------------
+
 
 def test_msg_hash_consistent(manager):
     """Same message produces same hash."""

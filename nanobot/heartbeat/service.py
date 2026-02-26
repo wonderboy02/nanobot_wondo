@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Coroutine, Optional
+from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 if TYPE_CHECKING:
     from nanobot.dashboard.storage import StorageBackend
-    from nanobot.google.calendar import GoogleCalendarClient
 
 from loguru import logger
 
@@ -55,16 +54,11 @@ class HeartbeatService:
         on_heartbeat: Callable[[str], Coroutine[Any, Any, str]] | None = None,
         interval_s: int = DEFAULT_HEARTBEAT_INTERVAL_S,
         enabled: bool = True,
-        provider: Optional[Any] = None,  # LLMProvider
-        model: Optional[str] = None,
-        cron_service: Optional[Any] = None,  # CronService
-        bus: Optional[Any] = None,  # MessageBus
+        provider: Any | None = None,  # LLMProvider
+        model: str | None = None,
         storage_backend: "StorageBackend | None" = None,
-        send_callback: Optional[Any] = None,
-        notification_chat_id: Optional[str] = None,
-        gcal_client: "GoogleCalendarClient | None" = None,
-        gcal_timezone: str = "Asia/Seoul",
-        gcal_duration_minutes: int = 30,
+        processing_lock: asyncio.Lock | None = None,
+        scheduler: Any | None = None,  # ReconciliationScheduler
     ):
         self.workspace = workspace
         self.on_heartbeat = on_heartbeat
@@ -72,14 +66,9 @@ class HeartbeatService:
         self.enabled = enabled
         self.provider = provider
         self.model = model
-        self.cron_service = cron_service
-        self.bus = bus
         self.storage_backend = storage_backend
-        self.send_callback = send_callback
-        self.notification_chat_id = notification_chat_id
-        self.gcal_client = gcal_client
-        self.gcal_timezone = gcal_timezone
-        self.gcal_duration_minutes = gcal_duration_minutes
+        self._processing_lock = processing_lock
+        self.scheduler = scheduler
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -175,15 +164,14 @@ class HeartbeatService:
                 storage_backend=backend,
                 provider=self.provider,
                 model=self.model,
-                cron_service=self.cron_service,
-                bus=self.bus,
-                send_callback=self.send_callback,
-                notification_chat_id=self.notification_chat_id,
-                gcal_client=self.gcal_client,
-                gcal_timezone=self.gcal_timezone,
-                gcal_duration_minutes=self.gcal_duration_minutes,
+                scheduler=self.scheduler,
             )
-            await worker.run_cycle()
+
+            if self._processing_lock:
+                async with self._processing_lock:
+                    await worker.run_cycle()
+            else:
+                await worker.run_cycle()
             logger.debug("Worker cycle completed successfully")
 
         except ImportError:

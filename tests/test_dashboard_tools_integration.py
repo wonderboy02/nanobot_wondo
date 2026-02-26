@@ -125,21 +125,16 @@ def test_dashboard_files_protected(temp_workspace):
     print(f"✅ Dashboard files protected: {result[:100]}")
 
 
-def test_notification_tools_registered_with_cron(temp_workspace):
-    """Notification tools are registered when cron_service is provided."""
-    from unittest.mock import Mock
-    from nanobot.cron.service import CronService
-
+def test_notification_tools_always_registered(temp_workspace):
+    """Notification tools are always registered (no cron_service required)."""
     bus = MessageBus()
     provider = LiteLLMProvider(api_key="test")
-    cron = Mock(spec=CronService)
 
     agent = AgentLoop(
         bus=bus,
         provider=provider,
         workspace=temp_workspace,
         model="gpt-3.5-turbo",
-        cron_service=cron,
     )
 
     tool_names = agent.tools.tool_names
@@ -147,71 +142,6 @@ def test_notification_tools_registered_with_cron(temp_workspace):
     assert "update_notification" in tool_names
     assert "cancel_notification" in tool_names
     assert "list_notifications" in tool_names
-
-
-def test_notification_tools_receive_gcal_params(temp_workspace):
-    """Notification tools receive gcal_client and send_callback when configured."""
-    from unittest.mock import Mock
-    from nanobot.cron.service import CronService
-
-    bus = MessageBus()
-    provider = LiteLLMProvider(api_key="test")
-    cron = Mock(spec=CronService)
-    mock_gcal = Mock()
-
-    agent = AgentLoop(
-        bus=bus,
-        provider=provider,
-        workspace=temp_workspace,
-        model="gpt-3.5-turbo",
-        cron_service=cron,
-        notification_chat_id="test_chat_123",
-    )
-    # Inject gcal client after construction (avoids real Google auth)
-    agent._gcal_client = mock_gcal
-
-    # Re-register tools to pick up the gcal client
-    agent.tools = __import__(
-        "nanobot.agent.tools.registry", fromlist=["ToolRegistry"]
-    ).ToolRegistry()
-    agent._register_default_tools()
-
-    schedule = agent.tools.get("schedule_notification")
-    update = agent.tools.get("update_notification")
-    cancel = agent.tools.get("cancel_notification")
-
-    assert schedule._gcal_client is mock_gcal
-    assert update._gcal_client is mock_gcal
-    assert cancel._gcal_client is mock_gcal
-    assert schedule._notification_chat_id == "test_chat_123"
-    assert cancel._notification_chat_id == "test_chat_123"
-
-
-def test_notification_tools_set_context_propagation(temp_workspace):
-    """set_context propagates to all 3 notification tools including cancel."""
-    from unittest.mock import Mock
-    from nanobot.cron.service import CronService
-
-    bus = MessageBus()
-    provider = LiteLLMProvider(api_key="test")
-    cron = Mock(spec=CronService)
-
-    agent = AgentLoop(
-        bus=bus,
-        provider=provider,
-        workspace=temp_workspace,
-        model="gpt-3.5-turbo",
-        cron_service=cron,
-    )
-
-    # Simulate set_context like _process_message does
-    for name in ("schedule_notification", "update_notification", "cancel_notification"):
-        tool = agent.tools.get(name)
-        assert tool is not None, f"{name} not registered"
-        assert hasattr(tool, "set_context"), f"{name} missing set_context"
-        tool.set_context("telegram", "chat_999")
-        assert tool._chat_id == "chat_999"
-        assert tool._channel == "telegram"
 
 
 def test_gcal_public_properties(temp_workspace):

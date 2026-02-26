@@ -245,18 +245,13 @@ def notification_to_notion(n: dict) -> dict[str, Any]:
         "Status": _select(_capitalize(n.get("status", "pending"))),
         "RelatedTaskID": _rich_text(n.get("related_task_id") or ""),
         "RelatedQuestionID": _rich_text(n.get("related_question_id") or ""),
-        "CronJobID": _rich_text(n.get("cron_job_id") or ""),
         "Context": _rich_text(n.get("context", "")),
         "CreatedBy": _select(n.get("created_by", "worker")),
         "CreatedAt": _date(n.get("created_at")),
         "DeliveredAt": _date(n.get("delivered_at")),
         "CancelledAt": _date(n.get("cancelled_at")),
     }
-    # Only include GCalEventID when set — avoids Notion API error
-    # if the property hasn't been added to the database yet.
-    gcal_event_id = n.get("gcal_event_id")
-    if gcal_event_id:
-        props["GCalEventID"] = _rich_text(gcal_event_id)
+    props["GCalEventID"] = _rich_text(n.get("gcal_event_id") or "")
     return props
 
 
@@ -274,7 +269,6 @@ def notion_to_notification(page: dict) -> dict[str, Any]:
         "status": _lower(_extract_select(_get_prop(props, "Status")) or "pending"),
         "related_task_id": _extract_rich_text(_get_prop(props, "RelatedTaskID")) or None,
         "related_question_id": _extract_rich_text(_get_prop(props, "RelatedQuestionID")) or None,
-        "cron_job_id": _extract_rich_text(_get_prop(props, "CronJobID")) or None,
         "context": _extract_rich_text(_get_prop(props, "Context")),
         "created_by": _extract_select(_get_prop(props, "CreatedBy")) or "worker",
         "created_at": _extract_date(_get_prop(props, "CreatedAt")) or "",

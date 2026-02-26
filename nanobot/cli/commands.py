@@ -1,5 +1,7 @@
 """CLI commands for nanobot."""
 
+from __future__ import annotations
+
 import asyncio
 from pathlib import Path
 
@@ -264,60 +266,17 @@ def gateway(
     )
 
     # Set cron callback (needs agent)
-    # DESIGN: Notification delivery goes through agent.process_direct (LLM turn).
-    # This means LLM failure/delay can affect notification delivery.
-    # Intentional: allows agent to enrich the notification with context.
-    # For raw passthrough, the deliver=True path below sends directly via bus.
-    async def _load_notifications_data() -> dict:
-        """Load notifications from Notion backend or JSON file."""
-        if agent.storage_backend:
-            return await asyncio.to_thread(agent.storage_backend.load_notifications)
-        notif_path = config.workspace_path / "dashboard" / "notifications.json"
-        if notif_path.exists():
-            import json
-
-            return json.loads(notif_path.read_text(encoding="utf-8"))
-        return {"version": "1.0", "notifications": []}
-
-    async def _save_notifications_data(data: dict) -> bool:
-        """Save notifications to Notion backend or JSON file. Returns success."""
-        if agent.storage_backend:
-            ok, _msg = await asyncio.to_thread(agent.storage_backend.save_notifications, data)
-            return ok
-        else:
-            notif_path = config.workspace_path / "dashboard" / "notifications.json"
-            import json
-
-            notif_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-            return True
-
+    # Notification delivery is now handled by ReconciliationScheduler.
+    # Cron jobs are for non-notification scheduled tasks only.
     async def on_cron_job(job: CronJob) -> str | None:
         """Execute a cron job through the agent."""
-        # Notification-specific: guard + mark delivered
-        is_notification = job.name.startswith("notification_")
-        notif_id = job.name.removeprefix("notification_") if is_notification else None
-
-        if is_notification:
-            data = await _load_notifications_data()
-            notifs = data.get("notifications", [])
-            notif = next((n for n in notifs if n.get("id") == notif_id), None)
-            if notif is None:
-                from loguru import logger
-
-                logger.warning(f"Notification {notif_id} not found, skipping cron delivery")
-                return None
-            if notif.get("status") in ("cancelled", "delivered"):
-                from loguru import logger
-
-                logger.info(f"Skipping {notif['status']} notification cron: {notif_id}")
-                return None
-
         response = await agent.process_direct(
             job.payload.message,
             session_key=f"cron:{job.id}",
             channel=job.payload.channel or "cli",
             chat_id=job.payload.to or "direct",
         )
+
         if job.payload.deliver and job.payload.to:
             from nanobot.bus.events import OutboundMessage
 
@@ -328,30 +287,6 @@ def gateway(
                     content=response or "",
                 )
             )
-
-        # Mark notification as delivered (prevents duplicate from orphan crons)
-        if is_notification:
-            try:
-                from datetime import datetime
-
-                data = await _load_notifications_data()
-                notifs = data.get("notifications", [])
-                for n in notifs:
-                    if n.get("id") == notif_id:
-                        n["status"] = "delivered"
-                        n["delivered_at"] = datetime.now().isoformat()
-                        break
-                ok = await _save_notifications_data(data)
-                if not ok:
-                    from loguru import logger
-
-                    logger.warning(
-                        f"Failed to persist delivered status for notification {notif_id}"
-                    )
-            except Exception:
-                from loguru import logger
-
-                logger.warning(f"Failed to mark notification {notif_id} as delivered")
 
         return response
 
@@ -373,14 +308,9 @@ def gateway(
         enabled=True,
         provider=provider,
         model=worker_model,
-        cron_service=cron,
-        bus=bus,
         storage_backend=agent.storage_backend,
-        send_callback=bus.publish_outbound,
-        notification_chat_id=notification_chat_id,
-        gcal_client=agent.gcal_client,
-        gcal_timezone=agent.gcal_timezone,
-        gcal_duration_minutes=agent.gcal_duration_minutes,
+        processing_lock=agent.processing_lock,
+        scheduler=agent.scheduler,
     )
 
     # Create channel manager

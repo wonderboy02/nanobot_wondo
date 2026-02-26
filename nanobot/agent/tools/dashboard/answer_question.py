@@ -35,17 +35,13 @@ class AnswerQuestionTool(BaseDashboardTool):
         }
 
     @with_dashboard_lock
-    async def execute(
-        self, question_id: str, answer: str, **kwargs: Any
-    ) -> str:
+    async def execute(self, question_id: str, answer: str) -> str:
         try:
             # Load existing questions
             questions_data = await self._load_questions()
 
             # Find question
-            question, index = self._find_question(
-                questions_data["questions"], question_id
-            )
+            question, index = self._find_question(questions_data["questions"], question_id)
 
             if question is None:
                 return f"Error: Question {question_id} not found"

@@ -19,7 +19,6 @@ from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.filesystem import ReadFileTool, WriteFileTool, EditFileTool, ListDirTool
 from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.web import WebSearchTool, WebFetchTool
-from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.subagent import SubagentManager
 from nanobot.session.manager import SessionManager
@@ -35,7 +34,7 @@ class AgentLoop:
 
     It:
     1. Receives messages from the bus
-    2. Builds context with history, memory, skills
+    2. Builds context with dashboard state, memory, skills (stateless)
     3. Calls the LLM
     4. Executes tool calls
     5. Sends responses back
@@ -110,11 +109,16 @@ class AgentLoop:
         self._configure_storage_backend()
         # Wire storage backend to context builder so dashboard summary uses Notion
         self.context.storage_backend = self._storage_backend
+
+        # Processing lock shared with Heartbeat/Scheduler
+        self._processing_lock = asyncio.Lock()
+        self._scheduler = self._create_scheduler()
+
         self._register_default_tools()
 
     @property
     def storage_backend(self):
-        """Public access to the configured storage backend (or None for JSON fallback)."""
+        """Public access to the configured storage backend."""
         return self._storage_backend
 
     @property
@@ -132,6 +136,48 @@ class AgentLoop:
         """Google Calendar default event duration in minutes."""
         return self._gcal_duration_minutes
 
+    @property
+    def processing_lock(self) -> asyncio.Lock:
+        """Shared processing lock (used by Heartbeat and Scheduler)."""
+        return self._processing_lock
+
+    @property
+    def scheduler(self):
+        """Public access to the ReconciliationScheduler (or None)."""
+        return self._scheduler
+
+    def _create_scheduler(self):
+        """Create ReconciliationScheduler for notification delivery.
+
+        Always set in gateway mode (both Notion and JSON backends).
+        Returns None only if storage backend initialization failed.
+        """
+        if not self._storage_backend:
+            return None
+
+        try:
+            from nanobot.dashboard.reconciler import (
+                NotificationReconciler,
+                ReconciliationScheduler,
+            )
+
+            reconciler = NotificationReconciler(
+                storage_backend=self._storage_backend,
+                gcal_client=self._gcal_client,
+                gcal_timezone=self._gcal_timezone,
+                gcal_duration_minutes=self._gcal_duration_minutes,
+                default_chat_id=self._notification_chat_id,
+                default_channel="telegram",
+            )
+            return ReconciliationScheduler(
+                reconciler=reconciler,
+                send_callback=self.bus.publish_outbound,
+                processing_lock=self._processing_lock,
+            )
+        except ImportError:
+            logger.info("Reconciler not available (optional dependency)")
+            return None
+
     async def _precompute_dashboard(self) -> None:
         """Precompute dashboard summary off the event loop when Notion backend is active."""
         if self._storage_backend:
@@ -148,9 +194,10 @@ class AgentLoop:
         """Configure the storage backend based on Notion config.
 
         If Notion is enabled and configured, uses NotionStorageBackend.
-        Otherwise falls back to JsonStorageBackend (default).
+        All fallback paths create JsonStorageBackend so that the scheduler
+        and tools always have a working backend.
         """
-        from nanobot.agent.tools.dashboard.base import BaseDashboardTool
+        from nanobot.dashboard.storage import JsonStorageBackend
 
         if self.notion_config and self.notion_config.enabled and self.notion_config.token:
             # Validate that core DB IDs are configured
@@ -159,12 +206,12 @@ class AgentLoop:
                 logger.warning(
                     "Notion enabled but core DB IDs (tasks/questions) missing, using JSON fallback"
                 )
-                BaseDashboardTool.configure_backend(None)
                 self._notion_setup_warning = (
                     "⚠️ Notion enabled but tasks/questions DB IDs are missing. "
                     "Run `nanobot notion validate` to check your config. "
                     "Using local JSON fallback."
                 )
+                self._storage_backend = JsonStorageBackend(self.workspace)
                 return
 
             try:
@@ -177,19 +224,17 @@ class AgentLoop:
                     databases=self.notion_config.databases,
                     cache_ttl_s=self.notion_config.cache_ttl_s,
                 )
-                BaseDashboardTool.configure_backend(backend)
                 self._storage_backend = backend
                 logger.info("Notion storage backend configured")
             except Exception as e:
                 logger.error(f"Failed to configure Notion backend: {e}, using JSON fallback")
-                BaseDashboardTool.configure_backend(None)
                 self._notion_setup_warning = (
                     "⚠️ Notion backend failed to initialize. "
                     "Using local JSON fallback. Check your Notion config."
                 )
+                self._storage_backend = JsonStorageBackend(self.workspace)
         else:
-            # Explicitly reset to avoid stale backend from previous AgentLoop instance
-            BaseDashboardTool.configure_backend(None)
+            self._storage_backend = JsonStorageBackend(self.workspace)
             logger.debug("Using JSON storage backend (Notion not configured)")
 
     def _register_default_tools(self) -> None:
@@ -214,10 +259,6 @@ class AgentLoop:
         self.tools.register(WebSearchTool(api_key=self.brave_api_key))
         self.tools.register(WebFetchTool())
 
-        # Message tool
-        message_tool = MessageTool(send_callback=self.bus.publish_outbound)
-        self.tools.register(message_tool)
-
         # Spawn tool (for subagents)
         spawn_tool = SpawnTool(manager=self.subagents)
         self.tools.register(spawn_tool)
@@ -238,46 +279,33 @@ class AgentLoop:
             ListNotificationsTool,
         )
 
-        self.tools.register(CreateTaskTool(workspace=self.workspace))
-        self.tools.register(UpdateTaskTool(workspace=self.workspace))
-        self.tools.register(AnswerQuestionTool(workspace=self.workspace))
-        self.tools.register(CreateQuestionTool(workspace=self.workspace))
-        self.tools.register(UpdateQuestionTool(workspace=self.workspace))
-        self.tools.register(RemoveQuestionTool(workspace=self.workspace))
-        self.tools.register(ArchiveTaskTool(workspace=self.workspace))
-        self.tools.register(SaveInsightTool(workspace=self.workspace))
+        self.tools.register(CreateTaskTool(self.workspace, self._storage_backend))
+        self.tools.register(UpdateTaskTool(self.workspace, self._storage_backend))
+        self.tools.register(AnswerQuestionTool(self.workspace, self._storage_backend))
+        self.tools.register(CreateQuestionTool(self.workspace, self._storage_backend))
+        self.tools.register(UpdateQuestionTool(self.workspace, self._storage_backend))
+        self.tools.register(RemoveQuestionTool(self.workspace, self._storage_backend))
+        self.tools.register(ArchiveTaskTool(self.workspace, self._storage_backend))
+        self.tools.register(SaveInsightTool(self.workspace, self._storage_backend))
 
-        # Notification tools (user explicit requests)
-        # Worker handles automatic notifications, Main handles user requests like "remind me tomorrow"
-        if self.cron_service:
-            notif_kwargs = dict(
-                gcal_client=self._gcal_client,
-                send_callback=self.bus.publish_outbound,
-                notification_chat_id=self._notification_chat_id,
-                gcal_timezone=self._gcal_timezone,
-                gcal_duration_minutes=self._gcal_duration_minutes,
-            )
-            self.tools.register(
-                ScheduleNotificationTool(
-                    workspace=self.workspace, cron_service=self.cron_service, **notif_kwargs
-                )
-            )
-            self.tools.register(
-                UpdateNotificationTool(
-                    workspace=self.workspace, cron_service=self.cron_service, **notif_kwargs
-                )
-            )
-            self.tools.register(
-                CancelNotificationTool(
-                    workspace=self.workspace, cron_service=self.cron_service, **notif_kwargs
-                )
-            )
-            self.tools.register(ListNotificationsTool(workspace=self.workspace))
+        # Notification tools (always registered — ledger-only, no cron dependency)
+        self.tools.register(ScheduleNotificationTool(self.workspace, self._storage_backend))
+        self.tools.register(UpdateNotificationTool(self.workspace, self._storage_backend))
+        self.tools.register(CancelNotificationTool(self.workspace, self._storage_backend))
+        self.tools.register(ListNotificationsTool(self.workspace, self._storage_backend))
 
     async def run(self) -> None:
         """Run the agent loop, processing messages from the bus."""
         self._running = True
         logger.info("Agent loop started")
+
+        # Initial reconciliation pass (deliver overdue notifications)
+        if self._scheduler:
+            try:
+                async with self._processing_lock:
+                    await self._scheduler.trigger()
+            except Exception as e:
+                logger.warning(f"Initial scheduler trigger failed: {e}")
 
         while self._running:
             try:
@@ -305,6 +333,8 @@ class AgentLoop:
     def stop(self) -> None:
         """Stop the agent loop and clean up resources."""
         self._running = False
+        if self._scheduler:
+            self._scheduler.stop()
         if self._storage_backend:
             try:
                 self._storage_backend.close()
@@ -318,17 +348,28 @@ class AgentLoop:
         logger.info("Agent loop stopping")
 
     async def _process_message(self, msg: InboundMessage) -> OutboundMessage | None:
-        """
-        Process a single inbound message.
+        """Process a single inbound message under _processing_lock.
 
-        Args:
-            msg: The inbound message to process.
+        Acquires the shared processing lock for the entire duration so that
+        Heartbeat/Worker cannot run concurrently.  Triggers reconciliation
+        (GCal sync + delivery) after the message is handled.
+        """
+        async with self._processing_lock:
+            response = await self._handle_message(msg)
+
+            if self._scheduler:
+                try:
+                    await self._scheduler.trigger()
+                except Exception as e:
+                    logger.warning(f"Post-message scheduler trigger failed: {e}")
+
+            return response
+
+    async def _handle_message(self, msg: InboundMessage) -> OutboundMessage | None:
+        """Actual message processing logic (called under _processing_lock).
 
         Returns:
             The response message, or None if no response needed.
-            Returns None in two cases:
-            1. Silent mode: Agent returns "SILENT" (Dashboard updates only)
-            2. System messages: Internal routing messages
         """
         # Handle system messages (subagent announces)
         # The chat_id contains the original "channel:chat_id" to route back to
@@ -357,23 +398,9 @@ class AgentLoop:
         session = self.sessions.get_or_create(msg.session_key)
 
         # Update tool contexts
-        message_tool = self.tools.get("message")
-        if isinstance(message_tool, MessageTool):
-            message_tool.set_context(msg.channel, msg.chat_id)
-
         spawn_tool = self.tools.get("spawn")
         if isinstance(spawn_tool, SpawnTool):
             spawn_tool.set_context(msg.channel, msg.chat_id)
-
-        # Set context for notification tools (so they know where to deliver)
-        for notif_tool_name in (
-            "schedule_notification",
-            "update_notification",
-            "cancel_notification",
-        ):
-            notif_tool = self.tools.get(notif_tool_name)
-            if notif_tool and hasattr(notif_tool, "set_context"):
-                notif_tool.set_context(msg.channel, msg.chat_id)
 
         # Handle pre-parsed question answers from numbered mapping
         answer_results: list[str] = []
@@ -408,7 +435,7 @@ class AgentLoop:
 
         await self._precompute_dashboard()
 
-        # Build initial messages (use get_history for LLM-formatted messages)
+        # Build messages (history param kept for session logging, not used in LLM context)
         messages = self.context.build_messages(
             history=session.get_history(),
             current_message=effective_content,
@@ -461,7 +488,7 @@ class AgentLoop:
                 break
 
         if final_content is None:
-            final_content = "I've completed processing but have no response to give."
+            final_content = SILENT_RESPONSE_KEYWORD
 
         # Check for Silent mode
         is_silent = final_content.strip().upper() == SILENT_RESPONSE_KEYWORD
@@ -477,9 +504,13 @@ class AgentLoop:
         # Silent mode: send 👍 reaction instead of a text message
         if is_silent:
             logger.debug(f"Silent mode: Dashboard updated without response")
-            return self._reaction_message(msg, "👍")
+            response_msg = self._reaction_message(msg, "👍")
+        else:
+            response_msg = OutboundMessage(
+                channel=msg.channel, chat_id=msg.chat_id, content=final_content
+            )
 
-        return OutboundMessage(channel=msg.channel, chat_id=msg.chat_id, content=final_content)
+        return response_msg
 
     @staticmethod
     def _reaction_message(msg: InboundMessage, emoji: str) -> OutboundMessage | None:
@@ -521,26 +552,13 @@ class AgentLoop:
         session = self.sessions.get_or_create(session_key)
 
         # Update tool contexts
-        message_tool = self.tools.get("message")
-        if isinstance(message_tool, MessageTool):
-            message_tool.set_context(origin_channel, origin_chat_id)
-
         spawn_tool = self.tools.get("spawn")
         if isinstance(spawn_tool, SpawnTool):
             spawn_tool.set_context(origin_channel, origin_chat_id)
 
-        for notif_tool_name in (
-            "schedule_notification",
-            "update_notification",
-            "cancel_notification",
-        ):
-            notif_tool = self.tools.get(notif_tool_name)
-            if notif_tool and hasattr(notif_tool, "set_context"):
-                notif_tool.set_context(origin_channel, origin_chat_id)
-
         await self._precompute_dashboard()
 
-        # Build messages with the announce content
+        # Build messages (history param kept for session logging, not used in LLM context)
         messages = self.context.build_messages(
             history=session.get_history(),
             current_message=msg.content,
@@ -584,12 +602,19 @@ class AgentLoop:
                 break
 
         if final_content is None:
-            final_content = "Background task completed."
+            final_content = SILENT_RESPONSE_KEYWORD
+
+        is_silent = final_content.strip().upper() == SILENT_RESPONSE_KEYWORD
 
         # Save to session (mark as system message in history)
         session.add_message("user", f"[System: {msg.sender_id}] {msg.content}")
-        session.add_message("assistant", final_content)
+        session.add_message(
+            "assistant", "[Dashboard updated silently]" if is_silent else final_content
+        )
         self.sessions.save(session)
+
+        if is_silent:
+            return None
 
         return OutboundMessage(
             channel=origin_channel, chat_id=origin_chat_id, content=final_content

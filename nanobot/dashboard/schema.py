@@ -122,7 +122,6 @@ class Notification(BaseModel):
     related_task_id: Optional[str] = None
     related_question_id: Optional[str] = None
     status: Literal["pending", "delivered", "cancelled"] = "pending"
-    cron_job_id: Optional[str] = None
     created_at: str  # ISO datetime
     delivered_at: Optional[str] = None  # ISO datetime
     cancelled_at: Optional[str] = None  # ISO datetime

@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Enable DEBUG logging
-logging.basicConfig(level=logging.DEBUG, format='%(levelname)s: %(message)s')
+logging.basicConfig(level=logging.DEBUG, format="%(levelname)s: %(message)s")
 
 from nanobot.agent.loop import AgentLoop
 from nanobot.bus.queue import MessageBus
@@ -45,12 +45,11 @@ async def test_e2e_agent_dashboard():
     # Initialize Dashboard (clean state)
     print("[SETUP] Initializing Dashboard...")
     (dashboard_path / "tasks.json").write_text(
-        json.dumps({"version": "1.0", "tasks": []}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+        json.dumps({"version": "1.0", "tasks": []}, indent=2, ensure_ascii=False), encoding="utf-8"
     )
     (dashboard_path / "questions.json").write_text(
         json.dumps({"version": "1.0", "questions": []}, indent=2, ensure_ascii=False),
-        encoding="utf-8"
+        encoding="utf-8",
     )
 
     # Create Agent
@@ -61,7 +60,7 @@ async def test_e2e_agent_dashboard():
     # Use LiteLLM provider (supports all models)
     provider = LiteLLMProvider(
         api_key="dummy",  # Will use environment variables
-        api_base=None
+        api_base=None,
     )
 
     agent_loop = AgentLoop(
@@ -69,7 +68,7 @@ async def test_e2e_agent_dashboard():
         provider=provider,
         workspace=workspace,
         model=config.agents.defaults.model,  # Use model from config
-        max_iterations=10
+        max_iterations=10,
     )
 
     # Test message
@@ -83,6 +82,7 @@ async def test_e2e_agent_dashboard():
     except Exception as e:
         print(f"[ERROR] Agent failed: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 

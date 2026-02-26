@@ -2,12 +2,10 @@
 
 import json
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from nanobot.bus.queue import MessageBus
-from nanobot.cron.service import CronService
 from nanobot.dashboard.storage import JsonStorageBackend
 from nanobot.dashboard.worker import WorkerAgent
 from nanobot.providers.base import LLMResponse, ToolCallRequest
@@ -57,19 +55,11 @@ async def test_environment(tmp_path):
 
     # Mock components
     mock_provider = AsyncMock()
-    mock_bus = Mock(spec=MessageBus)
-
-    # Mock cron service
-    cron_store_path = tmp_path / "cron" / "jobs.json"
-    cron_store_path.parent.mkdir(parents=True)
-    cron_service = CronService(cron_store_path)
 
     return {
         "workspace": workspace,
         "dashboard_path": dashboard_path,
         "provider": mock_provider,
-        "bus": mock_bus,
-        "cron_service": cron_service,
     }
 
 
@@ -82,8 +72,6 @@ class TestNotificationWorkflow:
         workspace = test_environment["workspace"]
         dashboard_path = test_environment["dashboard_path"]
         provider = test_environment["provider"]
-        cron_service = test_environment["cron_service"]
-        bus = test_environment["bus"]
 
         # Create task with deadline tomorrow
         tomorrow = (datetime.now() + timedelta(days=1)).isoformat()
@@ -148,8 +136,6 @@ class TestNotificationWorkflow:
             storage_backend=backend,
             provider=provider,
             model="test-model",
-            cron_service=cron_service,
-            bus=bus,
         )
 
         # Run Worker cycle
@@ -166,12 +152,6 @@ class TestNotificationWorkflow:
         assert notif["priority"] == "high"
         assert notif["related_task_id"] == "task_001"
         assert notif["status"] == "pending"
-        assert notif["cron_job_id"] is not None
-
-        # Verify cron job created
-        jobs = cron_service.list_jobs()
-        assert len(jobs) == 1
-        assert jobs[0].payload.message == notif["message"]
 
     @pytest.mark.asyncio
     async def test_worker_avoids_duplicate_notifications(self, test_environment):
@@ -179,8 +159,6 @@ class TestNotificationWorkflow:
         workspace = test_environment["workspace"]
         dashboard_path = test_environment["dashboard_path"]
         provider = test_environment["provider"]
-        cron_service = test_environment["cron_service"]
-        bus = test_environment["bus"]
 
         # Create task with deadline
         tomorrow = (datetime.now() + timedelta(days=1)).isoformat()
@@ -224,7 +202,6 @@ class TestNotificationWorkflow:
                     "priority": "high",
                     "related_task_id": "task_001",
                     "status": "pending",
-                    "cron_job_id": "cron_001",
                     "created_at": datetime.now().isoformat(),
                     "created_by": "worker",
                 }
@@ -259,8 +236,6 @@ class TestNotificationWorkflow:
             storage_backend=backend,
             provider=provider,
             model="test-model",
-            cron_service=cron_service,
-            bus=bus,
         )
 
         # Run Worker cycle
@@ -277,8 +252,6 @@ class TestNotificationWorkflow:
         workspace = test_environment["workspace"]
         dashboard_path = test_environment["dashboard_path"]
         provider = test_environment["provider"]
-        cron_service = test_environment["cron_service"]
-        bus = test_environment["bus"]
 
         # Create blocked task
         blocked_since = (datetime.now() - timedelta(days=2, hours=1)).isoformat()
@@ -341,8 +314,6 @@ class TestNotificationWorkflow:
             storage_backend=backend,
             provider=provider,
             model="test-model",
-            cron_service=cron_service,
-            bus=bus,
         )
 
         await worker.run_cycle()
@@ -363,8 +334,6 @@ class TestNotificationWorkflow:
         workspace = test_environment["workspace"]
         dashboard_path = test_environment["dashboard_path"]
         provider = test_environment["provider"]
-        cron_service = test_environment["cron_service"]
-        bus = test_environment["bus"]
 
         # Create completed task
         tasks_file = dashboard_path / "tasks.json"
@@ -439,8 +408,6 @@ class TestNotificationWorkflow:
             storage_backend=backend,
             provider=provider,
             model="test-model",
-            cron_service=cron_service,
-            bus=bus,
         )
 
         await worker.run_cycle()
@@ -455,8 +422,6 @@ class TestNotificationWorkflow:
         workspace = test_environment["workspace"]
         dashboard_path = test_environment["dashboard_path"]
         provider = test_environment["provider"]
-        cron_service = test_environment["cron_service"]
-        bus = test_environment["bus"]
 
         # Create completed task
         tasks_file = dashboard_path / "tasks.json"
@@ -499,7 +464,6 @@ class TestNotificationWorkflow:
                     "priority": "high",
                     "related_task_id": "task_004",
                     "status": "pending",
-                    "cron_job_id": "cron_002",
                     "created_at": (datetime.now() - timedelta(hours=1)).isoformat(),
                     "created_by": "worker",
                 }
@@ -533,8 +497,6 @@ class TestNotificationWorkflow:
             storage_backend=backend,
             provider=provider,
             model="test-model",
-            cron_service=cron_service,
-            bus=bus,
         )
 
         await worker.run_cycle()

@@ -14,16 +14,11 @@ from datetime import datetime
 
 def run_command(cmd, description):
     """Run command and return result."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"{description}")
-    print('='*60)
+    print("=" * 60)
 
-    result = subprocess.run(
-        cmd,
-        shell=True,
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
 
     print(result.stdout)
     if result.stderr:
@@ -35,7 +30,7 @@ def run_command(cmd, description):
 def main():
     """Main test runner."""
     print("Dashboard Test Suite")
-    print("="*60)
+    print("=" * 60)
     print()
 
     # Parse arguments
@@ -53,12 +48,14 @@ def main():
         "unit_passed": None,
         "e2e_passed": None,
         "total_passed": 0,
-        "total_failed": 0
+        "total_failed": 0,
     }
 
     # Run unit tests
     if run_unit:
-        coverage_args = "--cov=nanobot.dashboard --cov-report=html --cov-report=term" if run_coverage else ""
+        coverage_args = (
+            "--cov=nanobot.dashboard --cov-report=html --cov-report=term" if run_coverage else ""
+        )
         cmd = f"pytest tests/dashboard/unit/ -v {coverage_args}"
 
         unit_passed = run_command(cmd, "Running Unit Tests")
@@ -76,7 +73,9 @@ def main():
             print("E2E tests require LLM API key")
             print()
 
-        coverage_args = "--cov=nanobot.dashboard --cov-report=html --cov-report=term" if run_coverage else ""
+        coverage_args = (
+            "--cov=nanobot.dashboard --cov-report=html --cov-report=term" if run_coverage else ""
+        )
         cmd = f"pytest tests/dashboard/e2e/ -v -s -m e2e {coverage_args}"
 
         e2e_passed = run_command(cmd, "Running E2E Tests (requires LLM API)")
@@ -86,14 +85,13 @@ def main():
             print("\n❌ E2E tests failed")
 
     # Summary
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("Test Summary")
-    print("="*60)
+    print("=" * 60)
 
-    all_passed = all([
-        results["unit_passed"] if run_unit else True,
-        results["e2e_passed"] if run_e2e else True
-    ])
+    all_passed = all(
+        [results["unit_passed"] if run_unit else True, results["e2e_passed"] if run_e2e else True]
+    )
 
     if all_passed:
         print("✅ All tests passed!")

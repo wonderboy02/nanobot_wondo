@@ -1,6 +1,7 @@
 """Test Worker deterministic maintenance logic.
 
 Tests the Phase 1 maintenance methods that always run:
+- _enforce_consistency (field invariant checks)
 - _archive_completed_tasks
 - _reevaluate_active_status
 - _cleanup_answered_questions
@@ -835,6 +836,446 @@ async def test_cleanup_preserves_overflow_beyond_cap(test_workspace):
     for i in range(20, 25):
         assert f"q_{i}" in remaining_ids
     assert "q_open" in remaining_ids
+
+
+# ============================================================================
+# Consistency Enforcement Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_consistency_active_progress_100_gets_archived(test_workspace):
+    """R1+Archive: active + progress=100% → completed → archived."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = backend.load_tasks()
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r1",
+            "title": "Full Progress Active",
+            "status": "active",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 100, "last_update": now.isoformat()},
+        }
+    )
+    backend.save_tasks(tasks_data)
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    await worker.run_cycle()
+
+    result = backend.load_tasks()
+    task = result["tasks"][0]
+    assert task["status"] == "archived"
+    assert task["completed_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_consistency_someday_progress_100_gets_archived(test_workspace):
+    """R1+Archive: someday + progress=100% → completed → archived."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = backend.load_tasks()
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r1s",
+            "title": "Full Progress Someday",
+            "status": "someday",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 100, "last_update": now.isoformat()},
+        }
+    )
+    backend.save_tasks(tasks_data)
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    await worker.run_cycle()
+
+    result = backend.load_tasks()
+    assert result["tasks"][0]["status"] == "archived"
+
+
+@pytest.mark.asyncio
+async def test_consistency_completed_low_progress_fixed(test_workspace):
+    """R2a: completed + progress=60% → progress=100%."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = backend.load_tasks()
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r2a",
+            "title": "Completed Low Progress",
+            "status": "completed",
+            "completed_at": now.isoformat(),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 60, "last_update": now.isoformat()},
+        }
+    )
+    backend.save_tasks(tasks_data)
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    tasks_data = backend.load_tasks()
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    assert tasks_data["tasks"][0]["progress"]["percentage"] == 100
+
+
+@pytest.mark.asyncio
+async def test_consistency_completed_no_completed_at_backfilled(test_workspace):
+    """R3: completed + no completed_at → backfill."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = backend.load_tasks()
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r3",
+            "title": "Completed No Date",
+            "status": "completed",
+            "completed_at": None,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 100, "last_update": now.isoformat()},
+        }
+    )
+    backend.save_tasks(tasks_data)
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    tasks_data = backend.load_tasks()
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    assert tasks_data["tasks"][0]["completed_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_consistency_archived_no_completed_at_backfilled(test_workspace):
+    """R3: archived + no completed_at → backfill."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = {"version": "1.0", "tasks": []}
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r3a",
+            "title": "Archived No Date",
+            "status": "archived",
+            "completed_at": None,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 100, "last_update": now.isoformat()},
+        }
+    )
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    assert tasks_data["tasks"][0]["completed_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_consistency_blocked_no_note_warning_only(test_workspace):
+    """R4: blocked=true + no blocker_note → warning only, no change."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = {"version": "1.0", "tasks": []}
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r4",
+            "title": "Blocked No Note",
+            "status": "active",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {
+                "percentage": 30,
+                "last_update": now.isoformat(),
+                "blocked": True,
+                "blocker_note": "",
+            },
+        }
+    )
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    # R4 is warning-only, no data change
+    assert changed is False
+    assert tasks_data["tasks"][0]["progress"]["blocked"] is True
+
+
+@pytest.mark.asyncio
+async def test_consistency_not_blocked_with_note_cleared(test_workspace):
+    """R5: blocked=false + blocker_note → clear note."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = {"version": "1.0", "tasks": []}
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r5",
+            "title": "Not Blocked With Note",
+            "status": "active",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {
+                "percentage": 30,
+                "last_update": now.isoformat(),
+                "blocked": False,
+                "blocker_note": "old blocker reason",
+            },
+        }
+    )
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    assert tasks_data["tasks"][0]["progress"]["blocker_note"] is None
+
+
+@pytest.mark.asyncio
+async def test_consistency_active_with_completed_at_cleared(test_workspace):
+    """R6: active + completed_at → clear completed_at."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = {"version": "1.0", "tasks": []}
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r6",
+            "title": "Active With Completed At",
+            "status": "active",
+            "completed_at": now.isoformat(),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 50, "last_update": now.isoformat()},
+        }
+    )
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    assert tasks_data["tasks"][0]["completed_at"] is None
+
+
+@pytest.mark.asyncio
+async def test_consistency_r6_then_r1_re_complete_and_archive(test_workspace):
+    """R6+R1+Archive: active + completed_at + progress=100% → clear → re-complete → archive."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+    old_completed_at = (now - timedelta(days=5)).isoformat()
+
+    tasks_data = backend.load_tasks()
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r6r1",
+            "title": "Active Completed 100%",
+            "status": "active",
+            "completed_at": old_completed_at,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 100, "last_update": now.isoformat()},
+        }
+    )
+    backend.save_tasks(tasks_data)
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    await worker.run_cycle()
+
+    result = backend.load_tasks()
+    task = result["tasks"][0]
+    # Should end up archived (R6→R1→archive)
+    assert task["status"] == "archived"
+    # completed_at should be fresh (not the old one)
+    assert task["completed_at"] != old_completed_at
+    assert task["completed_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_consistency_cancelled_progress_100_preserved(test_workspace):
+    """R2b: cancelled + progress=100% → preserved (warning only)."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = {"version": "1.0", "tasks": []}
+    tasks_data["tasks"].append(
+        {
+            "id": "task_r2b",
+            "title": "Cancelled Full Progress",
+            "status": "cancelled",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 100, "last_update": now.isoformat()},
+        }
+    )
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    # R2b is warning-only (no progress change).
+    # R3 does NOT apply to cancelled (only completed/archived).
+    assert tasks_data["tasks"][0]["progress"]["percentage"] == 100
+    assert tasks_data["tasks"][0]["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_consistency_normal_active_no_change(test_workspace):
+    """Normal active task with consistent data → no change."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = {"version": "1.0", "tasks": []}
+    tasks_data["tasks"].append(
+        {
+            "id": "task_ok",
+            "title": "Normal Task",
+            "status": "active",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 50, "last_update": now.isoformat()},
+        }
+    )
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is False
+
+
+@pytest.mark.asyncio
+async def test_consistency_multiple_issues_all_fixed(test_workspace):
+    """Task with multiple inconsistencies should get all fixed."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    # active + completed_at + blocker_note without blocked → R6 + R5
+    tasks_data = {"version": "1.0", "tasks": []}
+    tasks_data["tasks"].append(
+        {
+            "id": "task_multi",
+            "title": "Multi Issue",
+            "status": "active",
+            "completed_at": now.isoformat(),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {
+                "percentage": 50,
+                "last_update": now.isoformat(),
+                "blocked": False,
+                "blocker_note": "old note",
+            },
+        }
+    )
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    task = tasks_data["tasks"][0]
+    assert task["completed_at"] is None  # R6
+    assert task["progress"]["blocker_note"] is None  # R5
+
+
+@pytest.mark.asyncio
+async def test_consistency_error_isolation(test_workspace):
+    """Error in one task should not block processing of others."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    tasks_data = {"version": "1.0", "tasks": []}
+    # Task 1: will cause error (progress is a string instead of dict)
+    tasks_data["tasks"].append(
+        {
+            "id": "task_bad",
+            "title": "Bad Task",
+            "status": "completed",
+            "completed_at": None,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": "invalid",
+        }
+    )
+    # Task 2: normal task that should be fixed
+    tasks_data["tasks"].append(
+        {
+            "id": "task_good",
+            "title": "Good Task",
+            "status": "completed",
+            "completed_at": None,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "progress": {"percentage": 80, "last_update": now.isoformat()},
+        }
+    )
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    # Good task should be fixed (R3: backfill completed_at, R2a: progress→100%)
+    good_task = tasks_data["tasks"][1]
+    assert good_task["completed_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_consistency_empty_tasks_returns_false(test_workspace):
+    """Empty tasks list should return False."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency({"version": "1.0", "tasks": []})
+
+    assert changed is False
 
 
 if __name__ == "__main__":

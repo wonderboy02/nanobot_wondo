@@ -50,14 +50,12 @@ def get_dashboard_summary(
             questions_data = {}
     else:
         from nanobot.dashboard.storage import load_json_file
+
         tasks_data = load_json_file(dashboard_path / "tasks.json")
         questions_data = load_json_file(dashboard_path / "questions.json")
 
     # Format tasks
-    active_tasks = [
-        task for task in tasks_data.get("tasks", [])
-        if task.get("status") == "active"
-    ]
+    active_tasks = [task for task in tasks_data.get("tasks", []) if task.get("status") == "active"]
 
     if active_tasks:
         task_lines = ["## Active Tasks\n"]
@@ -91,7 +89,8 @@ def get_dashboard_summary(
     # Treat as answered if flag is set OR answer text is present
     # (matches Worker's detection logic in _extract_answered_questions)
     unanswered = [
-        q for q in questions_data.get("questions", [])
+        q
+        for q in questions_data.get("questions", [])
         if not q.get("answered", False) and not (q.get("answer") or "").strip()
     ]
 
