@@ -284,6 +284,7 @@ docker compose logs -f nanobot             # Logs
 - `README.md` — Installation, usage, channel setup
 - `CHANGELOG.md` — Version history
 - `SECURITY.md` — Security model
+- `tests/README.md` — Test directory structure, execution policy, marker conventions
 - `TEST_GUIDE.md` — Detailed test guide (manual scenarios, per-model results)
 - `workspace/DASHBOARD.md` — Agent dashboard instructions
 - `workspace/NOTION_SETUP.md` — Notion DB schema
