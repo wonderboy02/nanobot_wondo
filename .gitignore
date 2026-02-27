@@ -54,10 +54,5 @@ workspace/dashboard/knowledge/*.json
 # Personal memory
 workspace/memory/*.md
 
-# But keep template files (these are part of the codebase)
-!workspace/DASHBOARD.md
-!workspace/AGENTS.md
-!workspace/SOUL.md
-!workspace/USER.md
-!workspace/TOOLS.md
-!workspace/HEARTBEAT.md
+# Note: workspace/*.md template files are tracked in git.
+# No exclusion rule matches them, so no ! overrides needed.
