@@ -274,7 +274,7 @@ def gateway(
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
         on_heartbeat=on_heartbeat,
-        interval_s=2 * 60 * 60,  # 2 hours
+        # Uses DEFAULT_HEARTBEAT_INTERVAL_S (2 hours)
         enabled=True,
         provider=provider,
         model=worker_model,
@@ -300,7 +300,9 @@ def gateway(
     if cron_status["jobs"] > 0:
         console.print(f"[green]✓[/green] Cron: {cron_status['jobs']} scheduled jobs")
 
-    console.print(f"[green]✓[/green] Heartbeat: every 30m")
+    hb_minutes = heartbeat.interval_s // 60
+    hb_label = f"{hb_minutes // 60}h" if hb_minutes >= 60 else f"{hb_minutes}m"
+    console.print(f"[green]✓[/green] Heartbeat: every {hb_label}")
 
     async def run():
         try:
