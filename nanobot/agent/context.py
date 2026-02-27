@@ -107,12 +107,13 @@ Reply directly with text for conversations."""
 
     def _load_bootstrap_files(self) -> str:
         """Load all bootstrap files from workspace."""
+        from nanobot.prompts import load_instruction_file
+
         parts = []
 
         for filename in self.BOOTSTRAP_FILES:
-            file_path = self.workspace / filename
-            if file_path.exists():
-                content = file_path.read_text(encoding="utf-8")
+            content = load_instruction_file(self.workspace, filename)
+            if content:
                 parts.append(f"## {filename}\n\n{content}")
 
         return "\n\n".join(parts) if parts else ""

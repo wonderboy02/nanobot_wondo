@@ -77,51 +77,21 @@ def onboard():
 
 def _create_workspace_templates(workspace: Path):
     """Create default workspace template files."""
-    templates = {
-        "AGENTS.md": """# Agent Instructions
+    # HEARTBEAT.md — runtime-writable, copy to workspace
+    heartbeat_file = workspace / "HEARTBEAT.md"
+    if not heartbeat_file.exists():
+        from nanobot.prompts import PROMPTS_DIR
+        import shutil
 
-You are a helpful AI assistant. Be concise, accurate, and friendly.
+        src = PROMPTS_DIR / "HEARTBEAT.md"
+        if src.exists():
+            shutil.copy(src, heartbeat_file)
+            console.print("  [dim]Created HEARTBEAT.md[/dim]")
 
-## Guidelines
-
-- Always explain what you're doing before taking actions
-- Ask for clarification when the request is ambiguous
-- Use tools to help accomplish tasks
-- Remember important information in your memory files
-""",
-        "SOUL.md": """# Soul
-
-I am nanobot, a lightweight AI assistant.
-
-## Personality
-
-- Helpful and friendly
-- Concise and to the point
-- Curious and eager to learn
-
-## Values
-
-- Accuracy over speed
-- User privacy and safety
-- Transparency in actions
-""",
-        "USER.md": """# User
-
-Information about the user goes here.
-
-## Preferences
-
-- Communication style: (casual/formal)
-- Timezone: (your timezone)
-- Language: (your preferred language)
-""",
-    }
-
-    for filename, content in templates.items():
-        file_path = workspace / filename
-        if not file_path.exists():
-            file_path.write_text(content)
-            console.print(f"  [dim]Created {filename}[/dim]")
+    console.print(
+        "  [dim]Instruction files loaded from package defaults. "
+        "Copy to workspace/ to customize.[/dim]"
+    )
 
     # Create memory directory and MEMORY.md
     memory_dir = workspace / "memory"
@@ -180,18 +150,6 @@ This file stores important information that should persist across sessions.
                 json.dump(data, f, indent=2, ensure_ascii=False)
 
     console.print("  [dim]Created dashboard/ structure[/dim]")
-
-    # Copy DASHBOARD.md template
-    dashboard_md = workspace / "DASHBOARD.md"
-    if not dashboard_md.exists():
-        template_path = Path(__file__).parent.parent.parent / "workspace" / "DASHBOARD.md"
-        if template_path.exists():
-            import shutil
-
-            shutil.copy(template_path, dashboard_md)
-            console.print("  [dim]Created DASHBOARD.md[/dim]")
-        else:
-            console.print("[yellow]Warning: DASHBOARD.md template not found[/yellow]")
 
 
 # ============================================================================

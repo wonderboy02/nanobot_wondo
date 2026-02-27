@@ -912,13 +912,13 @@ class WorkerAgent:
     async def _build_context(self, pending_answers: list[dict] | None = None) -> list[dict]:
         """Build context messages for the LLM cycle."""
         from nanobot.dashboard.helper import get_dashboard_summary
+        from nanobot.prompts import load_instruction_file
 
         messages = []
 
         # 1. Load WORKER.md instructions
-        worker_instructions_path = self.workspace / "WORKER.md"
-        if worker_instructions_path.exists():
-            worker_instructions = worker_instructions_path.read_text(encoding="utf-8")
+        worker_instructions = load_instruction_file(self.workspace, "WORKER.md")
+        if worker_instructions:
             messages.append({"role": "system", "content": worker_instructions})
         else:
             messages.append(
