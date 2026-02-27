@@ -29,6 +29,7 @@
 **역할**: 메시지 → Dashboard 업데이트 (SILENT)
 - 메시지에서 Task, 진행률, 상태 변화 추출
 - Dashboard 도구로 업데이트
+- 시간 정보가 포함된 일정/약속 → task + notification 자동 생성 (DASHBOARD.md 참조)
 - 부족한 정보는 `create_question()`으로 Queue에
 - **응답 = SILENT (항상)**
 
@@ -39,10 +40,6 @@
 
 ## Scheduled Tasks
 
-**One-time reminders**: Use cron command
-```bash
-nanobot cron add --name "reminder" --message "Your message" \
-  --at "YYYY-MM-DDTHH:MM:SS" --deliver --to "USER_ID" --channel "CHANNEL"
-```
+**One-time reminders**: `schedule_notification` 도구 사용 (DASHBOARD.md 규칙 참조)
 
 **Recurring tasks**: Edit `HEARTBEAT.md` (checked every 30 minutes)

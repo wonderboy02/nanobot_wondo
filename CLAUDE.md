@@ -234,6 +234,7 @@ bash tests/test_docker.sh                  # Docker integration test
 | 12 | `notifications.json` | delivered/cancelled notification 영구 보존 — archival 정책 없음. tasks.json과 동일 패턴 (#6). Worker Phase 1에 cleanup 추가 검토 | Low |
 | 13 | `reconciler.py` | SyncTarget 추상화 없음 — GCal 하드코딩. target 3개 이상 시 SyncTarget ABC 도입 필요 | Low |
 | 14 | `reconciler.py` | `reconcile()`에서 GCal create/delete 후 ledger save 실패 시 다음 reconcile에서 중복 GCal 이벤트 생성 가능. `_ensure_gcal()` 멱등성이 gcal_event_id 존재 여부에 의존하므로, save 안 된 상태에서 재실행 시 ID 없음 → 재생성. save 실패 자체가 극히 드물어 실질적 영향 미미 | Low |
+| 15 | `workspace/` | instruction 파일(.md)과 런타임 유저 데이터(json, memory)가 같은 디렉토리에 혼재. instruction은 `nanobot/prompts/` 등으로 분리하고 `workspace/`를 통째로 gitignore하는 구조가 깔끔. upstream 설계 변경 수반 | Low |
 
 **Changes from previous doc**:
 - Removed: old #9 "Dashboard file race condition" — resolved by `_processing_lock` (in-process asyncio.Lock; single-worker assumption)
