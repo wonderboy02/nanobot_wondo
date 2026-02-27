@@ -46,13 +46,8 @@ config.json
 data/
 *.secret
 
-# Personal dashboard data
+# Personal dashboard data (local dev outside workspace)
 dashboard/*.json
-workspace/dashboard/*.json
-workspace/dashboard/knowledge/*.json
 
-# Personal memory
-workspace/memory/*.md
-
-# Note: workspace/*.md template files are tracked in git.
-# No exclusion rule matches them, so no ! overrides needed.
+# Workspace — runtime data only (instruction defaults in nanobot/prompts/)
+workspace/

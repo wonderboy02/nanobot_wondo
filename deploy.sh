@@ -77,6 +77,18 @@ if ! git pull --ff-only; then
     exit 1
 fi
 
+# ─── Migration: workspace .md → nanobot/prompts/ (one-time) ───
+PROMPTS_MIGRATED_MARKER="workspace/.prompts_migrated"
+if [ ! -f "$PROMPTS_MIGRATED_MARKER" ]; then
+    echo "📦 Migrating: workspace instruction files now in nanobot/prompts/"
+    rm -f workspace/AGENTS.md workspace/SOUL.md workspace/USER.md \
+          workspace/TOOLS.md workspace/DASHBOARD.md workspace/WORKER.md \
+          workspace/NOTION_SETUP.md
+    # HEARTBEAT.md 유지 — 런타임 데이터
+    touch "$PROMPTS_MIGRATED_MARKER"
+    echo "✅ Migration complete"
+fi
+
 echo "==> Building and starting container..."
 $DC up --build --force-recreate -d
 
