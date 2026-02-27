@@ -196,8 +196,19 @@ def gateway(
         console.print("Set one in ~/.nanobot/config.json under providers.openrouter.apiKey")
         raise typer.Exit(1)
 
+    # Collect all configured provider keys for fallback model support
+    extra_provider_keys: dict[str, str] = {}
+    for pname in ("gemini", "deepseek", "anthropic", "openai", "groq", "moonshot", "zhipu"):
+        pconfig = getattr(config.providers, pname, None)
+        if pconfig and pconfig.api_key:
+            extra_provider_keys[pname] = pconfig.api_key
+
     provider = LiteLLMProvider(
-        api_key=api_key, api_base=api_base, default_model=config.agents.defaults.model
+        api_key=api_key,
+        api_base=api_base,
+        default_model=config.agents.defaults.model,
+        fallback_models=config.agents.defaults.fallback_models,
+        extra_provider_keys=extra_provider_keys or None,
     )
 
     # Create cron service first (callback set after agent creation)
@@ -263,7 +274,7 @@ def gateway(
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
         on_heartbeat=on_heartbeat,
-        interval_s=30 * 60,  # 30 minutes
+        interval_s=2 * 60 * 60,  # 2 hours
         enabled=True,
         provider=provider,
         model=worker_model,
@@ -337,8 +348,19 @@ def agent(
         raise typer.Exit(1)
 
     bus = MessageBus()
+
+    extra_keys: dict[str, str] = {}
+    for pname in ("gemini", "deepseek", "anthropic", "openai", "groq", "moonshot", "zhipu"):
+        pconfig = getattr(config.providers, pname, None)
+        if pconfig and pconfig.api_key:
+            extra_keys[pname] = pconfig.api_key
+
     provider = LiteLLMProvider(
-        api_key=api_key, api_base=api_base, default_model=config.agents.defaults.model
+        api_key=api_key,
+        api_base=api_base,
+        default_model=config.agents.defaults.model,
+        fallback_models=config.agents.defaults.fallback_models,
+        extra_provider_keys=extra_keys or None,
     )
 
     agent_loop = AgentLoop(
