@@ -106,7 +106,7 @@ Skills with available="false" need dependencies installed first - you can try in
 Reply directly with text for conversations."""
 
     def _load_bootstrap_files(self) -> str:
-        """Load all bootstrap files from workspace."""
+        """Load bootstrap instruction files (workspace override -> package default)."""
         from nanobot.prompts import load_instruction_file
 
         parts = []

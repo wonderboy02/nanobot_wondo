@@ -80,8 +80,9 @@ def _create_workspace_templates(workspace: Path):
     # HEARTBEAT.md — runtime-writable, copy to workspace
     heartbeat_file = workspace / "HEARTBEAT.md"
     if not heartbeat_file.exists():
-        from nanobot.prompts import PROMPTS_DIR
         import shutil
+
+        from nanobot.prompts import PROMPTS_DIR
 
         src = PROMPTS_DIR / "HEARTBEAT.md"
         if src.exists():

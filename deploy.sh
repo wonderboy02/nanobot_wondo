@@ -85,6 +85,7 @@ if [ ! -f "$PROMPTS_MIGRATED_MARKER" ]; then
           workspace/TOOLS.md workspace/DASHBOARD.md workspace/WORKER.md \
           workspace/NOTION_SETUP.md
     # HEARTBEAT.md 유지 — 런타임 데이터
+    mkdir -p workspace
     touch "$PROMPTS_MIGRATED_MARKER"
     echo "✅ Migration complete"
 fi

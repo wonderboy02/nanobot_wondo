@@ -650,20 +650,14 @@ async def test_reevaluate_skips_malformed_deadline(test_workspace):
 
 @pytest.mark.asyncio
 async def test_context_uses_fallback_when_worker_md_missing(test_workspace):
-    """Context should use fallback system prompt when WORKER.md doesn't exist."""
-    import os
+    """Context should use inline fallback when load_instruction_file returns empty."""
+    from unittest.mock import patch
 
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
     mock_provider = AsyncMock()
-
-    # Remove WORKER.md
-    worker_md = test_workspace / "WORKER.md"
-    if worker_md.exists():
-        os.remove(worker_md)
-
     mock_provider.chat = AsyncMock(return_value=_make_response("Done."))
 
     worker = WorkerAgent(
@@ -673,9 +667,11 @@ async def test_context_uses_fallback_when_worker_md_missing(test_workspace):
         model="test-model",
     )
 
-    await worker.run_cycle()
+    # Mock load_instruction_file to return "" — simulates package default also missing
+    with patch("nanobot.prompts.load_instruction_file", return_value=""):
+        await worker.run_cycle()
 
-    # Check that fallback system prompt was used
+    # Check that inline fallback system prompt was used
     call_args = mock_provider.chat.call_args
     messages = call_args.kwargs.get("messages", call_args[1].get("messages", []))
     system_msg = next((m for m in messages if m["role"] == "system"), None)
