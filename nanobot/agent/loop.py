@@ -273,6 +273,7 @@ class AgentLoop:
             RemoveQuestionTool,
             ArchiveTaskTool,
             SaveInsightTool,
+            SetRecurringTool,
             ScheduleNotificationTool,
             UpdateNotificationTool,
             CancelNotificationTool,
@@ -287,6 +288,7 @@ class AgentLoop:
         self.tools.register(RemoveQuestionTool(self.workspace, self._storage_backend))
         self.tools.register(ArchiveTaskTool(self.workspace, self._storage_backend))
         self.tools.register(SaveInsightTool(self.workspace, self._storage_backend))
+        self.tools.register(SetRecurringTool(self.workspace, self._storage_backend))
 
         # Notification tools (always registered — ledger-only, no cron dependency)
         self.tools.register(ScheduleNotificationTool(self.workspace, self._storage_backend))

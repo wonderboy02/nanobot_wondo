@@ -8,6 +8,7 @@ from nanobot.agent.tools.dashboard.update_question import UpdateQuestionTool
 from nanobot.agent.tools.dashboard.remove_question import RemoveQuestionTool
 from nanobot.agent.tools.dashboard.archive_task import ArchiveTaskTool
 from nanobot.agent.tools.dashboard.save_insight import SaveInsightTool
+from nanobot.agent.tools.dashboard.set_recurring import SetRecurringTool
 from nanobot.agent.tools.dashboard.schedule_notification import ScheduleNotificationTool
 from nanobot.agent.tools.dashboard.update_notification import UpdateNotificationTool
 from nanobot.agent.tools.dashboard.cancel_notification import CancelNotificationTool
@@ -22,6 +23,7 @@ __all__ = [
     "RemoveQuestionTool",
     "ArchiveTaskTool",
     "SaveInsightTool",
+    "SetRecurringTool",
     "ScheduleNotificationTool",
     "UpdateNotificationTool",
     "CancelNotificationTool",

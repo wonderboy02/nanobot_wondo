@@ -1278,5 +1278,47 @@ async def test_consistency_empty_tasks_returns_false(test_workspace):
     assert changed is False
 
 
+def test_non_dict_task_does_not_crash_maintenance(test_workspace):
+    """Non-dict items in tasks list should not crash archive/reevaluate.
+
+    Tests methods directly (in-memory) because save_tasks would reject
+    corrupted data via Pydantic validation — that's correct behavior.
+    The guard prevents mid-pipeline crashes, not save-time validation.
+    """
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    now = datetime.now()
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [
+            "corrupted_string",
+            None,
+            {
+                "id": "task_good",
+                "title": "Good Task",
+                "status": "completed",
+                "completed_at": now.isoformat(),
+                "created_at": now.isoformat(),
+                "updated_at": now.isoformat(),
+                "progress": {"percentage": 100, "last_update": now.isoformat()},
+            },
+        ],
+    }
+
+    backend = JsonStorageBackend(test_workspace)
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+
+    # Each method should not crash on non-dict items
+    changed = worker._enforce_consistency(tasks_data)
+    changed |= worker._archive_completed_tasks(tasks_data)
+    changed |= worker._reevaluate_active_status(tasks_data)
+    changed |= worker._check_recurring_tasks(tasks_data)
+
+    # Good task should be archived in memory
+    good_task = tasks_data["tasks"][2]
+    assert good_task["status"] == "archived"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

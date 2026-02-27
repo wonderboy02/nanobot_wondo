@@ -1,8 +1,10 @@
 """Pydantic schemas for Dashboard data validation."""
 
+import re
+from datetime import date as _date_type
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ============================================================================
@@ -36,13 +38,59 @@ class TaskLinks(BaseModel):
     resources: list[str] = Field(default_factory=list)
 
 
+class RecurringConfig(BaseModel):
+    """Recurring (daily habit) configuration for a task."""
+
+    enabled: bool = True
+    frequency: Literal["daily"] = "daily"
+    days_of_week: list[int] = Field(default_factory=lambda: list(range(7)))
+    check_time: Optional[str] = None  # HH:MM
+    streak_current: int = Field(0, ge=0)
+    streak_best: int = Field(0, ge=0)
+    total_completed: int = Field(0, ge=0)
+    total_missed: int = Field(0, ge=0)
+    last_completed_date: Optional[str] = None  # YYYY-MM-DD
+    last_miss_date: Optional[str] = None  # YYYY-MM-DD
+
+    @field_validator("days_of_week")
+    @classmethod
+    def validate_days_of_week(cls, v: list[int]) -> list[int]:
+        if not v:
+            raise ValueError("days_of_week must not be empty")
+        for d in v:
+            if not (0 <= d <= 6):
+                raise ValueError(f"Invalid day {d}: must be 0 (Mon) – 6 (Sun)")
+        return sorted(set(v))
+
+    @field_validator("check_time")
+    @classmethod
+    def validate_check_time(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            if not re.match(r"^\d{2}:\d{2}$", v):
+                raise ValueError(f"check_time must be HH:MM format, got {v!r}")
+            hh, mm = v.split(":")
+            if not (0 <= int(hh) <= 23 and 0 <= int(mm) <= 59):
+                raise ValueError(f"check_time out of range: {v!r}")
+        return v
+
+    @field_validator("last_completed_date", "last_miss_date")
+    @classmethod
+    def validate_date_str(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            try:
+                _date_type.fromisoformat(v)
+            except ValueError:
+                raise ValueError(f"Invalid date format {v!r}: expected YYYY-MM-DD")
+        return v
+
+
 class Task(BaseModel):
     """Task schema."""
 
     id: str
     title: str
     raw_input: Optional[str] = None
-    deadline: Optional[str] = None  # ISO datetime
+    deadline: Optional[str] = None  # YYYY-MM-DD or empty string
     deadline_text: Optional[str] = None
     estimation: TaskEstimation = Field(default_factory=TaskEstimation)
     progress: TaskProgress
@@ -55,6 +103,22 @@ class Task(BaseModel):
     updated_at: str  # ISO datetime
     completed_at: Optional[str] = None  # ISO datetime
     reflection: str = ""
+    recurring: Optional[RecurringConfig] = None
+
+    @field_validator("deadline", mode="before")
+    @classmethod
+    def normalize_deadline(cls, v: Optional[str]) -> Optional[str]:
+        """Auto-convert legacy datetime strings to YYYY-MM-DD."""
+        if v is None or v == "":
+            return v
+        # Already YYYY-MM-DD
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", v):
+            return v
+        # Extract date portion from datetime string (e.g. 2026-02-15T09:00:00)
+        m = re.match(r"^(\d{4}-\d{2}-\d{2})", v)
+        if m:
+            return m.group(1)
+        return v
 
 
 class TasksFile(BaseModel):

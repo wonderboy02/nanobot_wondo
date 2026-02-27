@@ -21,11 +21,11 @@ nanobot/
 ├── agent/loop.py            # Core loop (stateless, _processing_lock, _scheduler)
 ├── agent/context.py         # Prompt builder
 ├── agent/subagent.py        # Background sub-agent
-├── agent/tools/dashboard/   # 12 dashboard tools
+├── agent/tools/dashboard/   # 13 dashboard tools
 ├── dashboard/worker.py      # Unified WorkerAgent (Phase 1 + Phase 2)
 ├── dashboard/storage.py     # StorageBackend ABC
 ├── dashboard/reconciler.py  # NotificationReconciler + ReconciliationScheduler
-├── dashboard/utils.py       # Shared utilities (parse_datetime)
+├── dashboard/utils.py       # Shared utilities (parse_datetime, normalize_iso_date)
 ├── dashboard/helper.py      # Dashboard summary generator
 ├── channels/telegram.py     # Primary channel (numbered answers, /questions, /tasks)
 ├── notion/                  # NotionStorageBackend + cache
@@ -33,9 +33,9 @@ nanobot/
 └── config/, session/, cron/, skills/, cli/, utils/
 ```
 
-### Dashboard Tools (12)
+### Dashboard Tools (13)
 
-**Basic (8)**: create_task, update_task, archive_task, answer_question, create_question, update_question, remove_question, save_insight
+**Basic (9)**: create_task, update_task, archive_task, answer_question, create_question, update_question, remove_question, save_insight, set_recurring
 
 **Notification (4)**: schedule_notification, update_notification, cancel_notification, list_notifications
 
@@ -47,7 +47,7 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 ### Worker Agent (dashboard/worker.py)
 
-- **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency, archive completed/cancelled tasks, re-evaluate active/someday
+- **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency, archive completed/cancelled tasks, re-evaluate active/someday, process recurring tasks (reset completed habits, detect misses, update streaks)
 - **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
 - **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
 - **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
@@ -145,7 +145,7 @@ AgentLoop 생성 → _processing_lock = asyncio.Lock()
 
 ```
 tests/
-├── dashboard/unit/        # Worker unit (maintenance, LLM cycle, questions, notifications)
+├── dashboard/unit/        # Worker unit (maintenance, LLM cycle, questions, notifications, recurring)
 ├── dashboard/e2e/         # E2E scenarios (@pytest.mark.e2e, requires LLM API)
 ├── notion/                # Notion client, mapper, cache, storage
 ├── channels/              # Telegram notification manager
@@ -211,7 +211,7 @@ bash tests/test_docker.sh                  # Docker integration test
 | History | history.json separate | In-place archive in tasks.json |
 | Agent | Session history included | Stateless (Dashboard Summary only) |
 | Storage | JSON only | StorageBackend ABC (JSON + Notion) |
-| Dashboard tools | 6 | 12 (+notification tools) |
+| Dashboard tools | 6 | 13 (+notification tools) |
 | Telegram | Basic | Numbered answer parsing, LLM skip, reaction |
 | Deploy | Manual Docker | CI/CD (GH Actions + deploy.sh) |
 | Response mode | Plain text | Reaction (replaces SILENT) |

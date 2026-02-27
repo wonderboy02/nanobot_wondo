@@ -5,6 +5,7 @@ All functions are pure and stateless. Two directions:
 - `notion_to_*(page: dict) -> dict`: Convert Notion page to internal dict.
 """
 
+import json
 from typing import Any
 
 from loguru import logger
@@ -134,6 +135,8 @@ def task_to_notion(task: dict) -> dict[str, Any]:
         props["CompletedAt"] = _date(task["completed_at"])
     if task.get("reflection"):
         props["Reflection"] = _rich_text(task["reflection"])
+    if task.get("recurring"):
+        props["RecurringConfig"] = _rich_text(json.dumps(task["recurring"], ensure_ascii=False))
 
     return props
 
@@ -170,6 +173,7 @@ def notion_to_task(page: dict) -> dict[str, Any]:
         "updated_at": _extract_date(_get_prop(props, "UpdatedAt")) or "",
         "completed_at": _extract_date(_get_prop(props, "CompletedAt")),
         "reflection": _extract_rich_text(_get_prop(props, "Reflection")),
+        "recurring": _parse_json_or_none(_extract_rich_text(_get_prop(props, "RecurringConfig"))),
         "_notion_page_id": page.get("id", ""),
     }
 
@@ -317,6 +321,18 @@ def notion_to_insight(page: dict) -> dict[str, Any]:
 # ============================================================================
 # Helpers
 # ============================================================================
+
+
+def _parse_json_or_none(text: str) -> dict | None:
+    """Parse JSON string to dict, return None if empty or invalid."""
+    if not text:
+        return None
+    try:
+        result = json.loads(text)
+        return result if isinstance(result, dict) else None
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(f"Failed to parse JSON from Notion rich_text: {text[:100]}")
+        return None
 
 
 def _capitalize(value: str | None) -> str | None:

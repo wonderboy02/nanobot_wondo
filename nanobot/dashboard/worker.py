@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -37,6 +37,14 @@ from nanobot.dashboard.utils import parse_datetime  # noqa: F401 — re-exported
 def _generate_id(prefix: str) -> str:
     """Generate unique ID: {prefix}_xxxxxxxx (same pattern as BaseDashboardTool)."""
     return f"{prefix}_{str(uuid4())[:8]}"
+
+
+def _is_recurring_enabled(task: dict) -> bool:
+    """Check if a task has recurring enabled (defensive against malformed data)."""
+    recurring = task.get("recurring")
+    if not isinstance(recurring, dict):
+        return False
+    return recurring.get("enabled") is True
 
 
 class WorkerAgent:
@@ -169,21 +177,23 @@ class WorkerAgent:
         2. Consistency — enforce field invariants (tasks only)
         3. Archive — completed/cancelled → archived (tasks only)
         4. Reevaluate — active/someday status (tasks only)
+        5. Recurring — reset completed habits, record misses (tasks only)
 
         Bootstrap runs independently per entity (separate load/save).
-        Steps 2-4 share a single load_tasks() call.
+        Steps 2-5 share a single load_tasks() call.
         Question cleanup is handled separately by _cleanup_questions()
         after Phase 2, so the LLM can process answered questions first.
         """
         # Step 1: Bootstrap — assign IDs to manually-added items (all entities)
         self._bootstrap_new_items()
 
-        # Steps 2-4: Task maintenance (single load/save)
+        # Steps 2-5: Task maintenance (single load/save)
         try:
             tasks_data = self.storage_backend.load_tasks()
             changed = self._enforce_consistency(tasks_data)
             changed |= self._archive_completed_tasks(tasks_data)
             changed |= self._reevaluate_active_status(tasks_data)
+            changed |= self._check_recurring_tasks(tasks_data)
             if changed:
                 ok, msg = self.storage_backend.save_tasks(tasks_data)
                 if not ok:
@@ -394,9 +404,19 @@ class WorkerAgent:
         return changed
 
     def _archive_completed_tasks(self, tasks_data: dict) -> bool:
-        """Archive completed or cancelled tasks by setting status to 'archived'."""
+        """Archive completed or cancelled tasks by setting status to 'archived'.
+
+        Recurring tasks that are completed are excluded — Worker resets them.
+        Cancelled recurring tasks ARE archived (cancel = stop recurring).
+        """
         tasks = tasks_data.get("tasks", [])
-        targets = [t for t in tasks if t.get("status") in ("completed", "cancelled")]
+        targets = [
+            t
+            for t in tasks
+            if isinstance(t, dict)
+            and t.get("status") in ("completed", "cancelled")
+            and not (t.get("status") == "completed" and _is_recurring_enabled(t))
+        ]
 
         if not targets:
             return False
@@ -422,7 +442,16 @@ class WorkerAgent:
         changed = False
 
         for task in tasks:
+            if not isinstance(task, dict):
+                continue
             if task.get("status") in ("completed", "cancelled", "archived"):
+                continue
+
+            # Recurring tasks always stay active (never demoted to someday)
+            if _is_recurring_enabled(task):
+                if task.get("status") != "active":
+                    task["status"] = "active"
+                    changed = True
                 continue
 
             old_status = task.get("status", "someday")
@@ -468,6 +497,171 @@ class WorkerAgent:
             return "active"
 
         return "someday"
+
+    # =========================================================================
+    # Recurring Tasks (Daily Habits)
+    # =========================================================================
+
+    def _check_recurring_tasks(self, tasks_data: dict) -> bool:
+        """Process all recurring-enabled tasks. Entry point for recurring logic.
+
+        For each recurring task, checks if it's a valid day and processes
+        completion or miss. Each task is exception-isolated.
+        Skips archived/cancelled tasks to prevent reviving them.
+        """
+        tasks = tasks_data.get("tasks", [])
+        today = date.today()
+        changed = False
+
+        for task in tasks:
+            try:
+                if not _is_recurring_enabled(task):
+                    continue
+                # Archived/cancelled tasks must not be processed
+                if task.get("status") in ("archived", "cancelled"):
+                    continue
+                changed |= self._process_one_recurring(task, today)
+            except Exception:
+                tid = task.get("id", "?") if isinstance(task, dict) else "???"
+                logger.exception(f"[Worker] Recurring error for task {tid}")
+
+        return changed
+
+    def _process_one_recurring(self, task: dict, today: date) -> bool:
+        """Process a single recurring task for today.
+
+        Returns True if the task was modified.
+        """
+        recurring = task["recurring"]
+        days = recurring.get("days_of_week", list(range(7)))
+        last_completed = recurring.get("last_completed_date")
+        last_miss = recurring.get("last_miss_date")
+
+        # If completed today, handle the completion
+        if task.get("status") == "completed" or (
+            task.get("progress", {}).get("percentage", 0) >= 100
+        ):
+            return self._handle_recurring_completion(task, recurring, today, days)
+
+        # Brand-new task (never completed or missed) → skip miss detection
+        if not last_completed and not last_miss:
+            return False
+
+        # Check if we need to record a miss for a previous valid day
+        if last_completed:
+            last_completed_date = date.fromisoformat(last_completed)
+        else:
+            last_completed_date = None
+
+        prev_day = self._find_prev_valid_day(today, days)
+        if prev_day is None:
+            return False
+
+        # Already handled (completed or missed) for the previous valid day
+        if last_completed_date and last_completed_date >= prev_day:
+            return False
+        if last_miss:
+            last_miss_date = date.fromisoformat(last_miss)
+            if last_miss_date >= prev_day:
+                return False
+
+        # Previous valid day was not completed or missed → record miss
+        return self._handle_recurring_miss(task, recurring, today, days, prev_day)
+
+    def _handle_recurring_completion(
+        self,
+        task: dict,
+        recurring: dict,
+        today: date,
+        days: list[int],
+    ) -> bool:
+        """Handle a completed recurring task: update stats and reset."""
+        last_completed = recurring.get("last_completed_date")
+        today_str = today.isoformat()
+
+        # Same-day duplicate guard
+        if last_completed == today_str:
+            self._reset_recurring_task(task)
+            return True
+
+        # Update stats
+        recurring["total_completed"] = recurring.get("total_completed", 0) + 1
+
+        # Streak logic
+        if last_completed:
+            prev_date = date.fromisoformat(last_completed)
+            if self._is_consecutive_day(prev_date, today, days):
+                recurring["streak_current"] = recurring.get("streak_current", 0) + 1
+            else:
+                recurring["streak_current"] = 1
+        else:
+            recurring["streak_current"] = 1
+
+        recurring["streak_best"] = max(
+            recurring.get("streak_best", 0),
+            recurring["streak_current"],
+        )
+        recurring["last_completed_date"] = today_str
+
+        self._reset_recurring_task(task)
+        logger.info(
+            f"[Worker] Recurring completed: {task.get('id', '?')} "
+            f"(streak: {recurring['streak_current']})"
+        )
+        return True
+
+    def _handle_recurring_miss(
+        self,
+        task: dict,
+        recurring: dict,
+        today: date,
+        days: list[int],
+        missed_day: date,
+    ) -> bool:
+        """Handle a missed recurring task: update stats and reset streak."""
+        recurring["total_missed"] = recurring.get("total_missed", 0) + 1
+        recurring["streak_current"] = 0
+        recurring["last_miss_date"] = missed_day.isoformat()
+
+        logger.info(
+            f"[Worker] Recurring missed: {task.get('id', '?')} (missed: {missed_day.isoformat()})"
+        )
+        return True
+
+    @staticmethod
+    def _reset_recurring_task(task: dict) -> None:
+        """Reset a recurring task for the next cycle."""
+        task["status"] = "active"
+        task["completed_at"] = None
+        now = datetime.now().isoformat()
+        task["updated_at"] = now
+        progress = task.get("progress", {})
+        progress["percentage"] = 0
+        progress["last_update"] = now
+        task["progress"] = progress
+
+    @staticmethod
+    def _find_prev_valid_day(today: date, days: list[int]) -> date | None:
+        """Find the most recent valid day before today (within 7 days)."""
+        for i in range(1, 8):
+            candidate = today - timedelta(days=i)
+            if candidate.weekday() in days:
+                return candidate
+        return None
+
+    @staticmethod
+    def _is_consecutive_day(prev: date, current: date, days: list[int]) -> bool:
+        """Check if current is the next valid day after prev in the schedule.
+
+        Handles non-adjacent schedules (e.g., Mon/Wed/Fri) where consecutive
+        valid days may be more than 1 calendar day apart.
+        """
+        # Walk forward from prev to find the next valid day
+        for i in range(1, 8):
+            candidate = prev + timedelta(days=i)
+            if candidate.weekday() in days:
+                return candidate == current
+        return False
 
     def _cleanup_answered_questions(
         self,

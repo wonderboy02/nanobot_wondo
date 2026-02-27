@@ -129,6 +129,42 @@ class TestTaskMapping:
         result = notion_to_task(page)
         assert result["completed_at"] == "2026-02-20"
 
+    def test_task_recurring_round_trip(self):
+        """Recurring config survives Notion round trip as JSON rich_text."""
+        recurring_config = {
+            "enabled": True,
+            "frequency": "daily",
+            "days_of_week": [0, 2, 4],
+            "check_time": "22:00",
+            "streak_current": 5,
+            "streak_best": 10,
+            "total_completed": 20,
+            "total_missed": 3,
+            "last_completed_date": "2026-02-26",
+            "last_miss_date": "2026-02-24",
+        }
+        task = {**self.SAMPLE_TASK, "recurring": recurring_config}
+        notion_props = task_to_notion(task)
+        assert "RecurringConfig" in notion_props
+
+        page = _wrap_page(notion_props)
+        result = notion_to_task(page)
+        assert result["recurring"] is not None
+        assert result["recurring"]["enabled"] is True
+        assert result["recurring"]["days_of_week"] == [0, 2, 4]
+        assert result["recurring"]["streak_current"] == 5
+        assert result["recurring"]["total_completed"] == 20
+        assert result["recurring"]["last_completed_date"] == "2026-02-26"
+
+    def test_task_no_recurring_round_trip(self):
+        """Task without recurring produces None after round trip."""
+        notion_props = task_to_notion(self.SAMPLE_TASK)
+        assert "RecurringConfig" not in notion_props
+
+        page = _wrap_page(notion_props)
+        result = notion_to_task(page)
+        assert result["recurring"] is None
+
     def test_task_missing_properties_returns_defaults(self):
         """notion_to_task with an empty properties dict returns safe defaults."""
         page = _wrap_page({})
@@ -141,6 +177,7 @@ class TestTaskMapping:
         assert result["progress"]["percentage"] == 0
         assert result["progress"]["blocked"] is False
         assert result["tags"] == []
+        assert result["recurring"] is None
 
 
 # ============================================================================
@@ -434,6 +471,20 @@ class TestEdgeCases:
         }
         result = _extract_title(prop)
         assert result == "Hello World"
+
+    def test_task_recurring_malformed_json_returns_none(self):
+        """Malformed JSON in RecurringConfig returns None (not crash)."""
+        props = {"RecurringConfig": {"rich_text": [{"text": {"content": "not-valid-json"}}]}}
+        page = _wrap_page(props)
+        result = notion_to_task(page)
+        assert result["recurring"] is None
+
+    def test_task_recurring_non_dict_json_returns_none(self):
+        """JSON that parses to non-dict (e.g., array) returns None."""
+        props = {"RecurringConfig": {"rich_text": [{"text": {"content": "[1,2,3]"}}]}}
+        page = _wrap_page(props)
+        result = notion_to_task(page)
+        assert result["recurring"] is None
 
     def test_task_reflection_round_trip(self):
         """Task reflection field survives the round trip."""

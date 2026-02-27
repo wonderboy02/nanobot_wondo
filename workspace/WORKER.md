@@ -23,7 +23,7 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 - 진행률이 오래 멈춰 있다 → `schedule_notification` (progress_check) 또는 `create_question`
 - 마감이 임박하다 → `schedule_notification` (deadline_alert)
 - Blocked 상태가 지속된다 → `schedule_notification` (blocker_followup)
-- progress=100% 또는 status=cancelled → Phase 1이 자동 아카이브 (별도 조치 불필요)
+- progress=100% 또는 status=cancelled → Phase 1이 자동 아카이브 (별도 조치 불필요, 단 completed recurring task는 아카이브 대신 리셋. cancelled recurring은 정상 아카이브)
 - Task에 context가 비어있고 deadline도 없다 → `create_question`으로 세부사항 확인
 
 **답변 처리 (Recently Answered Questions):**
@@ -82,6 +82,22 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
    → 유사 질문, q_001 제거
 2. remove_question(question_id="q_001", reason="q_005와 중복")
 ```
+
+## Recurring Tasks (Daily Habits)
+
+Phase 1이 자동으로 처리하는 recurring task 로직:
+
+1. **완료 처리**: recurring task가 completed/progress=100% → streak 업데이트 + 리셋 (active, progress=0)
+2. **미완료 감지**: 이전 유효 요일에 미완료 → miss 카운트 + streak 리셋
+3. **아카이브 보호**: recurring enabled task는 completed 상태에서 아카이브하지 않음
+4. **status 보호**: recurring task는 항상 active 유지 (someday 전환 방지)
+
+Worker가 recurring task에 대해 할 일:
+- recurring task 관련 progress_check 알림을 스케줄링할 수 있음
+- recurring task에 대한 질문은 일반 task와 동일하게 처리
+- **recurring 설정 변경은 Main Agent 역할** (set_recurring tool)
+
+---
 
 ## 운영 원칙
 

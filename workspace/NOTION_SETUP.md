@@ -45,6 +45,7 @@ You can create them in a single page for organization.
 | UpdatedAt | date | Last update date |
 | CompletedAt | date | Completion date |
 | Reflection | text | Post-completion reflection note |
+| RecurringConfig | text | JSON-serialized recurring config (daily habit tracking) |
 
 ### Questions DB
 

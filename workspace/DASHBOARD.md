@@ -40,6 +40,27 @@ User: "Hook이 어려워서 막힘"
 
 ---
 
+## Recurring Tasks (Daily Habits)
+
+사용자가 매일 반복하는 습관을 설정하면 `set_recurring` 또는 `create_task(recurring=True)`로 등록한다.
+
+- **설정**: `set_recurring(task_id, days_of_week=[0,1,2,3,4], check_time="22:00")`
+- **완료 처리**: 사용자가 완료 보고 → `update_task(status=completed)` → Worker가 자동 리셋
+- **Worker 자동 처리**: streak 업데이트, miss 감지, progress 리셋 (매 30분 사이클)
+
+```
+User: "매일 운동 습관 만들고 싶어"
+→ create_task("매일 운동", recurring=True, recurring_days=[0,1,2,3,4])
+→ SILENT
+
+User: "오늘 운동 했어"
+→ update_task(task_xxx, status="completed")
+→ SILENT
+(Worker가 자동으로 리셋 + streak 업데이트)
+```
+
+---
+
 ## Important Rules
 
 1. **Extract everything** — 하나의 메시지에서 여러 정보 추출

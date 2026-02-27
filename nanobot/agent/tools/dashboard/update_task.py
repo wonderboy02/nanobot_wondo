@@ -3,6 +3,7 @@
 from typing import Any
 
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
+from nanobot.dashboard.utils import normalize_iso_date
 
 
 class UpdateTaskTool(BaseDashboardTool):
@@ -115,6 +116,8 @@ class UpdateTaskTool(BaseDashboardTool):
 
             if deadline is not None:
                 task["deadline_text"] = deadline
+                normalized = normalize_iso_date(deadline)
+                task["deadline"] = normalized or ""
 
             if priority is not None:
                 task["priority"] = priority
