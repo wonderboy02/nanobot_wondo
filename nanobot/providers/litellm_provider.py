@@ -1,5 +1,6 @@
 """LiteLLM provider implementation for multi-provider support."""
 
+import logging
 import os
 from typing import Any
 
@@ -7,6 +8,19 @@ import litellm
 from litellm import acompletion
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
+
+logger = logging.getLogger(__name__)
+
+# Maps provider keywords to environment variable names for API keys.
+_PROVIDER_ENV_MAP: dict[str, str] = {
+    "deepseek": "DEEPSEEK_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    "gemini": "GEMINI_API_KEY",
+    "zhipu": "ZHIPUAI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "moonshot": "MOONSHOT_API_KEY",
+}
 
 
 class LiteLLMProvider(LLMProvider):
@@ -23,10 +37,13 @@ class LiteLLMProvider(LLMProvider):
         api_base: str | None = None,
         default_model: str = "anthropic/claude-opus-4-5",
         num_retries: int = 3,
+        fallback_models: list[str] | None = None,
+        extra_provider_keys: dict[str, str] | None = None,
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.num_retries = num_retries
+        self.fallback_models = fallback_models or []
 
         # Detect OpenRouter by api_key prefix or explicit api_base
         self.is_openrouter = (api_key and api_key.startswith("sk-or-")) or (
@@ -60,6 +77,13 @@ class LiteLLMProvider(LLMProvider):
                 os.environ.setdefault("MOONSHOT_API_KEY", api_key)
                 os.environ.setdefault("MOONSHOT_API_BASE", api_base or "https://api.moonshot.cn/v1")
 
+        # Set env vars for extra providers (needed for fallback models)
+        if extra_provider_keys:
+            for keyword, key in extra_provider_keys.items():
+                env_var = _PROVIDER_ENV_MAP.get(keyword)
+                if env_var and key:
+                    os.environ.setdefault(env_var, key)
+
         if api_base:
             litellm.api_base = api_base
 
@@ -77,6 +101,9 @@ class LiteLLMProvider(LLMProvider):
         """
         Send a chat completion request via LiteLLM.
 
+        Tries the primary model first; on failure, iterates through
+        fallback_models before returning an error.
+
         Args:
             messages: List of message dicts with 'role' and 'content'.
             tools: Optional list of tool definitions in OpenAI format.
@@ -87,65 +114,84 @@ class LiteLLMProvider(LLMProvider):
         Returns:
             LLMResponse with content and/or tool calls.
         """
-        model = model or self.default_model
+        primary = model or self.default_model
+        models_to_try = [primary, *self.fallback_models]
 
-        # For OpenRouter, prefix model name if not already prefixed
-        if self.is_openrouter and not model.startswith("openrouter/"):
-            model = f"openrouter/{model}"
+        last_error: Exception | None = None
+        for idx, candidate in enumerate(models_to_try):
+            is_fallback = idx > 0
+            resolved = self._resolve_model(candidate, is_fallback=is_fallback)
 
-        # For Zhipu/Z.ai, ensure prefix is present
-        # Handle cases like "glm-4.7-flash" -> "zai/glm-4.7-flash"
+            # kimi-k2.5 only supports temperature=1.0
+            temp = 1.0 if "kimi-k2.5" in candidate.lower() else temperature
+
+            kwargs: dict[str, Any] = {
+                "model": resolved,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temp,
+                "num_retries": self.num_retries,
+            }
+
+            # Pass api_base only for primary model with custom endpoint
+            if self.api_base and not is_fallback:
+                kwargs["api_base"] = self.api_base
+
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+
+            try:
+                response = await acompletion(**kwargs)
+                if is_fallback:
+                    logger.info("Fallback succeeded with model: %s", candidate)
+                return self._parse_response(response)
+            except Exception as e:
+                last_error = e
+                if idx < len(models_to_try) - 1:
+                    logger.warning("Model %s failed (%s), trying next fallback...", candidate, e)
+                else:
+                    logger.error("All models failed. Last error: %s", e)
+
+        # All models exhausted
+        return LLMResponse(
+            content=f"Error calling LLM: {last_error}",
+            finish_reason="error",
+        )
+
+    def _resolve_model(self, model: str, *, is_fallback: bool = False) -> str:
+        """Apply provider-specific model name prefixes.
+
+        For fallback models, instance-level flags (is_openrouter, is_vllm)
+        are skipped since those apply only to the primary provider setup.
+        """
+        # OpenRouter prefix (instance-level, skip for fallback)
+        if not is_fallback and self.is_openrouter and not model.startswith("openrouter/"):
+            return f"openrouter/{model}"
+
+        # Zhipu/Z.ai prefix (model-name based)
         if ("glm" in model.lower() or "zhipu" in model.lower()) and not (
             model.startswith("zhipu/")
             or model.startswith("zai/")
             or model.startswith("openrouter/")
         ):
-            model = f"zai/{model}"
+            return f"zai/{model}"
 
-        # For Moonshot/Kimi, ensure moonshot/ prefix (before vLLM check)
+        # Moonshot/Kimi prefix (model-name based)
         if ("moonshot" in model.lower() or "kimi" in model.lower()) and not (
             model.startswith("moonshot/") or model.startswith("openrouter/")
         ):
-            model = f"moonshot/{model}"
+            return f"moonshot/{model}"
 
-        # For Gemini, ensure gemini/ prefix if not already present
+        # Gemini prefix (model-name based)
         if "gemini" in model.lower() and not model.startswith("gemini/"):
-            model = f"gemini/{model}"
+            return f"gemini/{model}"
 
-        # For vLLM, use hosted_vllm/ prefix per LiteLLM docs
-        # Convert openai/ prefix to hosted_vllm/ if user specified it
-        if self.is_vllm:
-            model = f"hosted_vllm/{model}"
+        # vLLM prefix (instance-level, skip for fallback)
+        if not is_fallback and self.is_vllm:
+            return f"hosted_vllm/{model}"
 
-        # kimi-k2.5 only supports temperature=1.0
-        if "kimi-k2.5" in model.lower():
-            temperature = 1.0
-
-        kwargs: dict[str, Any] = {
-            "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens,
-            "temperature": temperature,
-            "num_retries": self.num_retries,
-        }
-
-        # Pass api_base directly for custom endpoints (vLLM, etc.)
-        if self.api_base:
-            kwargs["api_base"] = self.api_base
-
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
-
-        try:
-            response = await acompletion(**kwargs)
-            return self._parse_response(response)
-        except Exception as e:
-            # Return error as content for graceful handling
-            return LLMResponse(
-                content=f"Error calling LLM: {str(e)}",
-                finish_reason="error",
-            )
+        return model
 
     def _parse_response(self, response: Any) -> LLMResponse:
         """Parse LiteLLM response into our standard format."""
