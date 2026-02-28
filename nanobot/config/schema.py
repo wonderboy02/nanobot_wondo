@@ -77,6 +77,7 @@ class AgentDefaults(BaseModel):
 
     workspace: str = "~/.nanobot/workspace"
     model: str = "anthropic/claude-opus-4-5"
+    fallback_models: list[str] = Field(default_factory=lambda: ["gemini/gemini-2.5-flash"])
     max_tokens: int = 8192
     temperature: float = 0.7
     max_tool_iterations: int = 20
@@ -92,7 +93,7 @@ class WorkerConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    model: str = "google/gemini-2.0-flash-exp"
+    model: str = "gemini/gemini-3-flash-preview"
 
 
 class AgentsConfig(BaseModel):
@@ -121,6 +122,15 @@ class ProvidersConfig(BaseModel):
     vllm: ProviderConfig = Field(default_factory=ProviderConfig)
     gemini: ProviderConfig = Field(default_factory=ProviderConfig)
     moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
+
+    def collect_provider_keys(self) -> dict[str, str]:
+        """Return {provider_name: api_key} for all configured providers."""
+        keys: dict[str, str] = {}
+        for name in ("gemini", "deepseek", "anthropic", "openai", "groq", "moonshot", "zhipu"):
+            pconfig = getattr(self, name, None)
+            if pconfig and pconfig.api_key:
+                keys[name] = pconfig.api_key
+        return keys
 
 
 class NotionDatabasesConfig(BaseModel):

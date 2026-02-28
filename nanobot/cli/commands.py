@@ -171,7 +171,7 @@ def gateway(
     from nanobot.channels.manager import ChannelManager
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronJob
-    from nanobot.heartbeat.service import HeartbeatService
+    from nanobot.heartbeat.service import DEFAULT_HEARTBEAT_INTERVAL_S, HeartbeatService
 
     if verbose:
         import logging
@@ -196,19 +196,12 @@ def gateway(
         console.print("Set one in ~/.nanobot/config.json under providers.openrouter.apiKey")
         raise typer.Exit(1)
 
-    # Collect all configured provider keys for fallback model support
-    extra_provider_keys: dict[str, str] = {}
-    for pname in ("gemini", "deepseek", "anthropic", "openai", "groq", "moonshot", "zhipu"):
-        pconfig = getattr(config.providers, pname, None)
-        if pconfig and pconfig.api_key:
-            extra_provider_keys[pname] = pconfig.api_key
-
     provider = LiteLLMProvider(
         api_key=api_key,
         api_base=api_base,
         default_model=config.agents.defaults.model,
         fallback_models=config.agents.defaults.fallback_models,
-        extra_provider_keys=extra_provider_keys or None,
+        extra_provider_keys=config.providers.collect_provider_keys() or None,
     )
 
     # Create cron service first (callback set after agent creation)
@@ -269,12 +262,12 @@ def gateway(
 
     # Determine worker model (from config or fallback to fast model)
     worker_config = getattr(config.agents, "worker", None)
-    worker_model = worker_config.model if worker_config else "google/gemini-2.0-flash-exp"
+    worker_model = worker_config.model if worker_config else "gemini/gemini-3-flash-preview"
 
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
         on_heartbeat=on_heartbeat,
-        # Uses DEFAULT_HEARTBEAT_INTERVAL_S (2 hours)
+        interval_s=DEFAULT_HEARTBEAT_INTERVAL_S,
         enabled=True,
         provider=provider,
         model=worker_model,
@@ -350,19 +343,12 @@ def agent(
         raise typer.Exit(1)
 
     bus = MessageBus()
-
-    extra_keys: dict[str, str] = {}
-    for pname in ("gemini", "deepseek", "anthropic", "openai", "groq", "moonshot", "zhipu"):
-        pconfig = getattr(config.providers, pname, None)
-        if pconfig and pconfig.api_key:
-            extra_keys[pname] = pconfig.api_key
-
     provider = LiteLLMProvider(
         api_key=api_key,
         api_base=api_base,
         default_model=config.agents.defaults.model,
         fallback_models=config.agents.defaults.fallback_models,
-        extra_provider_keys=extra_keys or None,
+        extra_provider_keys=config.providers.collect_provider_keys() or None,
     )
 
     agent_loop = AgentLoop(
