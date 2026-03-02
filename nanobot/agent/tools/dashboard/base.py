@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from nanobot.agent.tools.base import Tool
+from nanobot.dashboard.utils import cancel_notification
 
 if TYPE_CHECKING:
     from nanobot.dashboard.storage import SaveResult, StorageBackend
@@ -177,10 +178,7 @@ class BaseDashboardTool(Tool):
                 continue
             if n.get("status") != "pending":
                 continue
-            n["status"] = "cancelled"
-            n["cancelled_at"] = now
-            ctx = n.get("context", "")
-            n["context"] = f"{ctx}\nCancellation reason: {reason}".strip()
+            cancel_notification(n, reason, now)
             cancelled_count += 1
 
         if cancelled_count:

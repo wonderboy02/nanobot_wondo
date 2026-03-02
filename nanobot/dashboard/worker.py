@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 from loguru import logger
 
-from nanobot.dashboard.utils import parse_datetime  # noqa: F401 — re-exported for back-compat
+from nanobot.dashboard.utils import cancel_notification, parse_datetime  # noqa: F401 — re-exported for back-compat
 
 
 def _generate_id(prefix: str) -> str:
@@ -541,8 +541,7 @@ class WorkerAgent:
         terminated = {
             t["id"]
             for t in tasks_data.get("tasks", [])
-            if t.get("status") in ("completed", "cancelled", "archived")
-            and t.get("id")
+            if t.get("status") in ("completed", "cancelled", "archived") and t.get("id")
         }
         if not terminated:
             return False
@@ -557,12 +556,7 @@ class WorkerAgent:
                 continue
             if n.get("related_task_id") not in terminated:
                 continue
-            n["status"] = "cancelled"
-            n["cancelled_at"] = now
-            ctx = n.get("context", "")
-            n["context"] = (
-                f"{ctx}\nCancellation reason: Task no longer active (worker sweep)"
-            ).strip()
+            cancel_notification(n, "Task no longer active (worker sweep)", now)
             changed = True
 
         if changed:

@@ -48,3 +48,14 @@ def normalize_iso_date(value: str) -> str | None:
             return None
         return candidate
     return None
+
+
+def cancel_notification(notification: dict, reason: str, now: str) -> None:
+    """Mutate a notification dict to cancelled status.
+
+    Shared by BaseDashboardTool (async tools) and WorkerAgent (sync sweep).
+    """
+    notification["status"] = "cancelled"
+    notification["cancelled_at"] = now
+    ctx = notification.get("context", "")
+    notification["context"] = f"{ctx}\nCancellation reason: {reason}".strip()
