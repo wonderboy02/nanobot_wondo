@@ -167,6 +167,7 @@ def gateway(
     from nanobot.config.loader import load_config, get_data_dir
     from nanobot.bus.queue import MessageBus
     from nanobot.providers.litellm_provider import LiteLLMProvider
+    from nanobot.providers.stats import ApiKeyStats
     from nanobot.agent.loop import AgentLoop
     from nanobot.channels.manager import ChannelManager
     from nanobot.cron.service import CronService
@@ -184,6 +185,7 @@ def gateway(
 
     # Create components
     bus = MessageBus()
+    api_key_stats = ApiKeyStats(config.workspace_path / "api_stats.json")
 
     # Create provider (supports OpenRouter, Anthropic, OpenAI, Bedrock)
     api_key = config.get_api_key()
@@ -211,6 +213,7 @@ def gateway(
         default_model=config.agents.defaults.model,
         fallback_models=config.agents.defaults.fallback_models,
         extra_provider_keys=extra_provider_keys or None,
+        api_key_stats=api_key_stats,
     )
 
     # Create cron service first (callback set after agent creation)
@@ -273,6 +276,14 @@ def gateway(
     worker_config = getattr(config.agents, "worker", None)
     worker_model = worker_config.model if worker_config else "google/gemini-2.0-flash-exp"
 
+    # Report callback: send weekly stats via Telegram
+    async def send_stats_report(message: str) -> None:
+        from nanobot.bus.events import OutboundMessage
+
+        await bus.publish_outbound(
+            OutboundMessage(channel="telegram", chat_id=notification_chat_id, content=message)
+        )
+
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
         on_heartbeat=on_heartbeat,
@@ -283,6 +294,8 @@ def gateway(
         storage_backend=agent.storage_backend,
         processing_lock=agent.processing_lock,
         scheduler=agent.scheduler,
+        api_key_stats=api_key_stats,
+        report_callback=send_stats_report if notification_chat_id else None,
     )
 
     # Create channel manager

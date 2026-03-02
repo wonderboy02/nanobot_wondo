@@ -53,24 +53,28 @@ class TestEffectiveKeys:
 class TestGetKeysForModel:
     def test_multiple_keys_for_matching_provider(self):
         provider = LiteLLMProvider(extra_provider_keys={"gemini": ["free1", "free2", "paid"]})
-        assert provider._get_keys_for_model("gemini/gemini-2.0-flash") == [
-            "free1",
-            "free2",
-            "paid",
-        ]
+        keys, keyword = provider._get_keys_for_model("gemini/gemini-2.0-flash")
+        assert keys == ["free1", "free2", "paid"]
+        assert keyword == "gemini"
 
     def test_single_key_returns_none(self):
-        """Single key provider should use env var (returns [None])."""
+        """Single key provider should use env var (returns [None], None)."""
         provider = LiteLLMProvider(extra_provider_keys={"gemini": ["only-key"]})
-        assert provider._get_keys_for_model("gemini/gemini-2.0-flash") == [None]
+        keys, keyword = provider._get_keys_for_model("gemini/gemini-2.0-flash")
+        assert keys == [None]
+        assert keyword is None
 
     def test_no_match_returns_none(self):
         provider = LiteLLMProvider(extra_provider_keys={"gemini": ["k1", "k2"]})
-        assert provider._get_keys_for_model("anthropic/claude-sonnet") == [None]
+        keys, keyword = provider._get_keys_for_model("anthropic/claude-sonnet")
+        assert keys == [None]
+        assert keyword is None
 
     def test_no_extra_keys_returns_none(self):
         provider = LiteLLMProvider()
-        assert provider._get_keys_for_model("gemini/gemini-2.0-flash") == [None]
+        keys, keyword = provider._get_keys_for_model("gemini/gemini-2.0-flash")
+        assert keys == [None]
+        assert keyword is None
 
 
 # ---------------------------------------------------------------------------

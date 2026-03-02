@@ -30,6 +30,7 @@ nanobot/
 ├── dashboard/helper.py      # Dashboard summary generator
 ├── channels/telegram.py     # Primary channel (numbered answers, /questions, /tasks)
 ├── notion/                  # NotionStorageBackend + cache
+├── providers/stats.py       # API key usage stats (file-persisted, weekly report)
 ├── heartbeat/service.py     # 30-min periodic Worker execution
 └── config/, session/, cron/, skills/, cli/, utils/
 ```
@@ -63,6 +64,16 @@ All tools are wrapped with `@with_dashboard_lock` (asyncio.Lock).
 ```json
 {"providers": {"gemini": {"apiKeys": ["free-1", "free-2"], "apiKey": "paid-last-resort"}}}
 ```
+
+### API Key Usage Stats (`providers/stats.py`)
+
+- `ApiKeyStats`: 매 LLM 호출 성공/rate-limit 시 즉시 `workspace/api_stats.json`에 기록
+- Atomic write (temp file + rename) → 컨테이너 재시작 시 데이터 유실 0
+- `record(provider, tier, event, tokens)`: free/paid 성공 횟수 + 토큰 누적
+- `get_weekly_summary()`: 7일 경과 시 포맷된 리포트 반환
+- `mark_reported()`: 카운터 리셋 + 새 기간 시작
+- Heartbeat `_tick()` 끝에서 주간 리포트 체크 → Telegram 전송
+- tier 판별: 단일 키(rotation 없음) → stats 스킵, 마지막 키 → `"paid"`, 그 외 → `"free"`
 
 ### StorageBackend
 
@@ -180,6 +191,7 @@ tests/
 ├── test_tool_validation.py              # Tool schema validation
 ├── test_cross_platform_paths.py         # Windows/Linux paths
 ├── test_litellm_fallback.py             # LLM key rotation + fallback
+├── test_api_key_stats.py               # API key usage stats (file persistence, weekly report)
 └── test_docker.sh                       # Docker image build/run test
 ```
 

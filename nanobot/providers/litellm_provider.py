@@ -1,8 +1,13 @@
 """LiteLLM provider implementation for multi-provider support."""
 
+from __future__ import annotations
+
 import logging
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from nanobot.providers.stats import ApiKeyStats
 
 import litellm
 from litellm import acompletion
@@ -39,11 +44,13 @@ class LiteLLMProvider(LLMProvider):
         num_retries: int = 3,
         fallback_models: list[str] | None = None,
         extra_provider_keys: dict[str, list[str]] | None = None,
+        api_key_stats: ApiKeyStats | None = None,
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.num_retries = num_retries
         self.fallback_models = fallback_models or []
+        self._api_key_stats = api_key_stats
 
         # Store provider key lists for key rotation (keyword -> [key1, key2, ...])
         self._provider_keys: dict[str, list[str]] = extra_provider_keys or {}
@@ -95,17 +102,24 @@ class LiteLLMProvider(LLMProvider):
         # Disable LiteLLM logging noise
         litellm.suppress_debug_info = True
 
-    def _get_keys_for_model(self, model: str) -> list[str | None]:
+    def _get_keys_for_model(self, model: str) -> tuple[list[str | None], str | None]:
         """Get API key rotation list for a model.
 
-        Returns list of keys to try in order. If no rotation keys are configured,
-        returns [None] to use the environment variable (existing behavior).
+        Returns (keys, provider_keyword) tuple.
+        If no rotation keys are configured, returns ([None], None).
         """
         model_lower = model.lower()
         for keyword, keys in self._provider_keys.items():
             if keyword in model_lower and len(keys) > 1:
-                return keys
-        return [None]  # Use env var (existing behavior)
+                return keys, keyword
+        return [None], None  # Use env var (existing behavior)
+
+    @staticmethod
+    def _get_key_tier(keys: list[str | None], key_idx: int) -> str | None:
+        """Determine key tier for stats. None means skip stats (single key)."""
+        if len(keys) <= 1:
+            return None
+        return "paid" if key_idx == len(keys) - 1 else "free"
 
     async def chat(
         self,
@@ -145,7 +159,7 @@ class LiteLLMProvider(LLMProvider):
             temp = 1.0 if "kimi-k2.5" in candidate.lower() else temperature
 
             # Key rotation: get list of keys for this model
-            keys = self._get_keys_for_model(candidate)
+            keys, provider_keyword = self._get_keys_for_model(candidate)
 
             for key_idx, key in enumerate(keys):
                 is_last_key = key_idx == len(keys) - 1
@@ -174,6 +188,22 @@ class LiteLLMProvider(LLMProvider):
 
                 try:
                     response = await acompletion(**kwargs)
+                    tier = self._get_key_tier(keys, key_idx)
+                    total_tokens = (
+                        response.usage.total_tokens
+                        if hasattr(response, "usage") and response.usage
+                        else 0
+                    )
+                    logger.info(
+                        "LLM ok: model=%s tier=%s key=%d/%d tokens=%d",
+                        candidate,
+                        tier or "default",
+                        key_idx + 1,
+                        len(keys),
+                        total_tokens,
+                    )
+                    if self._api_key_stats and tier and provider_keyword:
+                        self._api_key_stats.record(provider_keyword, tier, "success", total_tokens)
                     if is_fallback:
                         logger.info("Fallback succeeded with model: %s", candidate)
                     if key_idx > 0:
@@ -183,6 +213,16 @@ class LiteLLMProvider(LLMProvider):
                     return self._parse_response(response)
                 except litellm.exceptions.RateLimitError as e:
                     last_error = e
+                    tier = self._get_key_tier(keys, key_idx)
+                    logger.warning(
+                        "LLM rate_limited: model=%s tier=%s key=%d/%d",
+                        candidate,
+                        tier or "default",
+                        key_idx + 1,
+                        len(keys),
+                    )
+                    if self._api_key_stats and tier and provider_keyword:
+                        self._api_key_stats.record(provider_keyword, tier, "rate_limited", 0)
                     if is_last_key:
                         # Last key exhausted, move to next model
                         logger.warning(
@@ -192,11 +232,6 @@ class LiteLLMProvider(LLMProvider):
                         break
                     else:
                         # Rotate to next key immediately
-                        logger.warning(
-                            "Model %s rate limited on key %d, rotating to next key...",
-                            candidate,
-                            key_idx,
-                        )
                         continue
                 except Exception as e:
                     last_error = e

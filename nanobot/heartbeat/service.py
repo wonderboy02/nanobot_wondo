@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, Callable, Coroutine
 
 if TYPE_CHECKING:
     from nanobot.dashboard.storage import StorageBackend
+    from nanobot.providers.stats import ApiKeyStats
 
 from loguru import logger
 
@@ -59,6 +60,8 @@ class HeartbeatService:
         storage_backend: "StorageBackend | None" = None,
         processing_lock: asyncio.Lock | None = None,
         scheduler: Any | None = None,  # ReconciliationScheduler
+        api_key_stats: "ApiKeyStats | None" = None,
+        report_callback: Callable[[str], Coroutine[Any, Any, None]] | None = None,
     ):
         self.workspace = workspace
         self.on_heartbeat = on_heartbeat
@@ -69,6 +72,8 @@ class HeartbeatService:
         self.storage_backend = storage_backend
         self._processing_lock = processing_lock
         self.scheduler = scheduler
+        self.api_key_stats = api_key_stats
+        self.report_callback = report_callback
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -141,6 +146,23 @@ class HeartbeatService:
 
             except Exception as e:
                 logger.error(f"Heartbeat execution failed: {e}")
+
+        # Weekly API stats report check
+        await self._check_weekly_report()
+
+    async def _check_weekly_report(self) -> None:
+        """Send weekly API key usage report if interval has elapsed."""
+        if not self.api_key_stats:
+            return
+        summary = self.api_key_stats.get_weekly_summary()
+        if not summary or not self.report_callback:
+            return
+        try:
+            await self.report_callback(summary)
+            self.api_key_stats.mark_reported()
+            logger.info("Weekly API stats report sent")
+        except Exception as e:
+            logger.error("Weekly stats report failed: %s", e)
 
     async def _run_worker(self) -> None:
         """Run the unified Worker Agent to check dashboard."""
