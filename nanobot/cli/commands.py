@@ -196,12 +196,14 @@ def gateway(
         console.print("Set one in ~/.nanobot/config.json under providers.openrouter.apiKey")
         raise typer.Exit(1)
 
-    # Collect all configured provider keys for fallback model support
-    extra_provider_keys: dict[str, str] = {}
+    # Collect all configured provider keys for fallback model support + key rotation
+    extra_provider_keys: dict[str, list[str]] = {}
     for pname in ("gemini", "deepseek", "anthropic", "openai", "groq", "moonshot", "zhipu"):
         pconfig = getattr(config.providers, pname, None)
-        if pconfig and pconfig.api_key:
-            extra_provider_keys[pname] = pconfig.api_key
+        if pconfig:
+            keys = pconfig.effective_keys
+            if keys:
+                extra_provider_keys[pname] = keys
 
     provider = LiteLLMProvider(
         api_key=api_key,
@@ -351,11 +353,13 @@ def agent(
 
     bus = MessageBus()
 
-    extra_keys: dict[str, str] = {}
+    extra_keys: dict[str, list[str]] = {}
     for pname in ("gemini", "deepseek", "anthropic", "openai", "groq", "moonshot", "zhipu"):
         pconfig = getattr(config.providers, pname, None)
-        if pconfig and pconfig.api_key:
-            extra_keys[pname] = pconfig.api_key
+        if pconfig:
+            keys = pconfig.effective_keys
+            if keys:
+                extra_keys[pname] = keys
 
     provider = LiteLLMProvider(
         api_key=api_key,

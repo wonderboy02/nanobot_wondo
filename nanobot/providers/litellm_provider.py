@@ -38,12 +38,15 @@ class LiteLLMProvider(LLMProvider):
         default_model: str = "anthropic/claude-opus-4-5",
         num_retries: int = 3,
         fallback_models: list[str] | None = None,
-        extra_provider_keys: dict[str, str] | None = None,
+        extra_provider_keys: dict[str, list[str]] | None = None,
     ):
         super().__init__(api_key, api_base)
         self.default_model = default_model
         self.num_retries = num_retries
         self.fallback_models = fallback_models or []
+
+        # Store provider key lists for key rotation (keyword -> [key1, key2, ...])
+        self._provider_keys: dict[str, list[str]] = extra_provider_keys or {}
 
         # Detect OpenRouter by api_key prefix or explicit api_base
         self.is_openrouter = (api_key and api_key.startswith("sk-or-")) or (
@@ -78,17 +81,31 @@ class LiteLLMProvider(LLMProvider):
                 os.environ.setdefault("MOONSHOT_API_BASE", api_base or "https://api.moonshot.cn/v1")
 
         # Set env vars for extra providers (needed for fallback models)
-        if extra_provider_keys:
-            for keyword, key in extra_provider_keys.items():
+        # Use first key from each provider list for env var (enables single-key fallback)
+        if self._provider_keys:
+            for keyword, keys in self._provider_keys.items():
                 env_var = _PROVIDER_ENV_MAP.get(keyword)
-                if env_var and key:
-                    os.environ.setdefault(env_var, key)
+                first_key = keys[0] if keys else None
+                if env_var and first_key:
+                    os.environ.setdefault(env_var, first_key)
 
         if api_base:
             litellm.api_base = api_base
 
         # Disable LiteLLM logging noise
         litellm.suppress_debug_info = True
+
+    def _get_keys_for_model(self, model: str) -> list[str | None]:
+        """Get API key rotation list for a model.
+
+        Returns list of keys to try in order. If no rotation keys are configured,
+        returns [None] to use the environment variable (existing behavior).
+        """
+        model_lower = model.lower()
+        for keyword, keys in self._provider_keys.items():
+            if keyword in model_lower and len(keys) > 1:
+                return keys
+        return [None]  # Use env var (existing behavior)
 
     async def chat(
         self,
@@ -102,7 +119,9 @@ class LiteLLMProvider(LLMProvider):
         Send a chat completion request via LiteLLM.
 
         Tries the primary model first; on failure, iterates through
-        fallback_models before returning an error.
+        fallback_models before returning an error. For models with multiple
+        API keys configured, rotates through keys on rate limit errors
+        (free keys with no retry, last key with full retries).
 
         Args:
             messages: List of message dicts with 'role' and 'content'.
@@ -125,33 +144,69 @@ class LiteLLMProvider(LLMProvider):
             # kimi-k2.5 only supports temperature=1.0
             temp = 1.0 if "kimi-k2.5" in candidate.lower() else temperature
 
-            kwargs: dict[str, Any] = {
-                "model": resolved,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temp,
-                "num_retries": self.num_retries,
-            }
+            # Key rotation: get list of keys for this model
+            keys = self._get_keys_for_model(candidate)
 
-            # Pass api_base only for primary model with custom endpoint
-            if self.api_base and not is_fallback:
-                kwargs["api_base"] = self.api_base
+            for key_idx, key in enumerate(keys):
+                is_last_key = key_idx == len(keys) - 1
+                # Free keys: no retries (switch immediately on 429)
+                # Last key (paid): full retries with exponential backoff
+                num_retries = self.num_retries if is_last_key else 0
 
-            if tools:
-                kwargs["tools"] = tools
-                kwargs["tool_choice"] = "auto"
+                kwargs: dict[str, Any] = {
+                    "model": resolved,
+                    "messages": messages,
+                    "max_tokens": max_tokens,
+                    "temperature": temp,
+                    "num_retries": num_retries,
+                }
 
-            try:
-                response = await acompletion(**kwargs)
-                if is_fallback:
-                    logger.info("Fallback succeeded with model: %s", candidate)
-                return self._parse_response(response)
-            except Exception as e:
-                last_error = e
-                if idx < len(models_to_try) - 1:
-                    logger.warning("Model %s failed (%s), trying next fallback...", candidate, e)
-                else:
-                    logger.error("All models failed. Last error: %s", e)
+                if key is not None:
+                    kwargs["api_key"] = key
+
+                # Pass api_base only for primary model with custom endpoint
+                if self.api_base and not is_fallback:
+                    kwargs["api_base"] = self.api_base
+
+                if tools:
+                    kwargs["tools"] = tools
+                    kwargs["tool_choice"] = "auto"
+
+                try:
+                    response = await acompletion(**kwargs)
+                    if is_fallback:
+                        logger.info("Fallback succeeded with model: %s", candidate)
+                    if key_idx > 0:
+                        logger.info(
+                            "Key rotation succeeded on key index %d for %s", key_idx, candidate
+                        )
+                    return self._parse_response(response)
+                except litellm.exceptions.RateLimitError as e:
+                    last_error = e
+                    if is_last_key:
+                        # Last key exhausted, move to next model
+                        logger.warning(
+                            "Model %s rate limited on all keys, trying next fallback...",
+                            candidate,
+                        )
+                        break
+                    else:
+                        # Rotate to next key immediately
+                        logger.warning(
+                            "Model %s rate limited on key %d, rotating to next key...",
+                            candidate,
+                            key_idx,
+                        )
+                        continue
+                except Exception as e:
+                    last_error = e
+                    if idx < len(models_to_try) - 1:
+                        logger.warning(
+                            "Model %s failed (%s), trying next fallback...", candidate, e
+                        )
+                    else:
+                        logger.error("All models failed. Last error: %s", e)
+                    break  # Non-rate-limit error: skip key rotation, try next model
 
         # All models exhausted
         return LLMResponse(

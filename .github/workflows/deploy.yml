@@ -11,12 +11,17 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: ${{ secrets.AWS_SSH_HOST || secrets.SSH_HOST }}
+      DEPLOY_PORT: ${{ secrets.AWS_SSH_PORT || secrets.SSH_PORT || '22' }}
+      DEPLOY_USER: ${{ secrets.AWS_SSH_USER || secrets.SSH_USER }}
+      DEPLOY_KEY: ${{ secrets.AWS_SSH_PRIVATE_KEY || secrets.SSH_PRIVATE_KEY }}
     steps:
       # NOTE: Tag pinned (not SHA) — acceptable for a private personal project.
       - uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.SSH_HOST }}
-          port: 22022
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          host: ${{ env.DEPLOY_HOST }}
+          port: ${{ env.DEPLOY_PORT }}
+          username: ${{ env.DEPLOY_USER }}
+          key: ${{ env.DEPLOY_KEY }}
           script: cd "${{ secrets.DEPLOY_PATH }}" && ./deploy.sh

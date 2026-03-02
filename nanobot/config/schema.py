@@ -93,7 +93,7 @@ class WorkerConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    model: str = "google/gemini-2.0-flash-exp"
+    model: str = "google/gemini-3-flash-preview"
 
 
 class AgentsConfig(BaseModel):
@@ -106,8 +106,17 @@ class AgentsConfig(BaseModel):
 class ProviderConfig(BaseModel):
     """LLM provider configuration."""
 
-    api_key: str = ""
+    api_key: str = ""  # Single key (paid or backward compat)
+    api_keys: list[str] = Field(default_factory=list)  # Rotation keys (free tier, tried in order)
     api_base: str | None = None
+
+    @property
+    def effective_keys(self) -> list[str]:
+        """api_keys first, api_key as last fallback. Deduped."""
+        keys = [k for k in self.api_keys if k]
+        if self.api_key and self.api_key not in keys:
+            keys.append(self.api_key)
+        return keys
 
 
 class ProvidersConfig(BaseModel):
@@ -230,7 +239,7 @@ class Config(BaseSettings):
             "vllm": self.providers.vllm,
         }
         for keyword, provider in providers.items():
-            if keyword in model and provider.api_key:
+            if keyword in model and (provider.api_key or provider.api_keys):
                 return provider
         return None
 

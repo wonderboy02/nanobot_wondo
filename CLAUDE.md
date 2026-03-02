@@ -50,6 +50,20 @@ nanobot/
 
 All tools are wrapped with `@with_dashboard_lock` (asyncio.Lock).
 
+### LLM Provider Key Rotation (`litellm_provider.py`)
+
+- `ProviderConfig.api_keys`: free tier 키 목록 (순서대로 시도)
+- `ProviderConfig.api_key`: 단일 키 또는 유료 키 (api_keys 뒤에 마지막 fallback)
+- `effective_keys` property: `api_keys` + `api_key` 합산 (중복 제거)
+- Rate limit (429) 시 즉시 다음 키로 전환 (`num_retries=0`)
+- 마지막 키: `num_retries=3` (exponential backoff)
+- 비-rate-limit 에러: 키 로테이션 스킵, 다음 fallback 모델로
+- `api_keys` 비어있으면 기존 동작 (env var 사용)
+
+```json
+{"providers": {"gemini": {"apiKeys": ["free-1", "free-2"], "apiKey": "paid-last-resort"}}}
+```
+
 ### StorageBackend
 
 ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion API + 5-min TTL cache)
@@ -165,6 +179,7 @@ tests/
 ├── test_numbered_answers.py             # Numbered answer parsing
 ├── test_tool_validation.py              # Tool schema validation
 ├── test_cross_platform_paths.py         # Windows/Linux paths
+├── test_litellm_fallback.py             # LLM key rotation + fallback
 └── test_docker.sh                       # Docker image build/run test
 ```
 
