@@ -2,6 +2,8 @@
 
 from typing import Any
 
+from loguru import logger
+
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
 from nanobot.dashboard.utils import normalize_iso_date
 
@@ -132,6 +134,18 @@ class UpdateTaskTool(BaseDashboardTool):
             success, message = await self._validate_and_save_tasks(tasks_data)
 
             if success:
+                cancelled_count = 0
+                if status in ("completed", "cancelled"):
+                    try:
+                        cancelled_count = await self._cancel_notifications_for_task(
+                            task_id, f"Task {status}"
+                        )
+                    except Exception:
+                        logger.exception(
+                            f"[UpdateTask] Failed to cancel notifications for {task_id}"
+                        )
+                if cancelled_count:
+                    return f"Updated {task_id} ({cancelled_count} notification(s) cancelled)"
                 return f"Updated {task_id}"
             else:
                 return message

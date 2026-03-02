@@ -126,3 +126,19 @@ User: "리포트 마감 내일이야, 리마인더 해줘"
 → schedule_notification("리포트 마감 리마인더", scheduled_at="내일 09:00", related_task_id=task_xxx)
 → SILENT
 ```
+
+### Task 변경 시 Notification 동기화
+
+Task 상태/시간이 변경되면 관련 notification도 반드시 확인:
+
+- **Task 완료/취소/아카이브**: 관련 pending notification은 자동 cancel됨 (`update_task`, `archive_task` 코드 처리)
+- **Task deadline/시간 변경**: `list_notifications(related_task_id=task_xxx)`로 관련 알림 확인 후 `update_notification()`으로 시간 수정
+
+```
+# Task 시간 변경 → notification도 업데이트
+User: "내일 미팅 3시에서 5시로 바뀌었어"
+→ update_task(task_xxx, deadline="내일 17:00")
+→ list_notifications(related_task_id=task_xxx)  # 관련 알림 확인
+→ update_notification(notif_xxx, scheduled_at="내일 17:00")
+→ SILENT
+```

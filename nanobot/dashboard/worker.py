@@ -178,9 +178,11 @@ class WorkerAgent:
         3. Archive — completed/cancelled → archived (tasks only)
         4. Reevaluate — active/someday status (tasks only)
         5. Recurring — reset completed habits, record misses (tasks only)
+        6. Cancel orphaned notifications — safety net for terminated tasks
 
         Bootstrap runs independently per entity (separate load/save).
         Steps 2-5 share a single load_tasks() call.
+        Step 6 uses tasks_data for lookup but loads/saves notifications separately.
         Question cleanup is handled separately by _cleanup_questions()
         after Phase 2, so the LLM can process answered questions first.
         """
@@ -200,6 +202,13 @@ class WorkerAgent:
                     logger.error(f"[Worker] Failed to save tasks: {msg}")
         except Exception:
             logger.exception("[Worker] Task maintenance error")
+            return
+
+        # Step 6: Cancel orphaned notifications (separate load/save cycle)
+        try:
+            self._cancel_orphaned_notifications(tasks_data)
+        except Exception:
+            logger.exception("[Worker] Notification orphan cleanup error")
 
     def _bootstrap_new_items(self) -> None:
         """Assign IDs and timestamps to manually-added items (e.g. via Notion UI).
@@ -524,6 +533,43 @@ class WorkerAgent:
             except Exception:
                 tid = task.get("id", "?") if isinstance(task, dict) else "???"
                 logger.exception(f"[Worker] Recurring error for task {tid}")
+
+        return changed
+
+    def _cancel_orphaned_notifications(self, tasks_data: dict) -> bool:
+        """Cancel pending notifications whose related task is done. Safety net."""
+        terminated = {
+            t["id"]
+            for t in tasks_data.get("tasks", [])
+            if t.get("status") in ("completed", "cancelled", "archived")
+            and t.get("id")
+        }
+        if not terminated:
+            return False
+
+        notifications_data = self.storage_backend.load_notifications()
+        notifications = notifications_data.get("notifications", [])
+        now = datetime.now().isoformat()
+        changed = False
+
+        for n in notifications:
+            if n.get("status") != "pending":
+                continue
+            if n.get("related_task_id") not in terminated:
+                continue
+            n["status"] = "cancelled"
+            n["cancelled_at"] = now
+            ctx = n.get("context", "")
+            n["context"] = (
+                f"{ctx}\nCancellation reason: Task no longer active (worker sweep)"
+            ).strip()
+            changed = True
+
+        if changed:
+            ok, msg = self.storage_backend.save_notifications(notifications_data)
+            if not ok:
+                logger.error(f"[Worker] Failed to save notifications: {msg}")
+                return False
 
         return changed
 

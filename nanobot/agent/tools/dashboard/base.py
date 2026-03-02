@@ -7,6 +7,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from loguru import logger
+
 from nanobot.agent.tools.base import Tool
 
 if TYPE_CHECKING:
@@ -162,3 +164,29 @@ class BaseDashboardTool(Tool):
     async def _validate_and_save_insights(self, insights_data: dict) -> tuple[bool, str]:
         """Save insights data via the storage backend."""
         return await asyncio.to_thread(self._backend.save_insights, insights_data)
+
+    async def _cancel_notifications_for_task(self, task_id: str, reason: str) -> int:
+        """Cancel all pending notifications linked to the given task."""
+        notifications_data = await self._load_notifications()
+        notifications = notifications_data.get("notifications", [])
+        now = self._now()
+        cancelled_count = 0
+
+        for n in notifications:
+            if n.get("related_task_id") != task_id:
+                continue
+            if n.get("status") != "pending":
+                continue
+            n["status"] = "cancelled"
+            n["cancelled_at"] = now
+            ctx = n.get("context", "")
+            n["context"] = f"{ctx}\nCancellation reason: {reason}".strip()
+            cancelled_count += 1
+
+        if cancelled_count:
+            success, msg = await self._validate_and_save_notifications(notifications_data)
+            if not success:
+                logger.error(f"[Dashboard] Failed to save cancelled notifications: {msg}")
+                return 0
+
+        return cancelled_count
