@@ -571,17 +571,40 @@ class WorkerAgent:
         """Process a single recurring task for today.
 
         Returns True if the task was modified.
+
+        Completion lifecycle:
+          1. User marks task completed → completed_at = now, status = completed
+          2. Worker detects fresh completion (completed_at is today) →
+             record stats, set last_completed_date = today, keep completed
+          3. Next day Worker detects stale completion (completed_at < today) →
+             reset task to active for new cycle
         """
         recurring = task["recurring"]
         days = recurring.get("days_of_week", list(range(7)))
         last_completed = recurring.get("last_completed_date")
         last_miss = recurring.get("last_miss_date")
+        today_str = today.isoformat()
 
-        # If completed today, handle the completion
+        # If completed, handle completion or reset for new day
         if task.get("status") == "completed" or (
             task.get("progress", {}).get("percentage", 0) >= 100
         ):
-            return self._handle_recurring_completion(task, recurring, today, days)
+            # Already recorded today's completion — keep completed
+            if last_completed == today_str:
+                return False
+
+            # Check if this is a fresh completion (today) or stale (previous day).
+            # NOTE: completed_at is guaranteed by _enforce_consistency R3 which runs
+            # before _check_recurring_tasks in _run_maintenance.
+            completed_at = task.get("completed_at", "")
+            if completed_at and completed_at[:10] == today_str:
+                # Fresh completion today — record stats, keep completed
+                return self._handle_recurring_completion(task, recurring, today, days)
+
+            # Stale completion from a previous day — reset for new cycle
+            self._reset_recurring_task(task)
+            logger.info(f"[Worker] Recurring reset (new day): {task.get('id', '?')}")
+            return True
 
         # Brand-new task (never completed or missed) → skip miss detection
         if not last_completed and not last_miss:
@@ -615,14 +638,13 @@ class WorkerAgent:
         today: date,
         days: list[int],
     ) -> bool:
-        """Handle a completed recurring task: update stats and reset."""
+        """Handle a completed recurring task: update stats, keep completed until next day."""
         last_completed = recurring.get("last_completed_date")
         today_str = today.isoformat()
 
-        # Same-day duplicate guard
+        # Same-day duplicate guard (defensive — caller already checks this)
         if last_completed == today_str:
-            self._reset_recurring_task(task)
-            return True
+            return False
 
         # Update stats
         recurring["total_completed"] = recurring.get("total_completed", 0) + 1
@@ -643,7 +665,7 @@ class WorkerAgent:
         )
         recurring["last_completed_date"] = today_str
 
-        self._reset_recurring_task(task)
+        # Task stays completed — reset happens on the next day
         logger.info(
             f"[Worker] Recurring completed: {task.get('id', '?')} "
             f"(streak: {recurring['streak_current']})"

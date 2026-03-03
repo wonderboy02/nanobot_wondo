@@ -98,8 +98,8 @@ def _make_recurring_task(
 
 
 @pytest.mark.asyncio
-async def test_recurring_completion_resets_task(test_workspace):
-    """Completed recurring task should be reset to active with progress=0."""
+async def test_recurring_completion_stays_completed_today(test_workspace):
+    """Completed recurring task should stay completed for the rest of the day."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
@@ -120,9 +120,8 @@ async def test_recurring_completion_resets_task(test_workspace):
 
     result = backend.load_tasks()
     t = result["tasks"][0]
-    assert t["status"] == "active"
-    assert t["progress"]["percentage"] == 0
-    assert t["completed_at"] is None
+    # Task stays completed for the rest of the day
+    assert t["status"] == "completed"
     assert t["recurring"]["total_completed"] == 1
     assert t["recurring"]["last_completed_date"] == today.isoformat()
 
@@ -220,7 +219,7 @@ async def test_recurring_completion_no_previous(test_workspace):
 
 @pytest.mark.asyncio
 async def test_recurring_completion_same_day_idempotent(test_workspace):
-    """Same-day re-completion should not double-count stats."""
+    """Same-day re-completion should not double-count stats and stay completed."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
@@ -247,9 +246,57 @@ async def test_recurring_completion_same_day_idempotent(test_workspace):
     # Stats unchanged — same-day guard
     assert r["streak_current"] == 3
     assert r["total_completed"] == 5
-    # But task still reset
-    assert result["tasks"][0]["status"] == "active"
-    assert result["tasks"][0]["progress"]["percentage"] == 0
+    # Task stays completed (no reset until next day)
+    assert result["tasks"][0]["status"] == "completed"
+
+
+# ============================================================================
+# Core Behavior: Next-Day Reset
+# ============================================================================
+
+
+def test_recurring_resets_on_next_day():
+    """Completed recurring task should reset to active when processed on the next day.
+
+    Tests the full lifecycle directly via _process_one_recurring:
+      1. Fresh completion today → stats recorded, stays completed
+      2. Same-day re-run → idempotent (no changes)
+      3. Next day → stale completion detected, reset to active
+    """
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    today = date(2026, 3, 3)
+    yesterday = date(2026, 3, 2)
+    tomorrow = date(2026, 3, 4)
+
+    task = _make_recurring_task(
+        status="completed",
+        progress=100,
+        last_completed_date=yesterday.isoformat(),
+    )
+    task["completed_at"] = f"{today.isoformat()}T14:30:00"
+
+    worker = WorkerAgent.__new__(WorkerAgent)
+
+    # Step 1: Process today — fresh completion, record stats, keep completed
+    changed = worker._process_one_recurring(task, today)
+    assert changed is True
+    assert task["status"] == "completed"
+    assert task["recurring"]["total_completed"] == 1
+    assert task["recurring"]["last_completed_date"] == today.isoformat()
+
+    # Step 2: Process today again — idempotent (last_completed == today)
+    changed = worker._process_one_recurring(task, today)
+    assert changed is False
+    assert task["recurring"]["total_completed"] == 1  # Not incremented
+
+    # Step 3: Process tomorrow — stale completion, reset to active
+    changed = worker._process_one_recurring(task, tomorrow)
+    assert changed is True
+    assert task["status"] == "active"
+    assert task["progress"]["percentage"] == 0
+    assert task["completed_at"] is None
 
 
 # ============================================================================
@@ -323,7 +370,7 @@ async def test_recurring_miss_idempotent(test_workspace):
 
 @pytest.mark.asyncio
 async def test_recurring_progress_100_triggers_completion(test_workspace):
-    """Progress 100% (not status=completed) should still trigger completion."""
+    """Progress 100% (not status=completed) should trigger completion via R1, then stay completed."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
@@ -346,8 +393,8 @@ async def test_recurring_progress_100_triggers_completion(test_workspace):
 
     result = backend.load_tasks()
     t = result["tasks"][0]
-    assert t["status"] == "active"
-    assert t["progress"]["percentage"] == 0
+    # R1 sets completed + completed_at=now, then recurring records stats and keeps completed
+    assert t["status"] == "completed"
     assert t["recurring"]["total_completed"] == 1
 
 
@@ -357,12 +404,12 @@ async def test_recurring_progress_100_triggers_completion(test_workspace):
 
 
 @pytest.mark.asyncio
-async def test_consistency_r1_then_recurring_reset(test_workspace):
-    """active + progress=100% → R1 sets completed → recurring resets to active.
+async def test_consistency_r1_then_recurring_keeps_completed(test_workspace):
+    """active + progress=100% → R1 sets completed → recurring records stats, stays completed.
 
     Verifies the full pipeline: _enforce_consistency (R1) marks the task
     as completed, _archive_completed_tasks skips it (recurring), then
-    _check_recurring_tasks resets it. All in a single run_cycle.
+    _check_recurring_tasks records stats but keeps completed until next day.
     """
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
@@ -389,10 +436,8 @@ async def test_consistency_r1_then_recurring_reset(test_workspace):
 
     result = backend.load_tasks()
     t = result["tasks"][0]
-    # End state: reset to active (not archived, not completed)
-    assert t["status"] == "active"
-    assert t["progress"]["percentage"] == 0
-    assert t["completed_at"] is None
+    # End state: stays completed (reset happens next day)
+    assert t["status"] == "completed"
     # Stats updated
     assert t["recurring"]["total_completed"] == 6
     assert t["recurring"]["streak_current"] == 3
@@ -405,7 +450,7 @@ async def test_consistency_r1_then_recurring_reset(test_workspace):
 
 @pytest.mark.asyncio
 async def test_recurring_completed_not_archived(test_workspace):
-    """Completed recurring task should NOT be archived (Worker resets it)."""
+    """Completed recurring task should NOT be archived (stays completed until next day)."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
@@ -420,8 +465,8 @@ async def test_recurring_completed_not_archived(test_workspace):
     await worker.run_cycle()
 
     result = backend.load_tasks()
-    # Should be reset to active, NOT archived
-    assert result["tasks"][0]["status"] == "active"
+    # Should stay completed, NOT archived
+    assert result["tasks"][0]["status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -816,9 +861,9 @@ def test_recurring_exception_isolation(test_workspace):
 
     assert changed is True
     # Good task should be processed despite bad task's error
-    assert good_task["status"] == "active"
+    # Task stays completed (stats recorded, reset happens next day)
+    assert good_task["status"] == "completed"
     assert good_task["recurring"]["total_completed"] == 1
-    assert good_task["progress"]["percentage"] == 0
 
 
 @pytest.mark.asyncio
@@ -964,6 +1009,8 @@ async def test_recurring_mwf_streak(test_workspace):
         days_of_week=[0, 2, 4],  # Mon, Wed, Fri
         last_completed_date=mon.isoformat(),
     )
+    # Set completed_at to match the target date (wed) so it's treated as fresh
+    task["completed_at"] = f"{wed.isoformat()}T14:00:00"
 
     tasks_data = backend.load_tasks()
     tasks_data["tasks"].append(task)
