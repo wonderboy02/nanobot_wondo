@@ -97,7 +97,7 @@ class ApiKeyStats:
                 Path(tmp).unlink(missing_ok=True)
                 raise
         except OSError as exc:
-            logger.error("Failed to save API stats: %s", exc)
+            logger.error("Failed to save API stats: {}", exc)
 
     @staticmethod
     def _parse_dt(value: str | None) -> datetime | None:

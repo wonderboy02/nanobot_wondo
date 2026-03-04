@@ -205,7 +205,7 @@ class LiteLLMProvider(LLMProvider):
                     if self._api_key_stats and tier and provider_keyword:
                         self._api_key_stats.record(provider_keyword, tier, "success", total_tokens)
                     if is_fallback:
-                        logger.info("Fallback succeeded with model: %s", candidate)
+                        logger.info("Fallback succeeded with model: {}", candidate)
                     if key_idx > 0:
                         logger.info(
                             "Key rotation succeeded on key index %d for %s", key_idx, candidate
@@ -242,9 +242,9 @@ class LiteLLMProvider(LLMProvider):
                         len(keys),
                     )
                     if idx < len(models_to_try) - 1:
-                        logger.info("Model %s unavailable, trying next fallback...", candidate)
+                        logger.info("Model {} unavailable, trying next fallback...", candidate)
                     else:
-                        logger.error("All models failed. Last error (503): %s", e)
+                        logger.error("All models failed. Last error (503): {}", e)
                     break  # Server-side issue: skip key rotation, try next model
                 except Exception as e:
                     last_error = e
@@ -253,7 +253,7 @@ class LiteLLMProvider(LLMProvider):
                             "Model %s failed (%s), trying next fallback...", candidate, e
                         )
                     else:
-                        logger.error("All models failed. Last error: %s", e)
+                        logger.error("All models failed. Last error: {}", e)
                     break  # Non-rate-limit error: skip key rotation, try next model
 
         # All models exhausted

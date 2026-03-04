@@ -162,7 +162,7 @@ class HeartbeatService:
             self.api_key_stats.mark_reported()
             logger.info("Weekly API stats report sent")
         except Exception as e:
-            logger.error("Weekly stats report failed: %s", e)
+            logger.error("Weekly stats report failed: {}", e)
 
     async def _run_worker(self) -> None:
         """Run the unified Worker Agent to check dashboard."""
