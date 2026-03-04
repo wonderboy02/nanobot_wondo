@@ -168,6 +168,14 @@ class GoogleConfig(BaseModel):
     calendar: GoogleCalendarConfig = Field(default_factory=GoogleCalendarConfig)
 
 
+class HealthcheckConfig(BaseModel):
+    """Healthchecks.io ping configuration."""
+
+    enabled: bool = False
+    ping_url: str = ""
+    interval_s: int = Field(default=300, ge=60)  # 5min default, 1min minimum
+
+
 class GatewayConfig(BaseModel):
     """Gateway/server configuration."""
 
@@ -212,6 +220,7 @@ class Config(BaseSettings):
     tools: ToolsConfig = Field(default_factory=ToolsConfig)
     notion: NotionConfig = Field(default_factory=NotionConfig)
     google: GoogleConfig = Field(default_factory=GoogleConfig)
+    healthcheck: HealthcheckConfig = Field(default_factory=HealthcheckConfig)
 
     @property
     def workspace_path(self) -> Path:

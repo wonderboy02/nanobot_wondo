@@ -173,6 +173,7 @@ def gateway(
     from nanobot.cron.service import CronService
     from nanobot.cron.types import CronJob
     from nanobot.heartbeat.service import HeartbeatService
+    from nanobot.healthcheck.service import HealthcheckService
 
     if verbose:
         import logging
@@ -298,6 +299,14 @@ def gateway(
         report_callback=send_stats_report if notification_chat_id else None,
     )
 
+    # Create healthcheck service
+    hc_cfg = config.healthcheck
+    healthcheck_svc = HealthcheckService(
+        ping_url=hc_cfg.ping_url,
+        interval_s=hc_cfg.interval_s,
+        enabled=hc_cfg.enabled,
+    )
+
     # Create channel manager
     channels = ChannelManager(config, bus)
 
@@ -319,16 +328,23 @@ def gateway(
     hb_label = f"{hb_minutes // 60}h" if hb_minutes >= 60 else f"{hb_minutes}m"
     console.print(f"[green]✓[/green] Heartbeat: every {hb_label}")
 
+    if healthcheck_svc.enabled:
+        hc_minutes = healthcheck_svc.interval_s // 60
+        hc_label = f"{hc_minutes // 60}h" if hc_minutes >= 60 else f"{hc_minutes}m"
+        console.print(f"[green]✓[/green] Healthcheck: every {hc_label}")
+
     async def run():
         try:
             await cron.start()
             await heartbeat.start()
+            await healthcheck_svc.start()
             await asyncio.gather(
                 agent.run(),
                 channels.start_all(),
             )
         except KeyboardInterrupt:
             console.print("\nShutting down...")
+            healthcheck_svc.stop()
             heartbeat.stop()
             cron.stop()
             agent.stop()

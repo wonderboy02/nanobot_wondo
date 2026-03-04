@@ -31,6 +31,7 @@ nanobot/
 ├── channels/telegram.py     # Primary channel (numbered answers, /questions, /tasks)
 ├── notion/                  # NotionStorageBackend + cache
 ├── providers/stats.py       # API key usage stats (file-persisted, weekly report)
+├── healthcheck/service.py   # Healthchecks.io ping (liveness signal)
 ├── heartbeat/service.py     # 2-hour periodic Worker execution
 ├── utils/time.py            # Timezone-aware now() (default Asia/Seoul)
 └── config/, session/, cron/, skills/, cli/, utils/
