@@ -101,17 +101,24 @@ Notification은 반드시 Task와 연결되어야 한다:
 1. 관련 기존 Task가 있으면 → `related_task_id`에 해당 task ID 연결
 2. 관련 Task가 없으면 → `create_task()` 먼저 호출 후 → `schedule_notification(related_task_id=새_task_id)`
 
+### Notification message 작성 규칙
+
+- **짧은 명사형/동사형**으로 작성 (GCal 제목 + Telegram 알림에 공용)
+- Task title과 유사한 스타일: `~하기`, `~참석`, `~ 마감` 등
+- ❌ "미팅 시간입니다", "운동 시간입니다", "리포트 마감 리마인더"
+- ✅ "팀 미팅", "운동하기", "리포트 마감"
+
 ```
 # 명시적 시간 → 해당 시간에 notification
 User: "내일 오후 3시에 미팅 있어"
 → create_task("미팅 참석")  # task_xxx 생성
-→ schedule_notification("미팅 시간입니다", scheduled_at="내일 15:00", related_task_id=task_xxx)
+→ schedule_notification("팀 미팅", scheduled_at="내일 15:00", related_task_id=task_xxx)
 → SILENT
 
 # 모호한 시간 → 컨벤션 시각으로 notification
 User: "내일 아침에 운동해야돼"
 → create_task("운동")  # task_xxx 생성
-→ schedule_notification("운동 시간입니다", scheduled_at="내일 09:00", related_task_id=task_xxx)
+→ schedule_notification("운동하기", scheduled_at="내일 09:00", related_task_id=task_xxx)
 → SILENT
 
 # 시간 없음 → task만
@@ -123,7 +130,7 @@ User: "리포트 써야해"
 # 명시적 알림 요청도 그대로 처리
 User: "리포트 마감 내일이야, 리마인더 해줘"
 → update_task(task_xxx, deadline="내일")
-→ schedule_notification("리포트 마감 리마인더", scheduled_at="내일 09:00", related_task_id=task_xxx)
+→ schedule_notification("리포트 마감", scheduled_at="내일 09:00", related_task_id=task_xxx)
 → SILENT
 ```
 

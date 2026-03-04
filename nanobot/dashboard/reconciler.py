@@ -266,9 +266,10 @@ class ReconciliationScheduler:
 
         # 3. Send first
         message = notification.get("message", "")
+        formatted = f"🔔 알림이 도착했습니다.\n- {message}"
         try:
             await self.send_callback(
-                OutboundMessage(channel=channel, chat_id=chat_id, content=message)
+                OutboundMessage(channel=channel, chat_id=chat_id, content=formatted)
             )
         except Exception as e:
             self._delivered.discard(notif_id)  # allow retry on next trigger
