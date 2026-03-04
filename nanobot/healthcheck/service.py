@@ -28,7 +28,7 @@ class HealthcheckService:
         self._running = True
         self._task = asyncio.create_task(self._run_loop())
         masked = self.ping_url.rsplit("/", 1)[0] + "/***"
-        logger.info("Healthcheck started (every %ds → %s)", self.interval_s, masked)
+        logger.info("Healthcheck started (every {}s → {})", self.interval_s, masked)
 
     def stop(self) -> None:
         self._running = False
@@ -45,17 +45,17 @@ class HealthcheckService:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("Healthcheck error: %s", e)
+                logger.error("Healthcheck error: {}", e)
 
     async def _ping(self) -> None:
         try:
             async with httpx.AsyncClient(timeout=PING_TIMEOUT_S) as client:
                 resp = await client.get(self.ping_url)
                 resp.raise_for_status()
-                logger.debug("Healthcheck ping OK (%d)", resp.status_code)
+                logger.debug("Healthcheck ping OK ({})", resp.status_code)
         except asyncio.CancelledError:
             raise
         except httpx.HTTPStatusError as e:
-            logger.warning("Healthcheck ping bad status: %d", e.response.status_code)
+            logger.warning("Healthcheck ping bad status: {}", e.response.status_code)
         except Exception as e:
-            logger.warning("Healthcheck ping failed: %s", e)
+            logger.warning("Healthcheck ping failed: {}", e)
