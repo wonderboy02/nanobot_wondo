@@ -19,6 +19,16 @@ class GoogleCalendarError(Exception):
 class GoogleCalendarClient:
     """Thin wrapper around Google Calendar API v3."""
 
+    @staticmethod
+    def _localize(iso_str: str, timezone: str) -> datetime:
+        """Naive ISO string을 timezone-aware datetime으로 변환. Aware면 그대로 반환."""
+        from zoneinfo import ZoneInfo
+
+        dt = datetime.fromisoformat(iso_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo(timezone))
+        return dt
+
     def __init__(
         self,
         client_secret_path: str,
@@ -82,7 +92,7 @@ class GoogleCalendarClient:
         """Create a calendar event. Returns the event ID."""
         try:
             service = self._get_service()
-            start_dt = datetime.fromisoformat(start_iso)
+            start_dt = self._localize(start_iso, timezone)
             end_dt = start_dt + timedelta(minutes=duration_minutes)
 
             body: dict = {
@@ -119,7 +129,7 @@ class GoogleCalendarClient:
             if summary is not None:
                 event["summary"] = summary
             if start_iso is not None:
-                start_dt = datetime.fromisoformat(start_iso)
+                start_dt = self._localize(start_iso, timezone)
                 end_dt = start_dt + timedelta(minutes=duration_minutes)
                 event["start"] = {"dateTime": start_dt.isoformat(), "timeZone": timezone}
                 event["end"] = {"dateTime": end_dt.isoformat(), "timeZone": timezone}
