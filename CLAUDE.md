@@ -26,11 +26,12 @@ nanobot/
 ├── dashboard/worker.py      # Unified WorkerAgent (Phase 1 + Phase 2)
 ├── dashboard/storage.py     # StorageBackend ABC
 ├── dashboard/reconciler.py  # NotificationReconciler + ReconciliationScheduler
-├── dashboard/utils.py       # Shared utilities (parse_datetime, normalize_iso_date)
+├── dashboard/utils.py       # Shared utilities (parse_datetime, normalize_iso_date, cancel_notification)
 ├── dashboard/helper.py      # Dashboard summary generator
 ├── channels/telegram.py     # Primary channel (numbered answers, /questions, /tasks)
 ├── notion/                  # NotionStorageBackend + cache
 ├── providers/stats.py       # API key usage stats (file-persisted, weekly report)
+├── google/calendar.py       # GCal client (sync I/O, _localize for tz-aware datetime)
 ├── healthcheck/service.py   # Healthchecks.io ping (liveness signal)
 ├── heartbeat/service.py     # 2-hour periodic Worker execution
 ├── utils/time.py            # Timezone-aware now() (default Asia/Seoul)
@@ -52,6 +53,8 @@ nanobot/
 **Notification (4)**: schedule_notification, update_notification, cancel_notification, list_notifications
 
 All tools are wrapped with `@with_dashboard_lock` (asyncio.Lock).
+
+**ISO 포맷 규칙**: `deadline` → `YYYY-MM-DD` only, `scheduled_at` → `YYYY-MM-DDTHH:MM:SS` only. 자연어는 LLM이 ISO로 변환 후 전달. Worker R7이 `deadline_text`에서 파싱 가능한 ISO를 `deadline`으로 backfill.
 
 ### LLM Provider Key Rotation (`litellm_provider.py`)
 
@@ -85,7 +88,7 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 ### Worker Agent (dashboard/worker.py)
 
-- **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency (R1-R7 including deadline backfill), archive completed/cancelled tasks, re-evaluate active/someday, process recurring tasks (reset completed habits, detect misses, update streaks)
+- **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency (R1-R7 including deadline backfill), archive completed/cancelled tasks, re-evaluate active/someday, process recurring tasks (completed tasks stay completed until next day, then reset)
 - **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
 - **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
 - **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
@@ -110,6 +113,8 @@ Tool (write) → Ledger (notifications.json) ← Reconciler (read + sync)
 | **Notion** | StorageBackend ABC (정교한 R/W) | 매 save() 호출 시 | `storage.py`, `notion/storage.py` |
 | **GCal** | Reconciler 멱등 루프 | trigger() 호출 시 | `reconciler.py` |
 | **Telegram** | send_callback 단방향 push | due notification 감지 시 | `reconciler.py` |
+
+**Telegram 전송 포맷**: `"🔔 알림이 도착했습니다.\n- {message}"` 래핑 (notification message는 짧은 명사형: "팀 미팅", "운동하기")
 
 **trigger() 호출 시점** (모두 `_processing_lock` 안에서):
 
@@ -196,6 +201,9 @@ tests/
 ├── test_cross_platform_paths.py         # Windows/Linux paths
 ├── test_litellm_fallback.py             # LLM key rotation + fallback
 ├── test_api_key_stats.py               # API key usage stats (file persistence, weekly report)
+├── test_time.py                         # Timezone utility (now(), app_tz)
+├── test_healthcheck.py                  # Healthcheck ping service
+├── test_instruction_resolution.py       # Instruction file resolution (prompts/ + workspace/)
 └── test_docker.sh                       # Docker image build/run test
 ```
 

@@ -28,6 +28,7 @@ poetry.lock
 .idea/
 
 # Temporary review/test artifacts (agent probes, pytest, codex review, etc.)
+.tmp/
 .tmp_*/
 .ptmp_*/
 tmp_*/
