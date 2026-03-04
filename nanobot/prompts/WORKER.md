@@ -70,7 +70,7 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 1. list_notifications(related_task_id="task_001") → 해당 알림 없음
 2. schedule_notification(
      message="'블로그 작성' 마감이 내일이에요. 현재 70% — 마무리 계획 있으신가요?",
-     scheduled_at="tomorrow 9am",
+     scheduled_at="2026-03-05T09:00:00",
      type="deadline_alert", priority="high",
      related_task_id="task_001"
    )

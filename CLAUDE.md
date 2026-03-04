@@ -85,7 +85,7 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 ### Worker Agent (dashboard/worker.py)
 
-- **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency, archive completed/cancelled tasks, re-evaluate active/someday, process recurring tasks (reset completed habits, detect misses, update streaks)
+- **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency (R1-R7 including deadline backfill), archive completed/cancelled tasks, re-evaluate active/someday, process recurring tasks (reset completed habits, detect misses, update streaks)
 - **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
 - **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
 - **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)

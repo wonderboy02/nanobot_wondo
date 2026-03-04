@@ -54,7 +54,7 @@ class UpdateTaskTool(BaseDashboardTool):
                 },
                 "deadline": {
                     "type": "string",
-                    "description": "New deadline (e.g., '내일', '2026-02-15')",
+                    "description": "New deadline in ISO format: YYYY-MM-DD (e.g., '2026-03-05'). Always convert natural language to ISO date. Time portion is ignored (stored as date-only).",
                 },
                 "priority": {
                     "type": "string",

@@ -61,6 +61,16 @@ User: "오늘 운동 했어"
 
 ---
 
+## Deadline 입력 규칙
+
+- **항상 ISO 날짜**로 변환: YYYY-MM-DD (시간은 무시됨, date-only 저장)
+- "내일" → `2026-03-05`
+- "다음주 금요일" → `2026-03-07`
+- 시간 정보가 필요한 경우 → notification의 `scheduled_at`에 설정 (deadline은 날짜만)
+- 마감이 진짜 없는 경우에만 빈 문자열
+
+---
+
 ## Important Rules
 
 1. **Extract everything** — 하나의 메시지에서 여러 정보 추출
@@ -79,8 +89,8 @@ User: "오늘 운동 했어"
 
 | 시간 정보 | 동작 | 예시 |
 |----------|------|------|
-| **명시적 시간** | task + notification (해당 시간) | "내일 2시 미팅" → 14:00 |
-| **모호한 시간** | task + notification (컨벤션 시각) | "내일 아침 운동" → 09:00 |
+| **명시적 시간** | task + notification (해당 시간) | "내일 2시 미팅" → `YYYY-MM-DDT14:00:00` |
+| **모호한 시간** | task + notification (컨벤션 시각) | "내일 아침 운동" → `YYYY-MM-DDT09:00:00` |
 | **시간 없음** | task만 (notification 없음) | "리포트 써야해" → task only |
 
 ### 컨벤션 시각 매핑
@@ -112,13 +122,13 @@ Notification은 반드시 Task와 연결되어야 한다:
 # 명시적 시간 → 해당 시간에 notification
 User: "내일 오후 3시에 미팅 있어"
 → create_task("미팅 참석")  # task_xxx 생성
-→ schedule_notification("팀 미팅", scheduled_at="내일 15:00", related_task_id=task_xxx)
+→ schedule_notification("팀 미팅", scheduled_at="2026-03-05T15:00:00", related_task_id=task_xxx)
 → SILENT
 
 # 모호한 시간 → 컨벤션 시각으로 notification
 User: "내일 아침에 운동해야돼"
 → create_task("운동")  # task_xxx 생성
-→ schedule_notification("운동하기", scheduled_at="내일 09:00", related_task_id=task_xxx)
+→ schedule_notification("운동하기", scheduled_at="2026-03-05T09:00:00", related_task_id=task_xxx)
 → SILENT
 
 # 시간 없음 → task만
@@ -129,8 +139,8 @@ User: "리포트 써야해"
 
 # 명시적 알림 요청도 그대로 처리
 User: "리포트 마감 내일이야, 리마인더 해줘"
-→ update_task(task_xxx, deadline="내일")
-→ schedule_notification("리포트 마감", scheduled_at="내일 09:00", related_task_id=task_xxx)
+→ update_task(task_xxx, deadline="2026-03-05")  # "내일" → 오늘+1일의 YYYY-MM-DD
+→ schedule_notification("리포트 마감", scheduled_at="2026-03-05T09:00:00", related_task_id=task_xxx)
 → SILENT
 ```
 
@@ -142,10 +152,16 @@ Task 상태/시간이 변경되면 관련 notification도 반드시 확인:
 - **Task deadline/시간 변경**: `list_notifications(related_task_id=task_xxx)`로 관련 알림 확인 후 `update_notification()`으로 시간 수정
 
 ```
-# Task 시간 변경 → notification도 업데이트
+# 시간만 변경 → deadline(날짜)은 그대로, notification만 업데이트
 User: "내일 미팅 3시에서 5시로 바뀌었어"
-→ update_task(task_xxx, deadline="내일 17:00")
 → list_notifications(related_task_id=task_xxx)  # 관련 알림 확인
-→ update_notification(notif_xxx, scheduled_at="내일 17:00")
+→ update_notification(notif_xxx, scheduled_at="2026-03-05T17:00:00")
+→ SILENT
+
+# 날짜 자체가 변경 → deadline + notification 모두 업데이트
+User: "미팅 내일에서 모레로 밀렸어"
+→ update_task(task_xxx, deadline="2026-03-06")
+→ list_notifications(related_task_id=task_xxx)
+→ update_notification(notif_xxx, scheduled_at="2026-03-06T15:00:00")
 → SILENT
 ```

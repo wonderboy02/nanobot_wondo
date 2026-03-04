@@ -11,23 +11,18 @@ from nanobot.healthcheck.service import HealthcheckService
 class TestStartStop:
     """start/stop lifecycle."""
 
-
     async def test_disabled_does_not_start(self):
         svc = HealthcheckService(ping_url="https://hc-ping.com/test", enabled=False)
         await svc.start()
         assert svc._task is None
-
 
     async def test_empty_url_does_not_start(self):
         svc = HealthcheckService(ping_url="", enabled=True)
         await svc.start()
         assert svc._task is None
 
-
     async def test_enabled_starts_task(self):
-        svc = HealthcheckService(
-            ping_url="https://hc-ping.com/test", interval_s=60, enabled=True
-        )
+        svc = HealthcheckService(ping_url="https://hc-ping.com/test", interval_s=60, enabled=True)
         with patch("nanobot.healthcheck.service.httpx.AsyncClient") as mock_client:
             mock_resp = AsyncMock()
             mock_resp.status_code = 200
@@ -48,11 +43,8 @@ class TestStartStop:
 class TestPing:
     """_ping() behavior."""
 
-
     async def test_successful_ping(self):
-        svc = HealthcheckService(
-            ping_url="https://hc-ping.com/test", interval_s=60, enabled=True
-        )
+        svc = HealthcheckService(ping_url="https://hc-ping.com/test", interval_s=60, enabled=True)
         with patch("nanobot.healthcheck.service.httpx.AsyncClient") as mock_client:
             mock_resp = AsyncMock()
             mock_resp.status_code = 200
@@ -66,11 +58,8 @@ class TestPing:
             await svc._ping()
             mock_instance.get.assert_called_once_with("https://hc-ping.com/test")
 
-
     async def test_ping_network_error_does_not_raise(self):
-        svc = HealthcheckService(
-            ping_url="https://hc-ping.com/test", interval_s=60, enabled=True
-        )
+        svc = HealthcheckService(ping_url="https://hc-ping.com/test", interval_s=60, enabled=True)
         with patch("nanobot.healthcheck.service.httpx.AsyncClient") as mock_client:
             mock_instance = AsyncMock()
             mock_instance.get = AsyncMock(side_effect=ConnectionError("refused"))
@@ -80,11 +69,8 @@ class TestPing:
             # Should not raise
             await svc._ping()
 
-
     async def test_ping_cancelled_error_propagates(self):
-        svc = HealthcheckService(
-            ping_url="https://hc-ping.com/test", interval_s=60, enabled=True
-        )
+        svc = HealthcheckService(ping_url="https://hc-ping.com/test", interval_s=60, enabled=True)
         with patch("nanobot.healthcheck.service.httpx.AsyncClient") as mock_client:
             mock_instance = AsyncMock()
             mock_instance.get = AsyncMock(side_effect=asyncio.CancelledError())

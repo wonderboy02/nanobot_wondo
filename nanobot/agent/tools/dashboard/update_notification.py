@@ -37,7 +37,7 @@ class UpdateNotificationTool(BaseDashboardTool):
                 },
                 "scheduled_at": {
                     "type": "string",
-                    "description": "New scheduled time (optional, ISO datetime or relative)",
+                    "description": "New scheduled time in ISO datetime format: YYYY-MM-DDTHH:MM:SS (e.g., '2026-03-05T17:00:00').",
                 },
                 "priority": {
                     "type": "string",

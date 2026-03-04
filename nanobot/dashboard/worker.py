@@ -34,6 +34,7 @@ if TYPE_CHECKING:
 from loguru import logger
 
 from nanobot.dashboard.utils import cancel_notification, parse_datetime  # noqa: F401 — re-exported for back-compat
+from nanobot.dashboard.utils import normalize_iso_date
 
 
 def _generate_id(prefix: str) -> str:
@@ -334,6 +335,7 @@ class WorkerAgent:
           R3: completed/archived + no completed_at → backfill completed_at
           R4: blocked=true + no blocker_note → warning only
           R5: blocked=false + blocker_note → clear blocker_note
+          R7: deadline empty + deadline_text has parseable ISO → backfill deadline
 
         Returns True if any task was modified.
         """
@@ -403,6 +405,18 @@ class WorkerAgent:
                         progress_dict["blocker_note"] = None
                         changed = True
                         logger.info(f"[Worker] R5: {task_id} — cleared orphan blocker_note")
+
+                # R7: deadline empty but deadline_text has parseable ISO → backfill
+                deadline_val = task.get("deadline", "")
+                deadline_text_val = task.get("deadline_text", "")
+                if not deadline_val and deadline_text_val:
+                    parsed = normalize_iso_date(deadline_text_val)
+                    if parsed:
+                        task["deadline"] = parsed
+                        changed = True
+                        logger.info(
+                            f"[Worker] R7: {task_id} — backfilled deadline from deadline_text"
+                        )
 
             except Exception:
                 # Guard against task not being a dict (e.g. corrupted data)

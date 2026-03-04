@@ -37,9 +37,9 @@ class ScheduleNotificationTool(BaseDashboardTool):
                 "scheduled_at": {
                     "type": "string",
                     "description": (
-                        "When to deliver the notification. "
-                        "ISO datetime (e.g., '2026-02-09T15:00:00') or relative time "
-                        "(e.g., 'in 2 hours', 'tomorrow 9am')"
+                        "When to deliver the notification in ISO datetime format: "
+                        "YYYY-MM-DDTHH:MM:SS (e.g., '2026-03-05T15:00:00'). "
+                        "Always convert natural language to ISO datetime."
                     ),
                 },
                 "type": {

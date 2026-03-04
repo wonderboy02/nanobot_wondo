@@ -1320,5 +1320,122 @@ def test_non_dict_task_does_not_crash_maintenance(test_workspace):
     assert good_task["status"] == "archived"
 
 
+# ============================================================================
+# R7: Deadline Backfill Tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_r7_backfill_deadline_from_deadline_text(test_workspace):
+    """R7: deadline_text has ISO value, deadline is empty → backfill deadline."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [
+            {
+                "id": "task_r7_iso",
+                "title": "Test R7",
+                "status": "active",
+                "deadline": "",
+                "deadline_text": "2026-02-27T15:00:00",
+                "progress": {"percentage": 0, "last_update": "", "blocked": False},
+            }
+        ],
+    }
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    assert tasks_data["tasks"][0]["deadline"] == "2026-02-27"
+
+
+@pytest.mark.asyncio
+async def test_r7_backfill_deadline_from_date_only_text(test_workspace):
+    """R7: deadline_text is date-only ISO, deadline is None → backfill."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [
+            {
+                "id": "task_r7_date",
+                "title": "Test R7 date-only",
+                "status": "active",
+                "deadline": None,
+                "deadline_text": "2026-02-27",
+                "progress": {"percentage": 0, "last_update": "", "blocked": False},
+            }
+        ],
+    }
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    assert tasks_data["tasks"][0]["deadline"] == "2026-02-27"
+
+
+@pytest.mark.asyncio
+async def test_r7_no_backfill_when_deadline_text_not_iso(test_workspace):
+    """R7: deadline_text is natural language (not ISO) → no backfill."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [
+            {
+                "id": "task_r7_nat",
+                "title": "Test R7 natural",
+                "status": "active",
+                "deadline": "",
+                "deadline_text": "내일",
+                "progress": {"percentage": 0, "last_update": "", "blocked": False},
+            }
+        ],
+    }
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is False
+    assert tasks_data["tasks"][0]["deadline"] == ""
+
+
+@pytest.mark.asyncio
+async def test_r7_no_backfill_when_deadline_already_set(test_workspace):
+    """R7: deadline already has value → skip backfill."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [
+            {
+                "id": "task_r7_set",
+                "title": "Test R7 already set",
+                "status": "active",
+                "deadline": "2026-03-01",
+                "deadline_text": "2026-03-01T10:00:00",
+                "progress": {"percentage": 0, "last_update": "", "blocked": False},
+            }
+        ],
+    }
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is False
+    assert tasks_data["tasks"][0]["deadline"] == "2026-03-01"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

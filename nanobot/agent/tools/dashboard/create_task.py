@@ -29,7 +29,7 @@ class CreateTaskTool(BaseDashboardTool):
                 "title": {"type": "string", "description": "Task title (required)"},
                 "deadline": {
                     "type": "string",
-                    "description": "Deadline (e.g., '내일', '2026-02-15', '금요일')",
+                    "description": "Deadline in ISO format: YYYY-MM-DD (e.g., '2026-03-05'). Always convert natural language to ISO date: '내일' → tomorrow's date, '다음주' → next week's date. Time portion is ignored (stored as date-only). Leave empty only if truly no deadline.",
                 },
                 "priority": {
                     "type": "string",
@@ -86,13 +86,13 @@ class CreateTaskTool(BaseDashboardTool):
             now = self._now()
 
             # Normalize deadline to YYYY-MM-DD
-            normalized_deadline = normalize_iso_date(deadline) if deadline else ""
+            normalized_deadline = (normalize_iso_date(deadline) or "") if deadline else ""
 
             new_task = {
                 "id": task_id,
                 "title": title,
                 "raw_input": title,  # Store original input
-                "deadline": normalized_deadline or "",
+                "deadline": normalized_deadline,
                 "deadline_text": deadline,  # Natural language deadline
                 "created_at": now,
                 "updated_at": now,
