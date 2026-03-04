@@ -233,6 +233,19 @@ class LiteLLMProvider(LLMProvider):
                     else:
                         # Rotate to next key immediately
                         continue
+                except litellm.exceptions.ServiceUnavailableError as e:
+                    last_error = e
+                    logger.warning(
+                        "LLM service_unavailable (503): model=%s key=%d/%d",
+                        candidate,
+                        key_idx + 1,
+                        len(keys),
+                    )
+                    if idx < len(models_to_try) - 1:
+                        logger.info("Model %s unavailable, trying next fallback...", candidate)
+                    else:
+                        logger.error("All models failed. Last error (503): %s", e)
+                    break  # Server-side issue: skip key rotation, try next model
                 except Exception as e:
                     last_error = e
                     if idx < len(models_to_try) - 1:

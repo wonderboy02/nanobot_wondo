@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
+
+from nanobot.utils.time import now as _now
 from typing import Any
 
 from loguru import logger
@@ -21,15 +23,15 @@ class Session:
 
     key: str  # channel:chat_id
     messages: list[dict[str, Any]] = field(default_factory=list)
-    created_at: datetime = field(default_factory=datetime.now)
-    updated_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=_now)
+    updated_at: datetime = field(default_factory=_now)
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def add_message(self, role: str, content: str, **kwargs: Any) -> None:
         """Add a message to the session."""
-        msg = {"role": role, "content": content, "timestamp": datetime.now().isoformat(), **kwargs}
+        msg = {"role": role, "content": content, "timestamp": _now().isoformat(), **kwargs}
         self.messages.append(msg)
-        self.updated_at = datetime.now()
+        self.updated_at = _now()
 
     def get_history(self, max_messages: int = 50) -> list[dict[str, Any]]:
         """
@@ -122,7 +124,7 @@ class SessionManager:
             return Session(
                 key=key,
                 messages=messages,
-                created_at=created_at or datetime.now(),
+                created_at=created_at or _now(),
                 metadata=metadata,
             )
         except Exception as e:

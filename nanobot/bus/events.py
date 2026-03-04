@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
+
+from nanobot.utils.time import now as _now
 from typing import Any
 
 
@@ -13,7 +15,7 @@ class InboundMessage:
     sender_id: str  # User identifier
     chat_id: str  # Chat/channel identifier
     content: str  # Message text
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=_now)
     media: list[str] = field(default_factory=list)  # Media URLs
     metadata: dict[str, Any] = field(default_factory=dict)  # Channel-specific data
 

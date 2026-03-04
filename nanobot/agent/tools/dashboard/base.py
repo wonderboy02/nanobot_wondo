@@ -4,6 +4,8 @@ import asyncio
 import re
 import uuid
 from datetime import datetime, timedelta
+
+from nanobot.utils.time import now as _now
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -69,7 +71,7 @@ class BaseDashboardTool(Tool):
 
     def _now(self) -> str:
         """Current timestamp in ISO 8601 format."""
-        return datetime.now().isoformat()
+        return _now().isoformat()
 
     def _parse_datetime(self, dt_str: str) -> datetime | None:
         """Parse datetime string to datetime object.
@@ -86,7 +88,7 @@ class BaseDashboardTool(Tool):
             pass
 
         # Try relative time parsing (simple cases)
-        now = datetime.now()
+        now = _now()
 
         # "in X hours"
         match = re.match(r"in (\d+) hours?", dt_str, re.IGNORECASE)

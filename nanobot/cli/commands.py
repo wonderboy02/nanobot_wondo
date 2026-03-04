@@ -846,7 +846,7 @@ def dashboard_answer(
     answer: str = typer.Argument(..., help="Your answer"),
 ):
     """Answer a question from the queue."""
-    from datetime import datetime
+    from nanobot.utils.time import now as _now
 
     # Validate inputs
     if not answer or not answer.strip():
@@ -876,7 +876,7 @@ def dashboard_answer(
     # Mark as answered
     question["answered"] = True
     question["answer"] = answer
-    question["answered_at"] = datetime.now().isoformat()
+    question["answered_at"] = _now().isoformat()
 
     # Save
     manager.save(dashboard)

@@ -4,6 +4,7 @@ Covers: quiet hours, dedup, daily limits, batching, high priority bypass.
 """
 
 import time
+from datetime import datetime
 from unittest.mock import patch
 
 import pytest
@@ -33,6 +34,12 @@ def manager(policy):
     return TelegramNotificationManager(policy)
 
 
+def _mock_now(hour=12, date_str="2026-02-20"):
+    """Create a datetime for mocking _now()."""
+    y, m, d = map(int, date_str.split("-"))
+    return datetime(y, m, d, hour, 0)
+
+
 # ---------------------------------------------------------------------------
 # should_send — basic
 # ---------------------------------------------------------------------------
@@ -40,9 +47,7 @@ def manager(policy):
 
 def test_should_send_normal_message(manager):
     """Normal message outside quiet hours should be sendable."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12  # noon
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         assert manager.should_send("test message") is True
 
 
@@ -53,30 +58,25 @@ def test_should_send_normal_message(manager):
 
 def test_quiet_hours_blocks_medium_priority(manager):
     """Medium priority messages should be blocked during quiet hours."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 2  # 2am - quiet
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=2)):
         assert manager.should_send("test", priority="medium") is False
 
 
 def test_quiet_hours_allows_high_priority(manager):
     """High priority messages bypass quiet hours."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 2  # 2am - quiet
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=2)):
         assert manager.should_send("urgent", priority="high") is True
 
 
 def test_quiet_hours_wraps_midnight(manager):
     """Quiet hours 23:00-08:00 correctly wraps around midnight."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
+    with patch("nanobot.channels.telegram._now") as mock_now:
         # 23:30 should be quiet
-        mock_dt.now.return_value.hour = 23
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
+        mock_now.return_value = _mock_now(hour=23)
         assert manager.should_send("test", priority="low") is False
 
         # 12:00 should not be quiet
-        mock_dt.now.return_value.hour = 12
+        mock_now.return_value = _mock_now(hour=12)
         assert manager.should_send("test2", priority="low") is True
 
 
@@ -87,10 +87,7 @@ def test_quiet_hours_wraps_midnight(manager):
 
 def test_duplicate_message_blocked(manager):
     """Same message sent twice within dedup window should be blocked."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
-
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         # Record first send
         manager._record_sent("same message")
         assert manager.should_send("same message") is False
@@ -98,20 +95,14 @@ def test_duplicate_message_blocked(manager):
 
 def test_different_messages_not_blocked(manager):
     """Different messages should not trigger dedup."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
-
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         manager._record_sent("message A")
         assert manager.should_send("message B") is True
 
 
 def test_dedup_expires(manager):
     """Messages should be sendable again after dedup window expires."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
-
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         # Record a send far in the past
         h = manager._msg_hash("old message")
         manager._sent_hashes[h] = time.time() - (25 * 3600)  # 25 hours ago
@@ -121,10 +112,7 @@ def test_dedup_expires(manager):
 
 def test_dedup_blocks_high_priority_too(manager):
     """Dedup blocks even high priority messages (unlike quiet hours/daily limit)."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
-
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         manager._record_sent("urgent alert")
         assert manager.should_send("urgent alert", priority="high") is False
 
@@ -136,10 +124,7 @@ def test_dedup_blocks_high_priority_too(manager):
 
 def test_daily_limit_blocks(manager):
     """Messages should be blocked after daily limit is reached."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
-
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         # Use up the daily limit (3)
         manager._daily_counts["2026-02-20"] = 3
 
@@ -148,10 +133,7 @@ def test_daily_limit_blocks(manager):
 
 def test_daily_limit_allows_high_priority(manager):
     """High priority bypasses daily limit."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
-
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         manager._daily_counts["2026-02-20"] = 3  # At limit
 
         assert manager.should_send("urgent", priority="high") is True
@@ -164,10 +146,7 @@ def test_daily_limit_allows_high_priority(manager):
 
 def test_batch_add_and_flush(manager):
     """add_to_batch + flush_batch returns formatted message."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
-
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         manager.add_to_batch("notification 1")
         result = manager.flush_batch()
         assert result == "notification 1"
@@ -180,10 +159,7 @@ def test_batch_empty_returns_none(manager):
 
 def test_batch_max_limits(manager):
     """flush_batch sends at most batch_max items, keeps rest."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
-
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         manager.add_to_batch("msg 1")
         manager.add_to_batch("msg 2")
         manager.add_to_batch("msg 3")  # batch_max=2, so this stays
@@ -199,10 +175,7 @@ def test_batch_max_limits(manager):
 
 def test_batch_multiple_format(manager):
     """Multiple batched notifications use multi-line format."""
-    with patch("nanobot.channels.telegram.datetime") as mock_dt:
-        mock_dt.now.return_value.hour = 12
-        mock_dt.now.return_value.strftime = lambda fmt: "2026-02-20"
-
+    with patch("nanobot.channels.telegram._now", return_value=_mock_now(hour=12)):
         manager.add_to_batch("alert 1", priority="high")
         manager.add_to_batch("alert 2", priority="low")
 

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from nanobot.dashboard.storage import StorageBackend
 
 from nanobot.agent.skills import SkillsLoader
+from nanobot.utils.time import now as _now
 
 
 class ContextBuilder:
@@ -83,9 +84,7 @@ Skills with available="false" need dependencies installed first - you can try in
 
     def _get_identity(self) -> str:
         """Get the core identity section."""
-        from datetime import datetime
-
-        now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
+        now = _now().strftime("%Y-%m-%d %H:%M (%A)")
         workspace_path = str(self.workspace.expanduser().resolve())
         system = platform.system()
         runtime = f"{'macOS' if system == 'Darwin' else system} {platform.machine()}, Python {platform.python_version()}"

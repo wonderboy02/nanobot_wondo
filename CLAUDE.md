@@ -32,6 +32,7 @@ nanobot/
 ├── notion/                  # NotionStorageBackend + cache
 ├── providers/stats.py       # API key usage stats (file-persisted, weekly report)
 ├── heartbeat/service.py     # 2-hour periodic Worker execution
+├── utils/time.py            # Timezone-aware now() (default Asia/Seoul)
 └── config/, session/, cron/, skills/, cli/, utils/
 ```
 
@@ -58,12 +59,14 @@ All tools are wrapped with `@with_dashboard_lock` (asyncio.Lock).
 - `effective_keys` property: `api_keys` + `api_key` 합산 (중복 제거)
 - Rate limit (429) 시 즉시 다음 키로 전환 (`num_retries=0`)
 - 마지막 키: `num_retries=3` (exponential backoff)
-- 비-rate-limit 에러: 키 로테이션 스킵, 다음 fallback 모델로
+- Service unavailable (503): 명시적 로깅 후 키 로테이션 스킵, 다음 fallback 모델로
+- 기타 에러: 키 로테이션 스킵, 다음 fallback 모델로
 - `api_keys` 비어있으면 기존 동작 (env var 사용)
 
 ```json
 {"providers": {"gemini": {"apiKeys": ["free-1", "free-2"], "apiKey": "paid-last-resort"}}}
 ```
+
 
 ### API Key Usage Stats (`providers/stats.py`)
 
@@ -262,7 +265,7 @@ bash tests/test_docker.sh                  # Docker integration test
 | 4 | `storage.py` | insights have no Pydantic validation | Low |
 | 5 | `config/schema.py` | NotificationPolicyConfig has no range validation | Low |
 | 6 | `archive_task.py` | Archived tasks accumulate in tasks.json indefinitely | Medium |
-| 7 | `telegram.py` | `_is_quiet_hours()` depends on server timezone (mitigated by Docker TZ=Asia/Seoul) | Low |
+| 7 | — | ~~server timezone~~ resolved: `nanobot/utils/time.py` `now()` defaults to Asia/Seoul | — |
 | 8 | `bus/events.py` | OutboundMessage has no explicit type field (reaction uses metadata convention) | Low |
 | 9 | `storage.py:18` | `load_json_file` 파싱 오류를 빈 default로 삼킴 → 빈 리스트 감지로 완화했으나 부분 손상은 감지 불가 | Low |
 | 10 | `worker.py` | delivered notification 48h 유지: LLM이 completion_check 중복 생성 가능. WORKER.md 지침으로 완화하나 LLM 준수에 의존 | Low |
@@ -279,6 +282,7 @@ bash tests/test_docker.sh                  # Docker integration test
 - Added: #11 GCal orphan on notification update (Low)
 - Added: #14 GCal duplicate on reconcile save failure (Low)
 - Removed: #15 workspace .md/data 혼재 — resolved by `nanobot/prompts/` separation
+- Resolved: #7 server timezone — resolved by `nanobot/utils/time.py` centralized `now()` (default Asia/Seoul)
 
 ## Dev Runbook
 

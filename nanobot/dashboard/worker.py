@@ -21,6 +21,8 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import date, datetime, timedelta
+
+from nanobot.utils.time import now as _now
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -225,7 +227,7 @@ class WorkerAgent:
         Each entity is error-isolated: one failure doesn't block the others.
         Insights are excluded (system-generated only, no manual creation).
         """
-        now = datetime.now().isoformat()
+        now = _now().isoformat()
 
         # (entity_type, loader, saver, id_prefix, extra_fields_fn)
         configs: list[tuple[str, Any, Any, str, Any]] = [
@@ -339,7 +341,7 @@ class WorkerAgent:
         if not tasks:
             return False
 
-        now = datetime.now().isoformat()
+        now = _now().isoformat()
         changed = False
 
         for task in tasks:
@@ -430,7 +432,7 @@ class WorkerAgent:
         if not targets:
             return False
 
-        now = datetime.now().isoformat()
+        now = _now().isoformat()
         for task in targets:
             was_cancelled = task.get("status") == "cancelled"
             task["status"] = "archived"
@@ -446,7 +448,7 @@ class WorkerAgent:
 
     def _reevaluate_active_status(self, tasks_data: dict) -> bool:
         """Re-evaluate active/someday status for non-terminal tasks."""
-        now = datetime.now()
+        now = _now()
         tasks = tasks_data.get("tasks", [])
         changed = False
 
@@ -548,7 +550,7 @@ class WorkerAgent:
 
         notifications_data = self.storage_backend.load_notifications()
         notifications = notifications_data.get("notifications", [])
-        now = datetime.now().isoformat()
+        now = _now().isoformat()
         changed = False
 
         for n in notifications:
@@ -695,7 +697,7 @@ class WorkerAgent:
         """Reset a recurring task for the next cycle."""
         task["status"] = "active"
         task["completed_at"] = None
-        now = datetime.now().isoformat()
+        now = _now().isoformat()
         task["updated_at"] = now
         progress = task.get("progress", {})
         progress["percentage"] = 0
@@ -742,7 +744,7 @@ class WorkerAgent:
                 Questions beyond the MAX_ANSWERED_IN_CONTEXT cap are preserved.
         """
         questions = questions_data.get("questions", [])
-        now = datetime.now()
+        now = _now()
         original_count = len(questions)
 
         filtered = []
@@ -1044,7 +1046,7 @@ class WorkerAgent:
             pending = [n for n in notifications if n.get("status") == "pending"]
 
             # Recently delivered (last 48h)
-            now = datetime.now()
+            now = _now()
             cutoff = now - timedelta(hours=48)
             delivered_recent = []
             for n in notifications:

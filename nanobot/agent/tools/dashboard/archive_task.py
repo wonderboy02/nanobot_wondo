@@ -70,9 +70,7 @@ class ArchiveTaskTool(BaseDashboardTool):
                     task_id, "Task archived"
                 )
             except Exception:
-                logger.exception(
-                    f"[ArchiveTask] Failed to cancel notifications for {task_id}"
-                )
+                logger.exception(f"[ArchiveTask] Failed to cancel notifications for {task_id}")
             if cancelled_count:
                 return f"Archived {task_id} ({cancelled_count} notification(s) cancelled)"
             return f"Archived {task_id}"

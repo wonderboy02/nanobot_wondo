@@ -2,6 +2,8 @@
 
 import os
 from datetime import datetime
+
+from nanobot.utils.time import now as _now
 from pathlib import Path
 
 
@@ -45,7 +47,7 @@ def get_sessions_path() -> Path:
 
 def today_date() -> str:
     """Get today's date in YYYY-MM-DD format."""
-    return datetime.now().strftime("%Y-%m-%d")
+    return _now().strftime("%Y-%m-%d")
 
 
 def safe_filename(name: str) -> str:

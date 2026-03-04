@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
+
+from nanobot.utils.time import now as _now
 from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from loguru import logger
@@ -74,7 +76,7 @@ class NotificationReconciler:
         and whether the ledger was mutated (GCal sync).
         """
         result = ReconcileResult()
-        now = datetime.now()
+        now = _now()
 
         data = self.storage_backend.load_notifications()
         notifications = data.get("notifications", [])
@@ -134,7 +136,7 @@ class NotificationReconciler:
             return False
 
         target["status"] = "delivered"
-        target["delivered_at"] = datetime.now().isoformat()
+        target["delivered_at"] = _now().isoformat()
 
         # Remove GCal event on delivery
         self._remove_gcal(target)
@@ -303,7 +305,7 @@ class ReconciliationScheduler:
         if next_due_at is None:
             return
 
-        delay = (next_due_at - datetime.now()).total_seconds()
+        delay = (next_due_at - _now()).total_seconds()
         if delay <= 0:
             # Already due — trigger immediately in next loop iteration
             delay = 0.1

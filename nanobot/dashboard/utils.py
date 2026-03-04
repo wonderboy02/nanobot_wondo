@@ -3,6 +3,8 @@
 import re
 from datetime import date, datetime
 
+from nanobot.utils.time import app_tz
+
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -10,7 +12,7 @@ def parse_datetime(dt_str: str) -> datetime:
     """Parse ISO datetime string to naive local-time datetime.
 
     If the input is timezone-aware, converts to local time first, then
-    strips tzinfo so the result is comparable with datetime.now().
+    strips tzinfo so the result is comparable with nanobot.utils.time.now().
     If naive, returns as-is (assumed local time).
 
     Raises ValueError if dt_str is empty or not a valid ISO datetime.
@@ -19,7 +21,7 @@ def parse_datetime(dt_str: str) -> datetime:
         raise ValueError(f"Invalid datetime string: {dt_str!r}")
     dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
     if dt.tzinfo is not None:
-        dt = dt.astimezone().replace(tzinfo=None)
+        dt = dt.astimezone(app_tz()).replace(tzinfo=None)
     return dt
 
 

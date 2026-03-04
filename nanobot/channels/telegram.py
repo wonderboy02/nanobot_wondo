@@ -6,6 +6,8 @@ import json
 import re
 import time
 from datetime import datetime
+
+from nanobot.utils.time import now as _now
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -115,10 +117,8 @@ class TelegramNotificationManager:
         return hashlib.sha256(message.encode()).hexdigest()[:12]
 
     def _is_quiet_hours(self) -> bool:
-        # DESIGN: Uses server local time (intentional for single-user local deployment).
-        # If deployed to UTC cloud, quiet hours won't match user timezone.
-        # See CLAUDE.md "Known Limitations #7" for improvement plan.
-        hour = datetime.now().hour
+        # Uses nanobot.utils.time.now() which defaults to Asia/Seoul.
+        hour = _now().hour
         start = self._policy.quiet_hours_start
         end = self._policy.quiet_hours_end
         if start > end:  # e.g., 23:00 ~ 08:00 (wraps midnight)
@@ -143,11 +143,11 @@ class TelegramNotificationManager:
         self._sent_hashes = {k: v for k, v in self._sent_hashes.items() if v > cutoff}
 
     def _get_daily_count(self) -> int:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = _now().strftime("%Y-%m-%d")
         return self._daily_counts.get(today, 0)
 
     def _increment_daily_count(self) -> None:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = _now().strftime("%Y-%m-%d")
         self._daily_counts[today] = self._daily_counts.get(today, 0) + 1
         # Clean old dates
         self._daily_counts = {k: v for k, v in self._daily_counts.items() if k >= today}
