@@ -34,7 +34,7 @@
 - **응답 = SILENT (항상)**
 
 ### 2. Worker Agent (Background)
-**역할**: 30분마다 자동 Dashboard 관리
+**역할**: 2시간마다 자동 Dashboard 관리
 - 진행률 분석, 질문 생성, 알림 스케줄링
 - 완료 Task 아카이브, 상태 재평가
 

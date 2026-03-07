@@ -1437,5 +1437,125 @@ async def test_r7_no_backfill_when_deadline_already_set(test_workspace):
     assert tasks_data["tasks"][0]["deadline"] == "2026-03-01"
 
 
+# ============================================================================
+# R8: Backfill deadline_text from deadline
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_r8_backfill_deadline_text(test_workspace):
+    """R8: deadline filled + deadline_text empty → backfill deadline_text."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [
+            {
+                "id": "task_r8",
+                "title": "Test R8",
+                "status": "active",
+                "deadline": "2026-06-15",
+                "deadline_text": "",
+                "progress": {"percentage": 0, "last_update": "", "blocked": False},
+            }
+        ],
+    }
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    assert tasks_data["tasks"][0]["deadline_text"] == "2026-06-15"
+
+
+@pytest.mark.asyncio
+async def test_r8_no_backfill_when_text_exists(test_workspace):
+    """R8: deadline_text already has value → no backfill."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [
+            {
+                "id": "task_r8_exist",
+                "title": "Test R8 exists",
+                "status": "active",
+                "deadline": "2026-06-15",
+                "deadline_text": "다음주 월요일",
+                "progress": {"percentage": 0, "last_update": "", "blocked": False},
+            }
+        ],
+    }
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is False
+    assert tasks_data["tasks"][0]["deadline_text"] == "다음주 월요일"
+
+
+@pytest.mark.asyncio
+async def test_r8_no_backfill_when_deadline_empty(test_workspace):
+    """R8: deadline empty → no backfill."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [
+            {
+                "id": "task_r8_empty",
+                "title": "Test R8 no deadline",
+                "status": "active",
+                "deadline": "",
+                "deadline_text": "",
+                "progress": {"percentage": 0, "last_update": "", "blocked": False},
+            }
+        ],
+    }
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is False
+    assert tasks_data["tasks"][0]["deadline_text"] == ""
+
+
+@pytest.mark.asyncio
+async def test_r7_r8_no_conflict(test_workspace):
+    """R7 fills deadline, R8 should not double-backfill (deadline_text already exists)."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    tasks_data = {
+        "version": "1.0",
+        "tasks": [
+            {
+                "id": "task_r7r8",
+                "title": "Test R7+R8",
+                "status": "active",
+                "deadline": "",
+                "deadline_text": "2026-07-01T10:00:00",
+                "progress": {"percentage": 0, "last_update": "", "blocked": False},
+            }
+        ],
+    }
+
+    worker = WorkerAgent(workspace=test_workspace, storage_backend=backend)
+    changed = worker._enforce_consistency(tasks_data)
+
+    assert changed is True
+    # R7 backfilled deadline from deadline_text
+    assert tasks_data["tasks"][0]["deadline"] == "2026-07-01"
+    # R8 should NOT overwrite deadline_text (it already has a value)
+    assert tasks_data["tasks"][0]["deadline_text"] == "2026-07-01T10:00:00"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

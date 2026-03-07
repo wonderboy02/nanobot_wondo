@@ -54,7 +54,7 @@ nanobot/
 
 All tools are wrapped with `@with_dashboard_lock` (asyncio.Lock).
 
-**ISO 포맷 규칙**: `deadline` → `YYYY-MM-DD` only, `scheduled_at` → `YYYY-MM-DDTHH:MM:SS` only. 자연어는 LLM이 ISO로 변환 후 전달. Worker R7이 `deadline_text`에서 파싱 가능한 ISO를 `deadline`으로 backfill.
+**ISO 포맷 규칙**: `deadline` → `YYYY-MM-DD` only, `scheduled_at` → `YYYY-MM-DDTHH:MM:SS` only. 자연어는 LLM이 ISO로 변환 후 전달. Worker R7이 `deadline_text`에서 파싱 가능한 ISO를 `deadline`으로 backfill. Worker R8이 `deadline`만 있고 `deadline_text` 비어있으면 역방향 backfill.
 
 ### LLM Provider Key Rotation (`litellm_provider.py`)
 
@@ -88,7 +88,7 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 ### Worker Agent (dashboard/worker.py)
 
-- **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency (R1-R7 including deadline backfill), archive completed/cancelled tasks, re-evaluate active/someday, process recurring tasks (completed tasks stay completed until next day, then reset)
+- **Phase 1** (deterministic, always): bootstrap manually-added items, field-level snapshot guard (each destructive rule checks only its guard fields — R6: `{completed_at}`, R1/R2a: `{status, progress}`, R5: `{progress}`, reevaluate: `{status}`), Active Sync (user status change → sync progress/completed_at), enforce data consistency (R1-R8 including deadline backfill + deadline_text backfill), archive completed/cancelled tasks, re-evaluate active/someday, process recurring tasks (completed tasks stay completed until next day, then reset)
 - **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
 - **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
 - **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
@@ -181,6 +181,7 @@ AgentLoop 생성 → _processing_lock = asyncio.Lock()
 - `ruff format/check`, line-length=100, Python 3.11+
 - ruff lint: critical rules only (`select = ["E9", "F63", "F7", "F82"]`)
 - TYPE_CHECKING guard: type-hint-only imports inside `if TYPE_CHECKING:` block
+- Logging: `from loguru import logger` 사용 (stdlib `logging` 사용 금지). 포맷: `logger.info("message {}", var)` (%-style 금지)
 
 ## Testing
 
@@ -188,7 +189,7 @@ AgentLoop 생성 → _processing_lock = asyncio.Lock()
 
 ```
 tests/
-├── dashboard/unit/        # Worker unit (maintenance, LLM cycle, questions, notifications, recurring)
+├── dashboard/unit/        # Worker unit (maintenance, LLM cycle, questions, notifications, recurring, snapshot)
 ├── dashboard/e2e/         # E2E scenarios (@pytest.mark.e2e, requires LLM API)
 ├── notion/                # Notion client, mapper, cache, storage
 ├── channels/              # Telegram notification manager
@@ -282,6 +283,8 @@ bash tests/test_docker.sh                  # Docker integration test
 | 12 | `notifications.json` | delivered/cancelled notification 영구 보존 — archival 정책 없음. tasks.json과 동일 패턴 (#6). Worker Phase 1에 cleanup 추가 검토 | Low |
 | 13 | `reconciler.py` | SyncTarget 추상화 없음 — GCal 하드코딩. target 3개 이상 시 SyncTarget ABC 도입 필요 | Low |
 | 14 | `reconciler.py` | `reconcile()`에서 GCal create/delete 후 ledger save 실패 시 다음 reconcile에서 중복 GCal 이벤트 생성 가능. `_ensure_gcal()` 멱등성이 gcal_event_id 존재 여부에 의존하므로, save 안 된 상태에서 재실행 시 ID 없음 → 재생성. save 실패 자체가 극히 드물어 실질적 영향 미미 | Low |
+| 15 | `worker.py` | Field-level snapshot guard는 one-cycle protection만 제공. 각 규칙은 관련 guard 필드가 변경됐을 때만 스킵 (title만 변경 시 모든 규칙 정상 동작). 다음 cycle에서 추가 변경 없으면 정상 규칙 적용. Phase 2 tool이 task 수정하면 다음 cycle에서 해당 필드가 user-changed로 감지됨 (의도한 동작) | Low |
+| 16 | `worker.py` | f-string 로깅이 12개 잔존 (bootstrap, archive, recurring, cleanup/LLM 영역). 새 코드는 loguru `{}` 포맷 사용. 별도 커밋으로 일괄 전환 필요 | Low |
 
 **Changes from previous doc**:
 - Removed: old #9 "Dashboard file race condition" — resolved by `_processing_lock` (in-process asyncio.Lock; single-worker assumption)
@@ -290,8 +293,10 @@ bash tests/test_docker.sh                  # Docker integration test
 - Renumbered: old #11→#9, old #13→#10
 - Added: #11 GCal orphan on notification update (Low)
 - Added: #14 GCal duplicate on reconcile save failure (Low)
+- Added: #15 Field-level snapshot guard one-cycle protection (Low)
 - Removed: #15 workspace .md/data 혼재 — resolved by `nanobot/prompts/` separation
 - Resolved: #7 server timezone — resolved by `nanobot/utils/time.py` centralized `now()` (default Asia/Seoul)
+- Added: #16 f-string logging残存 in worker.py (Low)
 
 ## Dev Runbook
 

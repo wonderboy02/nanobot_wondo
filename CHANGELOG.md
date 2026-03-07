@@ -4,6 +4,9 @@
 
 ### Added
 
+- **Snapshot-based User Change Detection (Worker Phase 1)**: Field-level snapshot guard — each destructive rule (R6, R1, R2a, R5, reevaluate) checks only its guard fields against the previous cycle's snapshot. User-changed fields are preserved, non-guard changes (e.g. title) don't block rules.
+- **Active Sync (Worker Phase 1)**: When user changes task `status`, related fields are actively synced — `status → completed` syncs `progress=100%` and `completed_at=now`; `status → active/someday` (from completed/archived) clears `completed_at`. User-set values are always preserved. Runs before consistency rules so sync results feed into R1-R8 naturally.
+- **R7/R8 deadline backfill (Worker Phase 1)**: R7 backfills `deadline` from parseable ISO in `deadline_text`; R8 reverse-backfills `deadline_text` from `deadline` when empty.
 - **Notion Integration (StorageBackend)**: `StorageBackend` ABC with `JsonStorageBackend` (default) and `NotionStorageBackend` (Notion API + 5-min TTL memory cache). Dashboard tools unchanged — backend swap only.
 - **Notification Tools (4)**: `schedule_notification`, `update_notification`, `cancel_notification`, `list_notifications` — always registered (ledger-only). Dashboard tools: 6 -> 12.
 - **Numbered Answer System**: Telegram `/questions` returns numbered list; user replies `"1. answer\n2. answer"` format. Full auto-process skips LLM call (token savings). Cache: TTL 1h, max 100.

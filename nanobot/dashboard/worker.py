@@ -36,6 +36,26 @@ from loguru import logger
 from nanobot.dashboard.utils import cancel_notification, parse_datetime  # noqa: F401 — re-exported for back-compat
 from nanobot.dashboard.utils import normalize_iso_date
 
+_TRACKED_FIELDS = (
+    "status",
+    "priority",
+    "deadline",
+    "deadline_text",
+    "title",
+    "context",
+    "tags",
+    "progress",
+    "estimation",
+    "completed_at",
+    "reflection",
+    "recurring",
+)
+"""Task fields tracked for user-change detection (snapshot diff).
+
+Not all fields are guard fields for destructive rules — some (e.g. estimation)
+are tracked only for diff logging.
+"""
+
 
 def _generate_id(prefix: str) -> str:
     """Generate unique ID: {prefix}_xxxxxxxx (same pattern as BaseDashboardTool)."""
@@ -56,6 +76,7 @@ class WorkerAgent:
 
     Phase 1 — Deterministic maintenance (always runs):
       - Bootstrap manually-added items (assign IDs, timestamps)
+      - Snapshot-based user change detection (skip destructive rules for user-modified tasks)
       - Enforce data consistency (progress/status/blocked field invariants)
       - Archive completed/cancelled tasks
       - Re-evaluate active/someday status
@@ -96,6 +117,168 @@ class WorkerAgent:
         self.scheduler = scheduler  # ReconciliationScheduler (or None)
         # Recreated each _run_llm_cycle(); None when Phase 2 never runs.
         self.tools: ToolRegistry | None = None
+
+    # =========================================================================
+    # Snapshot-based User Change Detection
+    # =========================================================================
+
+    def _snapshot_path(self) -> Path:
+        """Path to the worker snapshot file."""
+        return self.workspace / "dashboard" / ".worker_snapshot.json"
+
+    def _load_snapshot(self) -> dict[str, dict]:
+        """Load previous snapshot: task_id → tracked fields dict.
+
+        Returns empty dict on first run or corrupted file.
+        """
+        path = self._snapshot_path()
+        if not path.exists():
+            return {}
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+            logger.warning("[Worker] Snapshot file is not a dict, treating as first run")
+        except (json.JSONDecodeError, ValueError):
+            logger.warning("[Worker] Corrupt snapshot file (invalid JSON), treating as first run")
+        except OSError:
+            logger.warning("[Worker] Cannot read snapshot file (I/O error), treating as first run")
+        return {}
+
+    def _save_snapshot(self, tasks: list[dict]) -> None:
+        """Save tracked fields for each task (atomic write).
+
+        Save failure does not affect Worker execution — logged and swallowed.
+        """
+        snapshot: dict[str, dict] = {}
+        for task in tasks:
+            task_id = task.get("id")
+            if not task_id:
+                continue
+            snapshot[task_id] = {f: task.get(f) for f in _TRACKED_FIELDS}
+
+        path = self._snapshot_path()
+        tmp_path = path.with_suffix(".tmp")
+        try:
+            content = json.dumps(snapshot, ensure_ascii=False, indent=2)
+        except (TypeError, ValueError):
+            logger.exception("[Worker] Snapshot serialization error (data model bug)")
+            return
+        try:
+            tmp_path.write_text(content, encoding="utf-8")
+            tmp_path.replace(path)
+        except OSError:
+            logger.exception("[Worker] Failed to save snapshot (I/O error, non-fatal)")
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _detect_user_changes(
+        self, tasks: list[dict]
+    ) -> tuple[dict[str, set[str]], dict[str, dict]]:
+        """Compare current tasks against snapshot; return changed fields per task.
+
+        Returns:
+            Tuple of (user_changed_fields, snapshot).
+            user_changed_fields: dict mapping task_id → set of changed field names.
+            snapshot: the loaded snapshot dict (task_id → tracked fields).
+            New tasks (not in snapshot) are excluded — all rules apply to them.
+            Logs each changed field at info level for debugging.
+        """
+        snapshot = self._load_snapshot()
+        if not snapshot:
+            return {}, {}
+
+        result: dict[str, set[str]] = {}
+        for task in tasks:
+            task_id = task.get("id")
+            if not task_id or task_id not in snapshot:
+                continue  # new task — not user-changed
+
+            old = snapshot[task_id]
+            changed_fields: set[str] = set()
+            for field in _TRACKED_FIELDS:
+                old_val = old.get(field)
+                new_val = task.get(field)
+                if old_val != new_val:
+                    changed_fields.add(field)
+                    logger.info(
+                        "[Worker] User change: {} '{}': {} -> {}",
+                        task_id,
+                        field,
+                        old_val,
+                        new_val,
+                    )
+
+            if changed_fields:
+                result[task_id] = changed_fields
+
+        return result, snapshot
+
+    def _apply_active_sync(
+        self,
+        tasks_data: dict,
+        user_changed_fields: dict[str, set[str]],
+        snapshot: dict[str, dict],
+    ) -> bool:
+        """Sync related fields when user changes status (Active Sync).
+
+        Runs BEFORE _enforce_consistency() so sync results feed into remaining
+        rules naturally.
+
+        Args:
+            tasks_data: Full tasks payload.
+            user_changed_fields: dict mapping task_id → set of changed field names.
+            snapshot: previous cycle snapshot (task_id → tracked fields).
+
+        Sync rules:
+          - status → completed: progress=100%, completed_at=now
+            (skip if user also changed that field — respect user value)
+          - status → active/someday (from completed/archived):
+            completed_at=None (skip if user also changed completed_at)
+
+        Returns True if any task was modified.
+        """
+        if not user_changed_fields:
+            return False
+
+        now = _now().isoformat()
+        changed = False
+
+        for task in tasks_data.get("tasks", []):
+            task_id = task.get("id", "")
+            user_fields = user_changed_fields.get(task_id)
+            if not user_fields or "status" not in user_fields:
+                continue
+
+            new_status = task.get("status")
+            old_status = snapshot.get(task_id, {}).get("status") if snapshot else None
+
+            if new_status == "completed":
+                if "progress" not in user_fields:
+                    progress = task.setdefault("progress", {})
+                    progress["percentage"] = 100
+                    progress["last_update"] = now
+                    changed = True
+                    logger.info("[Worker] ActiveSync: {} — progress synced to 100%", task_id)
+                if "completed_at" not in user_fields:
+                    task["completed_at"] = now
+                    changed = True
+                    logger.info("[Worker] ActiveSync: {} — completed_at synced", task_id)
+
+            elif new_status in ("active", "someday") and old_status in ("completed", "archived"):
+                if "completed_at" not in user_fields:
+                    task["completed_at"] = None
+                    changed = True
+                    logger.info(
+                        "[Worker] ActiveSync: {} — {}→{}, cleared completed_at",
+                        task_id,
+                        old_status,
+                        new_status,
+                    )
+
+        return changed
 
     # =========================================================================
     # Public API
@@ -177,41 +360,61 @@ class WorkerAgent:
 
         Order:
         1. Bootstrap — assign IDs/timestamps to manually-added items (all entities)
-        2. Consistency — enforce field invariants (tasks only)
-        3. Archive — completed/cancelled → archived (tasks only)
-        4. Reevaluate — active/someday status (tasks only)
-        5. Recurring — reset completed habits, record misses (tasks only)
-        6. Cancel orphaned notifications — safety net for terminated tasks
+        2. Snapshot diff — detect user-changed tasks (field-level)
+        3. Active Sync — sync related fields based on user status changes
+        4. Consistency — enforce field invariants (R6→R1→R2a→R2b→R3→R4→R5→R7→R8)
+        5. Archive — completed/cancelled → archived (tasks only)
+        6. Reevaluate — active/someday status (tasks only)
+        7. Recurring — reset completed habits, record misses (tasks only)
+        8. Cancel orphaned notifications — safety net for terminated tasks
 
         Bootstrap runs independently per entity (separate load/save).
-        Steps 2-5 share a single load_tasks() call.
-        Step 6 uses tasks_data for lookup but loads/saves notifications separately.
+        Steps 2-7 share a single load_tasks() call.
+        Snapshot saved AFTER successful save (or when no changes needed).
+        Step 8 uses tasks_data for lookup but loads/saves notifications separately.
         Question cleanup is handled separately by _cleanup_questions()
         after Phase 2, so the LLM can process answered questions first.
         """
         # Step 1: Bootstrap — assign IDs to manually-added items (all entities)
         self._bootstrap_new_items()
 
-        # Steps 2-5: Task maintenance (single load/save)
+        # Steps 2-7: Task maintenance (single load/save)
+        tasks_data = None
         try:
             tasks_data = self.storage_backend.load_tasks()
-            changed = self._enforce_consistency(tasks_data)
+
+            # Step 2: Detect user changes via snapshot comparison (field-level)
+            user_changed_fields, snapshot = self._detect_user_changes(tasks_data.get("tasks", []))
+
+            # Step 3: Active Sync — sync related fields based on user status changes
+            changed = self._apply_active_sync(tasks_data, user_changed_fields, snapshot)
+
+            # Step 4: Consistency
+            changed |= self._enforce_consistency(tasks_data, user_changed_fields)
             changed |= self._archive_completed_tasks(tasks_data)
-            changed |= self._reevaluate_active_status(tasks_data)
+            changed |= self._reevaluate_active_status(tasks_data, user_changed_fields)
             changed |= self._check_recurring_tasks(tasks_data)
+
+            save_failed = False
             if changed:
                 ok, msg = self.storage_backend.save_tasks(tasks_data)
                 if not ok:
-                    logger.error(f"[Worker] Failed to save tasks: {msg}")
+                    logger.error("[Worker] Failed to save tasks: {}", msg)
+                    save_failed = True
+
+            # Snapshot AFTER successful save (or when no changes needed)
+            if not save_failed:
+                self._save_snapshot(tasks_data.get("tasks", []))
         except Exception:
             logger.exception("[Worker] Task maintenance error")
-            return
 
-        # Step 6: Cancel orphaned notifications (separate load/save cycle)
-        try:
-            self._cancel_orphaned_notifications(tasks_data)
-        except Exception:
-            logger.exception("[Worker] Notification orphan cleanup error")
+        # Step 8: Cancel orphaned notifications (separate load/save cycle)
+        # Runs even if Steps 2-7 failed, as long as tasks_data was loaded.
+        if tasks_data is not None:
+            try:
+                self._cancel_orphaned_notifications(tasks_data)
+            except Exception:
+                logger.exception("[Worker] Notification orphan cleanup error")
 
     def _bootstrap_new_items(self) -> None:
         """Assign IDs and timestamps to manually-added items (e.g. via Notion UI).
@@ -324,18 +527,31 @@ class WorkerAgent:
         item["updated_at"] = now
         item.setdefault("progress", {})["last_update"] = now
 
-    def _enforce_consistency(self, tasks_data: dict) -> bool:
+    def _enforce_consistency(
+        self, tasks_data: dict, user_changed_fields: dict[str, set[str]] | None = None
+    ) -> bool:
         """Enforce field invariants on tasks (deterministic, no LLM).
 
+        Args:
+            tasks_data: Full tasks payload ({"version": ..., "tasks": [...]}).
+            user_changed_fields: dict mapping task_id → set of changed field names.
+                Each destructive rule checks only its guard fields:
+                  R6 guards: {completed_at}
+                  R1 guards: {status, progress}
+                  R2a guards: {status, progress}
+                  R5 guards: {progress}
+                None means no snapshot available (all rules apply).
+
         Rules (applied in order per task):
-          R6: active/someday + completed_at → clear completed_at
-          R1: active/someday + progress=100% → completed + completed_at=now
-          R2a: completed + progress<100% → progress=100%
+          R6: active/someday + completed_at → clear completed_at  [SKIP if user changed completed_at]
+          R1: active/someday + progress=100% → completed          [SKIP if user changed status/progress]
+          R2a: completed + progress<100% → progress=100%          [SKIP if user changed status/progress]
           R2b: cancelled + progress=100% → warning only
           R3: completed/archived + no completed_at → backfill completed_at
           R4: blocked=true + no blocker_note → warning only
-          R5: blocked=false + blocker_note → clear blocker_note
+          R5: blocked=false + blocker_note → clear blocker_note   [SKIP if user changed progress]
           R7: deadline empty + deadline_text has parseable ISO → backfill deadline
+          R8: deadline filled + deadline_text empty → backfill deadline_text
 
         Returns True if any task was modified.
         """
@@ -343,12 +559,14 @@ class WorkerAgent:
         if not tasks:
             return False
 
+        _fields = user_changed_fields or {}
         now = _now().isoformat()
         changed = False
 
         for task in tasks:
             try:
                 task_id = task.get("id", "?")
+                user_fields = _fields.get(task_id, set())
                 status = task.get("status", "active")
                 progress_dict = task.get("progress", {})
                 progress = progress_dict.get("percentage", 0)
@@ -359,38 +577,54 @@ class WorkerAgent:
 
                 # R6: active/someday should not have completed_at
                 if status in ("active", "someday") and completed_at is not None:
-                    task["completed_at"] = None
-                    completed_at = None
-                    changed = True
-                    logger.info(f"[Worker] R6: {task_id} — cleared stale completed_at")
+                    if {"completed_at"} & user_fields:
+                        logger.info(
+                            "[Worker] R6: {} — skipped (user changed completed_at)", task_id
+                        )
+                    else:
+                        task["completed_at"] = None
+                        completed_at = None
+                        changed = True
+                        logger.info("[Worker] R6: {} — cleared stale completed_at", task_id)
 
                 # R1: progress=100% on active/someday → auto-complete
                 if status in ("active", "someday") and progress >= 100:
-                    task["status"] = "completed"
-                    task["completed_at"] = now
-                    status = "completed"  # Update local var for subsequent rules
-                    completed_at = now  # Prevent R3 from redundant backfill
-                    changed = True
-                    logger.info(f"[Worker] R1: {task_id} — progress 100% → completed")
+                    if {"status", "progress"} & user_fields:
+                        logger.info(
+                            "[Worker] R1: {} — skipped (user changed status/progress)", task_id
+                        )
+                    else:
+                        task["status"] = "completed"
+                        task["completed_at"] = completed_at or now
+                        status = "completed"  # Update local var for subsequent rules
+                        completed_at = task["completed_at"]
+                        changed = True
+                        logger.info("[Worker] R1: {} — progress 100% → completed", task_id)
 
                 # R2a: completed but progress < 100% → fix progress
                 if status == "completed" and progress < 100:
-                    task.setdefault("progress", {})["percentage"] = 100
-                    task.setdefault("progress", {})["last_update"] = now
-                    changed = True
-                    logger.info(f"[Worker] R2a: {task_id} — completed, progress → 100%")
+                    if {"status", "progress"} & user_fields:
+                        logger.info(
+                            "[Worker] R2a: {} — skipped (user changed status/progress)", task_id
+                        )
+                    else:
+                        task.setdefault("progress", {})["percentage"] = 100
+                        task.setdefault("progress", {})["last_update"] = now
+                        changed = True
+                        logger.info("[Worker] R2a: {} — completed, progress → 100%", task_id)
 
                 # R2b: cancelled with 100% → warning only (user intent unclear)
                 if status == "cancelled" and progress >= 100:
                     logger.warning(
-                        f"[Worker] R2b: {task_id} — cancelled with progress=100%, preserved as-is"
+                        "[Worker] R2b: {} — cancelled with progress=100%, preserved as-is",
+                        task_id,
                     )
 
                 # R3: completed/archived without completed_at → backfill
                 if status in ("completed", "archived") and completed_at is None:
                     task["completed_at"] = now
                     changed = True
-                    logger.info(f"[Worker] R3: {task_id} — backfilled completed_at")
+                    logger.info("[Worker] R3: {} — backfilled completed_at", task_id)
 
                 # R4/R5: blocked field consistency (only for active/someday)
                 if status in ("active", "someday"):
@@ -398,13 +632,20 @@ class WorkerAgent:
 
                     # R4: blocked=true but no note → warning
                     if blocked and not has_note:
-                        logger.warning(f"[Worker] R4: {task_id} — blocked=true but no blocker_note")
+                        logger.warning(
+                            "[Worker] R4: {} — blocked=true but no blocker_note", task_id
+                        )
 
                     # R5: not blocked but has note → clear note
                     if not blocked and has_note:
-                        progress_dict["blocker_note"] = None
-                        changed = True
-                        logger.info(f"[Worker] R5: {task_id} — cleared orphan blocker_note")
+                        if {"progress"} & user_fields:
+                            logger.info(
+                                "[Worker] R5: {} — skipped (user changed progress)", task_id
+                            )
+                        else:
+                            progress_dict["blocker_note"] = None
+                            changed = True
+                            logger.info("[Worker] R5: {} — cleared orphan blocker_note", task_id)
 
                 # R7: deadline empty but deadline_text has parseable ISO → backfill
                 deadline_val = task.get("deadline", "")
@@ -415,8 +656,17 @@ class WorkerAgent:
                         task["deadline"] = parsed
                         changed = True
                         logger.info(
-                            f"[Worker] R7: {task_id} — backfilled deadline from deadline_text"
+                            "[Worker] R7: {} — backfilled deadline from deadline_text", task_id
                         )
+
+                # R8: deadline filled but deadline_text empty → backfill deadline_text
+                # Re-read deadline_val after R7 may have mutated it
+                deadline_val = task.get("deadline", "")
+                deadline_text_val = task.get("deadline_text", "")
+                if deadline_val and not deadline_text_val:
+                    task["deadline_text"] = deadline_val
+                    changed = True
+                    logger.info("[Worker] R8: {} — backfilled deadline_text from deadline", task_id)
 
             except Exception:
                 # Guard against task not being a dict (e.g. corrupted data)
@@ -424,7 +674,7 @@ class WorkerAgent:
                     tid = task.get("id", "?") if isinstance(task, dict) else "???"
                 except Exception:
                     tid = "???"
-                logger.exception(f"[Worker] Consistency check error for task {tid}")
+                logger.exception("[Worker] Consistency check error for task {}", tid)
 
         return changed
 
@@ -460,8 +710,19 @@ class WorkerAgent:
 
         return True
 
-    def _reevaluate_active_status(self, tasks_data: dict) -> bool:
-        """Re-evaluate active/someday status for non-terminal tasks."""
+    def _reevaluate_active_status(
+        self, tasks_data: dict, user_changed_fields: dict[str, set[str]] | None = None
+    ) -> bool:
+        """Re-evaluate active/someday status for non-terminal tasks.
+
+        Args:
+            tasks_data: Full tasks payload.
+            user_changed_fields: dict mapping task_id → set of changed field names.
+                Status re-evaluation is skipped only when the user changed the
+                ``status`` field directly. Other field changes (e.g. title) do not
+                block re-evaluation. Recurring promotion always applies.
+        """
+        _fields = user_changed_fields or {}
         now = _now()
         tasks = tasks_data.get("tasks", [])
         changed = False
@@ -472,26 +733,32 @@ class WorkerAgent:
             if task.get("status") in ("completed", "cancelled", "archived"):
                 continue
 
-            # Recurring tasks always stay active (never demoted to someday)
+            # Recurring tasks always stay active (regardless of user changes)
             if _is_recurring_enabled(task):
                 if task.get("status") != "active":
                     task["status"] = "active"
                     changed = True
                 continue
 
+            # Skip status re-evaluation only if user changed status directly
+            if "status" in _fields.get(task.get("id", ""), set()):
+                continue
+
             old_status = task.get("status", "someday")
             try:
                 new_status = self._determine_status(task, now)
             except (ValueError, TypeError, KeyError) as e:
-                logger.warning(f"[Worker] Skipping status eval for {task.get('id', '?')}: {e}")
+                logger.warning("[Worker] Skipping status eval for {}: {}", task.get("id", "?"), e)
                 continue
 
             if old_status != new_status:
                 task["status"] = new_status
                 changed = True
                 logger.info(
-                    f"[Worker] Task '{task.get('title', '<unknown>')}' "
-                    f"status: {old_status} → {new_status}"
+                    "[Worker] Task '{}' status: {} → {}",
+                    task.get("title", "<unknown>"),
+                    old_status,
+                    new_status,
                 )
 
         return changed
