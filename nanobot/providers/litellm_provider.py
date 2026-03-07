@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import TYPE_CHECKING, Any
 
@@ -11,10 +10,9 @@ if TYPE_CHECKING:
 
 import litellm
 from litellm import acompletion
+from loguru import logger
 
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
-
-logger = logging.getLogger(__name__)
 
 # Maps provider keywords to environment variable names for API keys.
 _PROVIDER_ENV_MAP: dict[str, str] = {
@@ -155,8 +153,14 @@ class LiteLLMProvider(LLMProvider):
             is_fallback = idx > 0
             resolved = self._resolve_model(candidate, is_fallback=is_fallback)
 
-            # kimi-k2.5 only supports temperature=1.0
-            temp = 1.0 if "kimi-k2.5" in candidate.lower() else temperature
+            # Some models only support temperature=1.0
+            candidate_lower = candidate.lower()
+            if "kimi-k2.5" in candidate_lower:
+                temp = 1.0
+            elif "gpt-5" in candidate_lower:
+                temp = 1.0
+            else:
+                temp = temperature
 
             # Key rotation: get list of keys for this model
             keys, provider_keyword = self._get_keys_for_model(candidate)
@@ -195,7 +199,7 @@ class LiteLLMProvider(LLMProvider):
                         else 0
                     )
                     logger.info(
-                        "LLM ok: model=%s tier=%s key=%d/%d tokens=%d",
+                        "LLM ok: model={} tier={} key={}/{} tokens={}",
                         candidate,
                         tier or "default",
                         key_idx + 1,
@@ -208,14 +212,14 @@ class LiteLLMProvider(LLMProvider):
                         logger.info("Fallback succeeded with model: {}", candidate)
                     if key_idx > 0:
                         logger.info(
-                            "Key rotation succeeded on key index %d for %s", key_idx, candidate
+                            "Key rotation succeeded on key index {} for {}", key_idx, candidate
                         )
                     return self._parse_response(response)
                 except litellm.exceptions.RateLimitError as e:
                     last_error = e
                     tier = self._get_key_tier(keys, key_idx)
                     logger.warning(
-                        "LLM rate_limited: model=%s tier=%s key=%d/%d",
+                        "LLM rate_limited: model={} tier={} key={}/{}",
                         candidate,
                         tier or "default",
                         key_idx + 1,
@@ -226,7 +230,7 @@ class LiteLLMProvider(LLMProvider):
                     if is_last_key:
                         # Last key exhausted, move to next model
                         logger.warning(
-                            "Model %s rate limited on all keys, trying next fallback...",
+                            "Model {} rate limited on all keys, trying next fallback...",
                             candidate,
                         )
                         break
@@ -236,7 +240,7 @@ class LiteLLMProvider(LLMProvider):
                 except litellm.exceptions.ServiceUnavailableError as e:
                     last_error = e
                     logger.warning(
-                        "LLM service_unavailable (503): model=%s key=%d/%d",
+                        "LLM service_unavailable (503): model={} key={}/{}",
                         candidate,
                         key_idx + 1,
                         len(keys),
@@ -250,7 +254,7 @@ class LiteLLMProvider(LLMProvider):
                     last_error = e
                     if idx < len(models_to_try) - 1:
                         logger.warning(
-                            "Model %s failed (%s), trying next fallback...", candidate, e
+                            "Model {} failed ({}), trying next fallback...", candidate, e
                         )
                     else:
                         logger.error("All models failed. Last error: {}", e)

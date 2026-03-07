@@ -273,9 +273,9 @@ def gateway(
         """Execute heartbeat through the agent."""
         return await agent.process_direct(prompt, session_key="heartbeat")
 
-    # Determine worker model (from config or fallback to fast model)
+    # Determine worker model (empty string or missing → None → provider uses defaults.model)
     worker_config = getattr(config.agents, "worker", None)
-    worker_model = worker_config.model if worker_config else "google/gemini-2.0-flash-exp"
+    worker_model = worker_config.model if (worker_config and worker_config.model) else None
 
     # Report callback: send weekly stats via Telegram
     async def send_stats_report(message: str) -> None:

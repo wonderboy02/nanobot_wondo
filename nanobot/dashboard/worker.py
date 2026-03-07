@@ -307,12 +307,12 @@ class WorkerAgent:
         pending_answers = self._extract_answered_questions()
         extraction_failed = pending_answers is None
 
-        # Phase 2: LLM-powered analysis (requires provider + model).
-        # When unavailable (e.g. `nanobot dashboard worker` CLI), only Phase 1
-        # runs — question generation and notification scheduling are skipped.
-        # This is an intentional trade-off: see module docstring for rationale.
+        # Phase 2: LLM-powered analysis (requires provider).
+        # model=None → provider.chat uses defaults.model automatically.
+        # When provider unavailable (e.g. `nanobot dashboard worker` CLI without
+        # config), only Phase 1 runs — see module docstring for rationale.
         phase2_ok = False
-        if self.provider is not None and self.model is not None:
+        if self.provider is not None:
             phase2_ok = await self._run_llm_cycle(pending_answers or [])
         else:
             logger.debug("[Worker] LLM not configured; skipping Phase 2")

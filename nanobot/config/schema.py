@@ -93,7 +93,7 @@ class WorkerConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     enabled: bool = True
-    model: str = "google/gemini-3-flash-preview"
+    model: str = ""
 
 
 class AgentsConfig(BaseModel):

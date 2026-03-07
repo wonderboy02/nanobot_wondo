@@ -3,9 +3,14 @@
     "defaults": {
       "workspace": "~/.nanobot/workspace",
       "model": "gemini/gemini-3-flash-preview",
+      "fallbackModels": [],
       "maxTokens": 8192,
       "temperature": 0.7,
       "maxToolIterations": 20
+    },
+    "worker": {
+      "enabled": true,
+      "model": ""
     }
   },
   "channels": {
