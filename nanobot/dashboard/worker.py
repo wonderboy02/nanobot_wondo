@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Coroutine
+
     from nanobot.agent.tools.registry import ToolRegistry
     from nanobot.dashboard.storage import StorageBackend
 
@@ -109,12 +111,14 @@ class WorkerAgent:
         provider: Any | None = None,
         model: str | None = None,
         scheduler: Any | None = None,
+        report_callback: Callable[[str], Coroutine[Any, Any, None]] | None = None,
     ):
         self.workspace = workspace
         self.storage_backend = storage_backend
         self.provider = provider
         self.model = model
         self.scheduler = scheduler  # ReconciliationScheduler (or None)
+        self.report_callback = report_callback
         # Recreated each _run_llm_cycle(); None when Phase 2 never runs.
         self.tools: ToolRegistry | None = None
 
@@ -1283,25 +1287,45 @@ class WorkerAgent:
                 }
             )
 
-        # 2. Build Dashboard Summary + Notifications Summary
+        # 2. Build Dashboard Summary (incl. pending) + Delivered Notifications Summary
         # DESIGN: Always use asyncio.to_thread even for JsonStorageBackend.
         # Negligible overhead for JSON but keeps the code path uniform
         # with NotionStorageBackend (sync httpx, ~300ms).
-        # Simplicity over micro-optimization for a 30-minute-interval task.
+        # Simplicity over micro-optimization for a 2-hour-interval task.
+        errors: list[str] = []
         dashboard_summary = await asyncio.to_thread(
             get_dashboard_summary,
             self.workspace / "dashboard",
             self.storage_backend,
+            on_error=errors.append,
         )
-        notifications_summary = await asyncio.to_thread(self._build_notifications_summary)
+        if errors and self.report_callback:
+            for err in errors:
+                try:
+                    await self.report_callback(f"⚠️ {err}")
+                except Exception:
+                    logger.exception("[Worker] Failed to report error via callback: {}", err)
+        try:
+            notifications_summary = await asyncio.to_thread(self._build_notifications_summary)
+        except Exception:
+            notifications_summary = (
+                "⚠️ Error loading delivered notifications — follow-up processing skipped this cycle."
+            )
+            logger.exception("[Worker] {}", notifications_summary)
+            if self.report_callback:
+                try:
+                    await self.report_callback(notifications_summary)
+                except Exception:
+                    logger.exception("[Worker] Failed to report notifications summary error")
         answered_summary = self._build_answered_questions_summary(pending_answers or [])
 
         # 3. Combine into user message
         parts = [
             "## Current Dashboard State\n\n",
             f"{dashboard_summary}\n\n",
-            f"{notifications_summary}\n\n",
         ]
+        if notifications_summary:
+            parts.append(f"{notifications_summary}\n\n")
         if answered_summary:
             parts.append(f"{answered_summary}\n\n")
         parts.append("위 상태를 분석하고 필요한 유지보수를 수행하라.")
@@ -1311,95 +1335,66 @@ class WorkerAgent:
         return messages
 
     def _build_notifications_summary(self) -> str:
-        """Build summary of pending and recently delivered notifications.
+        """Build summary of recently delivered notifications (last 48h).
 
-        Includes two sections:
-        - Pending notifications (scheduled, not yet delivered)
-        - Recently Delivered (last 48h) with follow-up instructions
+        Pending notifications are now shown in get_dashboard_summary()
+        (grouped by task for dedup awareness). This method only handles
+        recently delivered notifications for follow-up processing.
         """
-        try:
-            data = self.storage_backend.load_notifications()
-            notifications = data.get("notifications", [])
+        data = self.storage_backend.load_notifications()
+        notifications = data.get("notifications", [])
 
-            if not notifications:
-                return "## Scheduled Notifications\n\nNo notifications scheduled."
+        if not notifications:
+            return ""
 
-            pending = [n for n in notifications if n.get("status") == "pending"]
-
-            # Recently delivered (last 48h)
-            now = _now()
-            cutoff = now - timedelta(hours=48)
-            delivered_recent = []
-            for n in notifications:
-                if n.get("status") != "delivered":
-                    continue
-                delivered_at = n.get("delivered_at", "")
-                try:
-                    dt = parse_datetime(delivered_at)
-                    if dt >= cutoff:
-                        delivered_recent.append(n)
-                except (ValueError, TypeError):
-                    # Skip: including unparseable entries would cause infinite
-                    # repetition since they can never age past the 48h cutoff.
-                    logger.error(
-                        f"[Worker] Skipping notification {n.get('id', '?')}: "
-                        f"invalid delivered_at={delivered_at!r} — fix data to restore tracking"
-                    )
-
-            if not pending and not delivered_recent:
-                return "## Scheduled Notifications\n\nNo pending notifications."
-
-            lines = ["## Scheduled Notifications\n"]
-
-            # Pending section
-            if pending:
-                for notif in pending:
-                    scheduled_at = notif.get("scheduled_at", "")
-                    try:
-                        dt = datetime.fromisoformat(scheduled_at)
-                        time_str = dt.strftime("%Y-%m-%d %H:%M")
-                    except (ValueError, TypeError):
-                        time_str = scheduled_at
-
-                    lines.append(
-                        f"- **{notif.get('id', '?')}** "
-                        f"({notif.get('type', '?')}, {notif.get('priority', '?')}): "
-                        f"{notif.get('message', '')} [Scheduled: {time_str}]"
-                    )
-                    if notif.get("related_task_id"):
-                        lines.append(f"  Related Task: {notif['related_task_id']}")
-            else:
-                lines.append("No pending notifications.\n")
-
-            # Recently delivered section
-            if delivered_recent:
-                lines.append("\n### Recently Delivered Notifications (last 48h)\n")
-                for notif in delivered_recent:
-                    delivered_at = notif.get("delivered_at", "")
-                    try:
-                        dt = parse_datetime(delivered_at)
-                        time_str = dt.strftime("%Y-%m-%d %H:%M")
-                    except (ValueError, TypeError):
-                        time_str = delivered_at
-
-                    lines.append(
-                        f"- **{notif.get('id', '?')}** "
-                        f"({notif.get('type', '?')}, {notif.get('priority', '?')}): "
-                        f"{notif.get('message', '')} [Delivered: {time_str}]"
-                    )
-                    if notif.get("related_task_id"):
-                        lines.append(f"  Related Task: {notif['related_task_id']}")
-
-                lines.append(
-                    "\n위 알림은 이미 전달되었다. "
-                    "WORKER.md의 '전달된 알림 후속 조치' 지침에 따라 처리하라."
+        # Recently delivered (last 48h)
+        now = _now()
+        cutoff = now - timedelta(hours=48)
+        delivered_recent = []
+        for n in notifications:
+            if n.get("status") != "delivered":
+                continue
+            delivered_at = n.get("delivered_at", "")
+            try:
+                dt = parse_datetime(delivered_at)
+                if dt >= cutoff:
+                    delivered_recent.append(n)
+            except (ValueError, TypeError):
+                # Skip: including unparseable entries would cause infinite
+                # repetition since they can never age past the 48h cutoff.
+                logger.error(
+                    "[Worker] Skipping notification {}: "
+                    "invalid delivered_at={!r} — fix data to restore tracking",
+                    n.get("id", "?"),
+                    delivered_at,
                 )
 
-            return "\n".join(lines)
+        if not delivered_recent:
+            return ""
 
-        except Exception:
-            logger.exception("[Worker] Error building notifications summary")
-            return "## Scheduled Notifications\n\nError loading notifications."
+        lines = ["## Recently Delivered Notifications (last 48h)\n"]
+
+        for notif in delivered_recent:
+            delivered_at = notif.get("delivered_at", "")
+            try:
+                dt = parse_datetime(delivered_at)
+                time_str = dt.strftime("%Y-%m-%d %H:%M")
+            except (ValueError, TypeError):
+                time_str = delivered_at
+
+            lines.append(
+                f"- **{notif.get('id', '?')}** "
+                f"({notif.get('type', '?')}, {notif.get('priority', '?')}): "
+                f"{notif.get('message', '')} [Delivered: {time_str}]"
+            )
+            if notif.get("related_task_id"):
+                lines.append(f"  Related Task: {notif['related_task_id']}")
+
+        lines.append(
+            "\n위 알림은 이미 전달되었다. WORKER.md의 '전달된 알림 후속 조치' 지침에 따라 처리하라."
+        )
+
+        return "\n".join(lines)
 
     def _register_worker_tools(self) -> None:
         """Register all tools available to the Worker Agent."""

@@ -187,6 +187,7 @@ class HeartbeatService:
                 provider=self.provider,
                 model=self.model,
                 scheduler=self.scheduler,
+                report_callback=self.report_callback,
             )
 
             if self._processing_lock:

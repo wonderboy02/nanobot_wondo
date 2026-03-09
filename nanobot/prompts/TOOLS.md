@@ -93,6 +93,6 @@ list_notifications(status: str = None, related_task_id: str = None) -> str
 
 **When to use:**
 - Schedule reminders for deadlines, progress checks, or follow-ups
-- Notifications are delivered via Cron at exact scheduled time
-- Always check `list_notifications()` before creating new ones to avoid duplicates
+- Notifications are delivered via Reconciler at scheduled time
+- Context의 Pending Notifications 섹션에서 기존 알림 확인 후 중복 방지. 추가 필터링 필요 시 `list_notifications()` 사용
 

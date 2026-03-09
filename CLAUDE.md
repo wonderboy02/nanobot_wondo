@@ -27,7 +27,7 @@ nanobot/
 ├── dashboard/storage.py     # StorageBackend ABC
 ├── dashboard/reconciler.py  # NotificationReconciler + ReconciliationScheduler
 ├── dashboard/utils.py       # Shared utilities (parse_datetime, normalize_iso_date, cancel_notification)
-├── dashboard/helper.py      # Dashboard summary generator
+├── dashboard/helper.py      # Dashboard summary generator (tasks + questions + pending notifications)
 ├── channels/telegram.py     # Primary channel (numbered answers, /questions, /tasks)
 ├── notion/                  # NotionStorageBackend + cache
 ├── providers/stats.py       # API key usage stats (file-persisted, weekly report)

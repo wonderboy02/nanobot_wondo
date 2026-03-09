@@ -423,7 +423,7 @@ nanobot cron remove <job_id>
 - **Task Management**: Automatic active/someday classification based on deadlines
 - **Question Queue**: Async communication - agent asks questions, you answer when ready
 - **Knowledge Base**: Completed tasks, insights, and relationships
-- **Worker Agent**: Runs every 30 minutes to check progress and generate questions
+- **Worker Agent**: Runs every 2 hours to check progress and generate questions
 
 ### Usage
 

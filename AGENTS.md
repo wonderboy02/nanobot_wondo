@@ -82,7 +82,7 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 - **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
 - **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
 - **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
-- Runs automatically every 30 minutes via Heartbeat
+- Runs automatically every 2 hours via Heartbeat
 - **Notification delivery**: Ledger-Based Delivery via `ReconciliationScheduler` — tools write to ledger only; Reconciler handles GCal sync, due detection, and delivery via `send_callback`. See WORKER.md for follow-up instructions
 
 ## Non-Negotiable Rules

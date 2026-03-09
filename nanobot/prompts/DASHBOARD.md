@@ -46,7 +46,7 @@ User: "Hook이 어려워서 막힘"
 
 - **설정**: `set_recurring(task_id, days_of_week=[0,1,2,3,4], check_time="22:00")`
 - **완료 처리**: 사용자가 완료 보고 → `update_task(status=completed)` → Worker가 자동 리셋
-- **Worker 자동 처리**: streak 업데이트, miss 감지, progress 리셋 (매 30분 사이클)
+- **Worker 자동 처리**: streak 업데이트, miss 감지, progress 리셋 (매 2시간 사이클)
 
 ```
 User: "매일 운동 습관 만들고 싶어"
@@ -82,8 +82,8 @@ User: "오늘 운동 했어"
 ## Notification System
 
 - **Main Agent**: 시간 정보가 포함된 일정/약속 → task + notification 자동 생성
-- **Worker Agent**: 자동 deadline/progress 알림 담당 (30분 주기)
-- 중복 방지: `list_notifications(status="pending")` 먼저 확인
+- **Worker Agent**: 자동 deadline/progress 알림 담당 (2시간 주기)
+- 중복 방지: context의 **Pending Notifications** 섹션에서 기존 알림 확인. 같은 Task에 알림이 이미 있으면 `update_notification`/`cancel_notification` 사용
 
 ### 시간 판단 규칙
 
@@ -149,19 +149,18 @@ User: "리포트 마감 내일이야, 리마인더 해줘"
 Task 상태/시간이 변경되면 관련 notification도 반드시 확인:
 
 - **Task 완료/취소/아카이브**: 관련 pending notification은 자동 cancel됨 (`update_task`, `archive_task` 코드 처리)
-- **Task deadline/시간 변경**: `list_notifications(related_task_id=task_xxx)`로 관련 알림 확인 후 `update_notification()`으로 시간 수정
+- **Task deadline/시간 변경**: context의 Pending Notifications에서 해당 Task의 notification ID 확인 → `update_notification()`으로 시간 수정
 
 ```
 # 시간만 변경 → deadline(날짜)은 그대로, notification만 업데이트
+# (context에서 task_xxx 아래 n_abc가 보이므로 바로 수정)
 User: "내일 미팅 3시에서 5시로 바뀌었어"
-→ list_notifications(related_task_id=task_xxx)  # 관련 알림 확인
-→ update_notification(notif_xxx, scheduled_at="2026-03-05T17:00:00")
+→ update_notification(n_abc, scheduled_at="2026-03-05T17:00:00")
 → SILENT
 
 # 날짜 자체가 변경 → deadline + notification 모두 업데이트
 User: "미팅 내일에서 모레로 밀렸어"
 → update_task(task_xxx, deadline="2026-03-06")
-→ list_notifications(related_task_id=task_xxx)
-→ update_notification(notif_xxx, scheduled_at="2026-03-06T15:00:00")
+→ update_notification(n_abc, scheduled_at="2026-03-06T15:00:00")
 → SILENT
 ```

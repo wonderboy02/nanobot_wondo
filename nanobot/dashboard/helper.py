@@ -2,16 +2,33 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from loguru import logger
+
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from nanobot.dashboard.storage import StorageBackend
+
+
+def _format_notification_line(n: dict) -> str:
+    """Format a single notification as a markdown list item."""
+    scheduled_at = n.get("scheduled_at", "")
+    try:
+        dt = datetime.fromisoformat(scheduled_at)
+        time_str = dt.strftime("%m-%d %H:%M")
+    except (ValueError, TypeError):
+        time_str = scheduled_at
+    return f"  - {n.get('id', '?')} ({n.get('type', '?')}): {n.get('message', '')} [{time_str}]"
 
 
 def get_dashboard_summary(
     dashboard_path: Path,
-    storage_backend: "StorageBackend | None" = None,
+    storage_backend: StorageBackend | None = None,
+    on_error: Callable[[str], None] | None = None,
 ) -> str:
     """
     Generate COMPLETE Dashboard state for Agent context.
@@ -19,6 +36,7 @@ def get_dashboard_summary(
     Includes ALL information with NO limits:
     - All active tasks (with full details)
     - All unanswered questions (with metadata)
+    - All pending notifications (grouped by task)
 
     This is the single source of truth for the agent.
     Session history is NOT included in context.
@@ -28,6 +46,11 @@ def get_dashboard_summary(
         storage_backend: Optional StorageBackend instance.
             If provided, loads data through the backend (supports Notion).
             Otherwise falls back to direct JSON file reading.
+        on_error: Optional callback invoked with a message string when
+            a section fails to load. Called at most once per failed section
+            (tasks, questions, notifications). Note: only fires for
+            StorageBackend errors; JSON backend's load_json_file swallows
+            parse errors internally (returns empty dict).
 
     Returns:
         Complete formatted dashboard state.
@@ -37,22 +60,38 @@ def get_dashboard_summary(
 
     parts = []
 
-    # Load data through backend or direct file access
-    # Wrap in try/except so one section failing doesn't break the whole summary
+    # Load all data upfront — each section wrapped individually so one
+    # failure doesn't break the others. StorageBackend errors are logged
+    # and reported via on_error; JSON backend's load_json_file swallows
+    # parse errors internally (returns empty dict).
     if storage_backend is not None:
         try:
             tasks_data = storage_backend.load_tasks()
         except Exception:
+            logger.exception("[DashboardHelper] Failed to load tasks")
+            if on_error:
+                on_error("Failed to load tasks for dashboard summary")
             tasks_data = {}
         try:
             questions_data = storage_backend.load_questions()
         except Exception:
+            logger.exception("[DashboardHelper] Failed to load questions")
+            if on_error:
+                on_error("Failed to load questions for dashboard summary")
             questions_data = {}
+        try:
+            notif_data = storage_backend.load_notifications()
+        except Exception:
+            logger.exception("[DashboardHelper] Failed to load notifications")
+            if on_error:
+                on_error("Failed to load pending notifications for dashboard summary")
+            notif_data = {}
     else:
         from nanobot.dashboard.storage import load_json_file
 
         tasks_data = load_json_file(dashboard_path / "tasks.json")
         questions_data = load_json_file(dashboard_path / "questions.json")
+        notif_data = load_json_file(dashboard_path / "notifications.json")
 
     # Format tasks
     active_tasks = [task for task in tasks_data.get("tasks", []) if task.get("status") == "active"]
@@ -119,6 +158,45 @@ def get_dashboard_summary(
             question_lines.append("")  # Empty line between questions
 
         parts.append("\n".join(question_lines))
+
+    # Format pending notifications (grouped by task)
+    pending = [n for n in notif_data.get("notifications", []) if n.get("status") == "pending"]
+
+    if pending:
+        # Build task_id -> title map from already-loaded tasks_data
+        task_titles: dict[str, str] = {}
+        for t in tasks_data.get("tasks", []):
+            tid = t.get("id", "")
+            if tid:
+                task_titles[tid] = t.get("title", "Untitled")
+
+        # Group by related_task_id
+        grouped: dict[str | None, list[dict]] = {}
+        for n in pending:
+            key = n.get("related_task_id") or None
+            grouped.setdefault(key, []).append(n)
+
+        notif_lines = ["## Pending Notifications\n"]
+        # Task-linked groups first
+        for task_id, notifs in grouped.items():
+            if task_id is None:
+                continue
+            title = task_titles.get(task_id, "")
+            header = f"**{task_id}** ({title}):" if title else f"**{task_id}**:"
+            notif_lines.append(header)
+            for n in notifs:
+                notif_lines.append(_format_notification_line(n))
+            notif_lines.append("")
+
+        # Unlinked group
+        unlinked = grouped.get(None, [])
+        if unlinked:
+            notif_lines.append("**기타** (Task 미연결):")
+            for n in unlinked:
+                notif_lines.append(_format_notification_line(n))
+            notif_lines.append("")
+
+        parts.append("\n".join(notif_lines))
 
     if not parts:
         return "No active tasks or questions."

@@ -52,8 +52,9 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 ## 핵심 규칙
 
 ### 알림 중복 방지 (가장 중요)
-새 알림을 스케줄링하기 **전에 반드시** `list_notifications`를 호출하라.
+context의 **Pending Notifications** 섹션에서 기존 알림을 확인하라.
 같은 Task에 대해 비슷한 알림이 이미 있으면 스케줄링하지 마라.
+추가 필터링이 필요하면 `list_notifications`를 호출할 수 있다.
 
 ### 알림 시간
 - 일반 알림: **오전 9시** 또는 **오후 6시**
@@ -67,9 +68,9 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 
 ### 마감 임박 Task
 ```
-1. list_notifications(related_task_id="task_001") → 해당 알림 없음
-2. schedule_notification(
-     message="'블로그 작성' 마감이 내일이에요. 현재 70% — 마무리 계획 있으신가요?",
+# context의 Pending Notifications에서 task_001에 알림이 없음을 확인
+1. schedule_notification(
+     message="블로그 마감",
      scheduled_at="2026-03-05T09:00:00",
      type="deadline_alert", priority="high",
      related_task_id="task_001"

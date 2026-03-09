@@ -42,4 +42,4 @@
 
 **One-time reminders**: `schedule_notification` 도구 사용 (DASHBOARD.md 규칙 참조)
 
-**Recurring tasks**: Edit `HEARTBEAT.md` (checked every 30 minutes)
+**Recurring tasks**: Edit `HEARTBEAT.md` (checked every 2 hours)

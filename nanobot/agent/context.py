@@ -75,7 +75,7 @@ Skills with available="false" need dependencies installed first - you can try in
 
 {skills_summary}""")
 
-        # Dashboard state (Active tasks + Question Queue)
+        # Dashboard state (Active tasks + Question Queue + Pending Notifications)
         dashboard_context = self._get_dashboard_context()
         if dashboard_context:
             parts.append(f"# Dashboard State\n\n{dashboard_context}")
@@ -134,7 +134,7 @@ Reply directly with text for conversations."""
         Otherwise falls back to synchronous loading (fine for JSON backend / CLI).
 
         Returns:
-            Dashboard summary (active tasks + unanswered questions).
+            Dashboard summary (active tasks + unanswered questions + pending notifications).
         """
         if self._precomputed_dashboard is not None:
             summary = self._precomputed_dashboard

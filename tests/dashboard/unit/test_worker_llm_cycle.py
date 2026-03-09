@@ -284,7 +284,7 @@ async def test_worker_tools_registered(test_workspace):
 
 @pytest.mark.asyncio
 async def test_notifications_summary_empty(test_workspace):
-    """_build_notifications_summary returns 'no notifications' when list is empty."""
+    """_build_notifications_summary returns empty string when list is empty."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
@@ -297,18 +297,19 @@ async def test_notifications_summary_empty(test_workspace):
     )
 
     result = worker._build_notifications_summary()
-    assert "No notifications scheduled" in result
+    assert result == ""
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_no_pending(test_workspace):
-    """_build_notifications_summary returns 'no pending' when all are delivered."""
+async def test_notifications_summary_old_delivered_returns_empty(test_workspace):
+    """_build_notifications_summary returns empty when only old delivered exist."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
     backend = JsonStorageBackend(test_workspace)
 
     # Write directly to file (bypasses Pydantic validation for test simplicity)
+    # delivered_at is old (>48h) so it won't appear in recently delivered
     notif_file = test_workspace / "dashboard" / "notifications.json"
     notif_data = {
         "version": "1.0",
@@ -317,6 +318,7 @@ async def test_notifications_summary_no_pending(test_workspace):
                 "id": "n_done",
                 "message": "Already delivered",
                 "scheduled_at": datetime.now().isoformat(),
+                "delivered_at": (datetime.now() - timedelta(hours=72)).isoformat(),
                 "type": "deadline_alert",
                 "priority": "medium",
                 "status": "delivered",
@@ -333,12 +335,12 @@ async def test_notifications_summary_no_pending(test_workspace):
     )
 
     result = worker._build_notifications_summary()
-    assert "No pending notifications" in result
+    assert result == ""
 
 
 @pytest.mark.asyncio
-async def test_notifications_summary_with_pending(test_workspace):
-    """_build_notifications_summary lists pending notifications."""
+async def test_notifications_summary_with_pending_returns_empty(test_workspace):
+    """_build_notifications_summary returns empty for pending-only (pending moved to helper)."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
@@ -369,10 +371,9 @@ async def test_notifications_summary_with_pending(test_workspace):
         model="test-model",
     )
 
+    # Pending notifications are now in get_dashboard_summary(), not here
     result = worker._build_notifications_summary()
-    assert "n_pending" in result
-    assert "블로그 마감 알림" in result
-    assert "task_001" in result
+    assert result == ""
 
 
 # ============================================================================
@@ -566,7 +567,7 @@ async def test_maintenance_task_error_does_not_block_questions(test_workspace):
 
 @pytest.mark.asyncio
 async def test_notifications_summary_handles_load_error(test_workspace):
-    """_build_notifications_summary returns error message when load fails."""
+    """_build_notifications_summary raises when load fails (caller handles)."""
     from unittest.mock import patch
 
     from nanobot.dashboard.storage import JsonStorageBackend
@@ -580,10 +581,11 @@ async def test_notifications_summary_handles_load_error(test_workspace):
         model="test-model",
     )
 
-    with patch.object(backend, "load_notifications", side_effect=RuntimeError("broken")):
-        result = worker._build_notifications_summary()
-
-    assert "Error loading notifications" in result
+    with (
+        patch.object(backend, "load_notifications", side_effect=RuntimeError("broken")),
+        pytest.raises(RuntimeError, match="broken"),
+    ):
+        worker._build_notifications_summary()
 
 
 # ============================================================================
@@ -970,12 +972,12 @@ async def test_notifications_summary_old_delivered_excluded(test_workspace):
 
     result = worker._build_notifications_summary()
     assert "n_delivered_old" not in result
-    assert "No pending notifications" in result
+    assert result == ""
 
 
 @pytest.mark.asyncio
 async def test_notifications_summary_pending_and_delivered(test_workspace):
-    """_build_notifications_summary shows both pending and recently delivered sections."""
+    """_build_notifications_summary shows only delivered section (pending moved to helper)."""
     from nanobot.dashboard.storage import JsonStorageBackend
     from nanobot.dashboard.worker import WorkerAgent
 
@@ -1017,10 +1019,8 @@ async def test_notifications_summary_pending_and_delivered(test_workspace):
     )
 
     result = worker._build_notifications_summary()
-    # Pending section
-    assert "n_pending_001" in result
-    assert "대기 중 알림" in result
-    assert "task_002" in result
+    # Pending NOT in worker summary (moved to get_dashboard_summary)
+    assert "n_pending_001" not in result
     # Delivered section
     assert "Recently Delivered" in result
     assert "n_delivered_001" in result
@@ -1127,6 +1127,153 @@ async def test_notifications_summary_delivered_with_timezone(test_workspace):
     # Both timezone-aware entries should be processed without TypeError
     assert "n_tz_kst" in result
     assert "n_tz_utc" in result
+
+
+# ============================================================================
+# _build_context report_callback + notifications_summary branch tests
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_build_context_reports_dashboard_errors_via_callback(test_workspace):
+    """report_callback is called when get_dashboard_summary on_error fires."""
+    from unittest.mock import patch
+
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    callback = AsyncMock()
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+        report_callback=callback,
+    )
+
+    # Make load_notifications raise so on_error fires
+    with patch.object(backend, "load_notifications", side_effect=RuntimeError("Notion down")):
+        messages = await worker._build_context()
+
+    # report_callback should have been called with the error message
+    assert callback.call_count >= 1
+    first_arg = callback.call_args_list[0][0][0]
+    assert "⚠️" in first_arg
+
+
+@pytest.mark.asyncio
+async def test_build_context_no_callback_on_success(test_workspace):
+    """report_callback is NOT called when everything succeeds."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    callback = AsyncMock()
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+        report_callback=callback,
+    )
+
+    await worker._build_context()
+
+    # No errors → callback should not be called
+    callback.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_build_context_includes_notifications_summary(test_workspace):
+    """When delivered notifications exist, notifications_summary appears in context."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    now = datetime.now()
+
+    notif_file = test_workspace / "dashboard" / "notifications.json"
+    notif_data = {
+        "version": "1.0",
+        "notifications": [
+            {
+                "id": "n_ctx_delivered",
+                "message": "Context test 알림",
+                "scheduled_at": (now - timedelta(hours=2)).isoformat(),
+                "delivered_at": (now - timedelta(hours=1)).isoformat(),
+                "type": "reminder",
+                "priority": "medium",
+                "status": "delivered",
+            }
+        ],
+    }
+    notif_file.write_text(json.dumps(notif_data), encoding="utf-8")
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+    )
+
+    messages = await worker._build_context()
+    user_msg = next(m for m in messages if m["role"] == "user")
+    assert "Recently Delivered" in user_msg["content"]
+    assert "n_ctx_delivered" in user_msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_build_context_excludes_empty_notifications_summary(test_workspace):
+    """When no delivered notifications exist, notifications_summary is absent from context."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+    )
+
+    messages = await worker._build_context()
+    user_msg = next(m for m in messages if m["role"] == "user")
+    assert "Recently Delivered" not in user_msg["content"]
+
+
+@pytest.mark.asyncio
+async def test_notifications_summary_error_returns_warning_and_reports(test_workspace):
+    """_build_notifications_summary error → ⚠️ message returned AND report_callback called."""
+    from unittest.mock import patch
+
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    callback = AsyncMock()
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=AsyncMock(),
+        model="test-model",
+        report_callback=callback,
+    )
+
+    with patch.object(backend, "load_notifications", side_effect=RuntimeError("broken")):
+        messages = await worker._build_context()
+
+    # Error message should appear in context (LLM sees it)
+    user_msg = next(m for m in messages if m["role"] == "user")
+    assert "⚠️" in user_msg["content"]
+    assert "follow-up processing skipped" in user_msg["content"]
+
+    # report_callback should have been called
+    assert callback.call_count >= 1
 
 
 if __name__ == "__main__":
