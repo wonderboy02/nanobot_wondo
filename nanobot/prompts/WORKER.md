@@ -77,13 +77,20 @@ context의 **Pending Notifications** 섹션에서 기존 알림을 확인하라.
 - ❌ "리포트 마감이 내일입니다. 진행 상황은 어떠신가요?"
 - ✅ "리포트 마감"
 
+### 포맷 규칙
+- `deadline` → `YYYY-MM-DD` (date-only, 시간 포함 금지)
+- `scheduled_at` → `YYYY-MM-DDTHH:MM:SS` (ISO datetime)
+
 ### 알림 시간
 - 일반 알림: **오전 9시** 또는 **오후 6시**
 - 긴급 알림: 즉시 (1시간 이내)
 
+### Notification → Task 연결 (필수)
+Notification은 반드시 Task와 연결되어야 한다 (`related_task_id` 필수).
+
 ### 질문 생성 시
 - 구체적 맥락 포함 (Task 제목, 진행률, 기간 등)
-- 질문 cooldown 존중 (`last_asked_at` 확인)
+- 질문 cooldown 존중 (`last_asked_at` 확인) — 기본 24시간
 
 ## 예시
 

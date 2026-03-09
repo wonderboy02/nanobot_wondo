@@ -70,7 +70,8 @@ update_question(question_id: str, priority: str = None,
 remove_question(question_id: str, reason: str = "") -> str
 ```
 
-**Question Types**: `info_gather`, `progress_check`, `deadline_check`, `blocker_check`, etc.
+**Question Type**: 기본값 `info_gather` 사용. 특수 타입은 Worker가 자동 관리.
+**Cooldown**: 질문은 기본 24시간 cooldown 적용 — 같은 내용의 질문을 중복 생성하지 마라
 
 ### Notification Management
 ```python
