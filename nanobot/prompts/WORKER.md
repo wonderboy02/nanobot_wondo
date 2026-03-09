@@ -53,8 +53,29 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 
 ### 알림 중복 방지 (가장 중요)
 context의 **Pending Notifications** 섹션에서 기존 알림을 확인하라.
-같은 Task에 대해 비슷한 알림이 이미 있으면 스케줄링하지 마라.
+같은 Task에 대해 비슷한 알림이 이미 있으면:
+- 시간/내용이 적절하면 → 새로 스케줄링하지 마라
+- 시간/내용이 맞지 않으면 → `update_notification`으로 수정하거나 `cancel_notification` 후 재생성
 추가 필터링이 필요하면 `list_notifications`를 호출할 수 있다.
+
+### Task ↔ Notification 자동 동기화
+- **Task 완료/취소/아카이브 시**: 코드가 자동으로 관련 pending notification을 cancel 처리함 (별도 조치 불필요)
+- **Task deadline 변경 감지**: Task의 deadline과 관련 notification의 scheduled_at이 불일치하면 → `update_notification`으로 시간 동기화
+
+### Notification type 용도
+| Type | 용도 |
+|------|------|
+| `deadline_alert` | 마감 임박 |
+| `progress_check` | 진행률 정체 확인 |
+| `blocker_followup` | Blocked 상태 후속 |
+| `reminder` | 일반 리마인더, 추가 시간 필요 시 |
+| `question_reminder` | 미답변 질문 리마인드 |
+
+### Notification message 작성 규칙
+- **짧은 명사형/동사형**으로 작성 (GCal 제목 + Telegram 알림에 공용)
+- Task title과 유사한 스타일: `~하기`, `~참석`, `~ 마감` 등
+- ❌ "리포트 마감이 내일입니다. 진행 상황은 어떠신가요?"
+- ✅ "리포트 마감"
 
 ### 알림 시간
 - 일반 알림: **오전 9시** 또는 **오후 6시**
