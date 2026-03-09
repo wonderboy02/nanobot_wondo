@@ -806,7 +806,7 @@ class WorkerAgent:
         Skips archived/cancelled tasks to prevent reviving them.
         """
         tasks = tasks_data.get("tasks", [])
-        today = date.today()
+        today = _now().date()
         changed = False
 
         for task in tasks:

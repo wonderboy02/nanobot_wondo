@@ -1,4 +1,9 @@
-"""API key usage statistics — records every LLM call to disk immediately."""
+"""API key usage statistics — records every LLM call to disk immediately.
+
+Uses UTC for period tracking (period_start, last_report_at, interval calc)
+because stats are server-internal metadata — not user-facing timestamps.
+7-day interval comparison is timezone-insensitive at this granularity.
+"""
 
 from __future__ import annotations
 
