@@ -169,6 +169,7 @@ class WorkerAgent:
             logger.exception("[Worker] Snapshot serialization error (data model bug)")
             return
         try:
+            path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path.write_text(content, encoding="utf-8")
             tmp_path.replace(path)
         except OSError:
