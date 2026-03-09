@@ -47,8 +47,26 @@ def _multi_select(values: list[str]) -> dict:
 
 
 def _date(value: str | None) -> dict:
+    """Build Notion Date property value.
+
+    Notion API interprets naive datetimes (with time but no timezone) as UTC.
+    To prevent 9-hour offset (KST), attach app timezone to naive datetime strings
+    before sending to Notion.  Date-only strings (YYYY-MM-DD) are left unchanged.
+    """
     if not value:
         return {"date": None}
+    if "T" in value:
+        from datetime import datetime as _dt
+
+        try:
+            dt = _dt.fromisoformat(value)
+            if dt.tzinfo is None:
+                from nanobot.utils.time import app_tz
+
+                dt = dt.replace(tzinfo=app_tz())
+                value = dt.isoformat()
+        except ValueError:
+            pass  # Not valid ISO — send as-is
     return {"date": {"start": value}}
 
 

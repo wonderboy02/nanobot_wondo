@@ -290,7 +290,7 @@ class TestNotificationMapping:
 
         assert result["id"] == "notif_001"
         assert result["message"] == "Deadline approaching for React study"
-        assert result["scheduled_at"] == "2026-02-28T09:00:00"
+        assert result["scheduled_at"] == "2026-02-28T09:00:00+09:00"
         assert result["type"] == "deadline_alert"
         assert result["priority"] == "high"
         assert result["status"] == "pending"

@@ -146,7 +146,7 @@ class GoogleCalendarClient:
             raise GoogleCalendarError(f"Failed to update event: {e}") from e
 
     def delete_event(self, event_id: str) -> None:
-        """Delete a calendar event."""
+        """Delete a calendar event (idempotent — 404/410 treated as success)."""
         try:
             service = self._get_service()
             service.events().delete(calendarId=self._calendar_id, eventId=event_id).execute()
@@ -154,6 +154,11 @@ class GoogleCalendarClient:
         except GoogleCalendarError:
             raise
         except Exception as e:
+            # 404/410 = event already deleted → idempotent success
+            status = getattr(getattr(e, "resp", None), "status", 0)
+            if status in (404, 410):
+                logger.debug("GCal event already gone: {}", event_id)
+                return
             raise GoogleCalendarError(f"Failed to delete event: {e}") from e
 
     def close(self) -> None:
