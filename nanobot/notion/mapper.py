@@ -274,6 +274,7 @@ def notification_to_notion(n: dict) -> dict[str, Any]:
         "CancelledAt": _date(n.get("cancelled_at")),
     }
     props["GCalEventID"] = _rich_text(n.get("gcal_event_id") or "")
+    props["GCalSyncHash"] = _rich_text(n.get("gcal_sync_hash") or "")
     return props
 
 
@@ -297,6 +298,7 @@ def notion_to_notification(page: dict) -> dict[str, Any]:
         "delivered_at": _extract_date(_get_prop(props, "DeliveredAt")) or None,
         "cancelled_at": _extract_date(_get_prop(props, "CancelledAt")) or None,
         "gcal_event_id": _extract_rich_text(_get_prop(props, "GCalEventID")) or None,
+        "gcal_sync_hash": _extract_rich_text(_get_prop(props, "GCalSyncHash")) or None,
         "_notion_page_id": page.get("id", ""),
     }
 

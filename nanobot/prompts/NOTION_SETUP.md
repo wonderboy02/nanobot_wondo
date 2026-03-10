@@ -85,6 +85,7 @@ You can create them in a single page for organization.
 | DeliveredAt | date | Delivery date |
 | CancelledAt | date | Cancellation date |
 | GCalEventID | text | Google Calendar event ID (for sync) |
+| GCalSyncHash | text | Hash of fields synced to GCal (reconciler-owned) |
 
 ### Insights DB
 

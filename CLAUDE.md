@@ -101,7 +101,7 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 ```
 Tool (write) → Ledger (notifications.json) ← Reconciler (read + sync)
-                                              ├── GCal: _ensure_gcal / _remove_gcal
+                                              ├── GCal: _sync_gcal / _create_gcal / _update_gcal / _remove_gcal
                                               ├── Delivery: send_callback
                                               └── Timer: _arm_timer(next_due_at)
 ```
@@ -279,10 +279,10 @@ bash tests/test_docker.sh                  # Docker integration test
 | 8 | `bus/events.py` | OutboundMessage has no explicit type field (reaction uses metadata convention) | Low |
 | 9 | `storage.py:18` | `load_json_file` 파싱 오류를 빈 default로 삼킴 → 빈 리스트 감지로 완화했으나 부분 손상은 감지 불가 | Low |
 | 10 | `worker.py` | delivered notification 48h 유지: LLM이 completion_check 중복 생성 가능. WORKER.md 지침으로 완화하나 LLM 준수에 의존 | Low |
-| 11 | `reconciler.py` | update_notification으로 scheduled_at 변경 시 gcal_event_id=None으로 리셋 → 이전 GCal 이벤트 ID 유실로 Reconciler가 삭제 불가 (영구 orphan). 빈도 낮고 GCal 자체 피해 경미하나, 해결하려면 Reconciler에 old_gcal_event_id 추적 로직 필요 | Low |
+| 11 | — | ~~GCal orphan on notification update~~ resolved: snapshot hash 기반 `_sync_gcal`이 gcal_event_id 유지 + update_event로 해결 | — |
 | 12 | `notifications.json` | delivered/cancelled notification 영구 보존 — archival 정책 없음. tasks.json과 동일 패턴 (#6). Worker Phase 1에 cleanup 추가 검토 | Low |
 | 13 | `reconciler.py` | SyncTarget 추상화 없음 — GCal 하드코딩. target 3개 이상 시 SyncTarget ABC 도입 필요 | Low |
-| 14 | `reconciler.py` | `reconcile()`에서 GCal create/delete 후 ledger save 실패 시 다음 reconcile에서 중복 GCal 이벤트 생성 가능. `_ensure_gcal()` 멱등성이 gcal_event_id 존재 여부에 의존하므로, save 안 된 상태에서 재실행 시 ID 없음 → 재생성. save 실패 자체가 극히 드물어 실질적 영향 미미 | Low |
+| 14 | `reconciler.py` | `reconcile()`에서 GCal create/update 후 ledger save 실패 시 다음 reconcile에서 중복 호출 가능. snapshot hash가 save 안 되면 hash 불일치 → 재update (멱등). create 경우만 중복 가능하나 save 실패 자체가 극히 드물어 실질적 영향 미미 | Low |
 | 15 | `worker.py` | Field-level snapshot guard는 one-cycle protection만 제공. 각 규칙은 관련 guard 필드가 변경됐을 때만 스킵 (title만 변경 시 모든 규칙 정상 동작). 다음 cycle에서 추가 변경 없으면 정상 규칙 적용. Phase 2 tool이 task 수정하면 다음 cycle에서 해당 필드가 user-changed로 감지됨 (의도한 동작) | Low |
 | 16 | `worker.py` | f-string 로깅이 12개 잔존 (bootstrap, archive, recurring, cleanup/LLM 영역). 새 코드는 loguru `{}` 포맷 사용. 별도 커밋으로 일괄 전환 필요 | Low |
 

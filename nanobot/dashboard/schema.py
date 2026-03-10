@@ -192,6 +192,7 @@ class Notification(BaseModel):
     context: str = ""
     created_by: Literal["worker", "user", "main_agent"] = "worker"
     gcal_event_id: Optional[str] = None
+    gcal_sync_hash: Optional[str] = None  # Hash of fields synced to GCal (reconciler-owned)
 
 
 class NotificationsFile(BaseModel):

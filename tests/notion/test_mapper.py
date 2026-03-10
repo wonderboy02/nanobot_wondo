@@ -337,6 +337,27 @@ class TestNotificationMapping:
         result = notion_to_notification(page)
         assert result["gcal_event_id"] is None
 
+    def test_notification_gcal_sync_hash_round_trip(self):
+        """gcal_sync_hash="abc123" survives Notion round trip."""
+        n = {**self.SAMPLE_NOTIFICATION, "gcal_sync_hash": "abc123"}
+        notion_props = notification_to_notion(n)
+        assert notion_props["GCalSyncHash"]["rich_text"][0]["text"]["content"] == "abc123"
+
+        page = _wrap_page(notion_props)
+        result = notion_to_notification(page)
+        assert result["gcal_sync_hash"] == "abc123"
+
+    def test_notification_gcal_sync_hash_none_round_trip(self):
+        """gcal_sync_hash=None -> GCalSyncHash present with empty content -> None on read."""
+        n = {**self.SAMPLE_NOTIFICATION, "gcal_sync_hash": None}
+        notion_props = notification_to_notion(n)
+        assert "GCalSyncHash" in notion_props
+        assert notion_props["GCalSyncHash"]["rich_text"][0]["text"]["content"] == ""
+
+        page = _wrap_page(notion_props)
+        result = notion_to_notification(page)
+        assert result["gcal_sync_hash"] is None
+
     def test_notification_missing_properties_defaults(self):
         """Missing properties return safe defaults."""
         page = _wrap_page({})

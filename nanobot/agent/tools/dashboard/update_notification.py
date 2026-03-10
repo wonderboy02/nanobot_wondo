@@ -83,8 +83,6 @@ class UpdateNotificationTool(BaseDashboardTool):
                 notification["scheduled_at_text"] = (
                     scheduled_at if not scheduled_at.startswith("20") else None
                 )
-                # Reset gcal_event_id so Reconciler creates a new event
-                notification["gcal_event_id"] = None
 
             success, msg = await self._validate_and_save_notifications(notifications_data)
             if not success:

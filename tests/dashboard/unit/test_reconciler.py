@@ -213,7 +213,7 @@ class TestReconcilerGCal:
     """Tests for GCal sync in reconcile()."""
 
     def test_future_pending_creates_gcal(self, temp_workspace, backend, mock_gcal_client):
-        """Future pending without gcal_event_id → create_event called."""
+        """Future pending without gcal_event_id → create_event called, sync_hash saved."""
         future = (datetime.now() + timedelta(hours=2)).isoformat()
         _write_notifications(temp_workspace, [_make_notification(scheduled_at=future)])
 
@@ -225,20 +225,21 @@ class TestReconcilerGCal:
 
         data = _read_notifications(temp_workspace)
         assert data["notifications"][0]["gcal_event_id"] == "gcal_evt_new"
+        assert data["notifications"][0]["gcal_sync_hash"] is not None
 
     def test_future_pending_with_gcal_skips(self, temp_workspace, backend, mock_gcal_client):
-        """Future pending WITH gcal_event_id → create_event NOT called."""
+        """Future pending WITH gcal_event_id and matching hash → no GCal calls."""
         future = (datetime.now() + timedelta(hours=2)).isoformat()
-        _write_notifications(
-            temp_workspace,
-            [_make_notification(scheduled_at=future, gcal_event_id="existing_evt")],
-        )
+        n = _make_notification(scheduled_at=future, gcal_event_id="existing_evt")
+        n["gcal_sync_hash"] = NotificationReconciler._compute_sync_hash(n)
+        _write_notifications(temp_workspace, [n])
 
         reconciler = NotificationReconciler(backend, gcal_client=mock_gcal_client)
         result = reconciler.reconcile()
 
         assert result.changed is False
         mock_gcal_client.create_event.assert_not_called()
+        mock_gcal_client.update_event.assert_not_called()
 
     def test_cancelled_removes_gcal(self, temp_workspace, backend, mock_gcal_client):
         """Cancelled notification with gcal_event_id → delete_event called."""
@@ -281,7 +282,9 @@ class TestReconcilerGCal:
 
     def test_gcal_create_failure_no_crash(self, temp_workspace, backend, mock_gcal_client):
         """GCal create_event failure → warning, no crash, not changed."""
-        mock_gcal_client.create_event.side_effect = Exception("API down")
+        from nanobot.google.calendar import GoogleCalendarError
+
+        mock_gcal_client.create_event.side_effect = GoogleCalendarError("API down")
         future = (datetime.now() + timedelta(hours=2)).isoformat()
         _write_notifications(temp_workspace, [_make_notification(scheduled_at=future)])
 
@@ -292,7 +295,9 @@ class TestReconcilerGCal:
 
     def test_gcal_delete_failure_preserves_id(self, temp_workspace, backend, mock_gcal_client):
         """GCal delete_event failure → gcal_event_id preserved for retry."""
-        mock_gcal_client.delete_event.side_effect = Exception("API error")
+        from nanobot.google.calendar import GoogleCalendarError
+
+        mock_gcal_client.delete_event.side_effect = GoogleCalendarError("API error")
         _write_notifications(
             temp_workspace,
             [_make_notification(status="cancelled", gcal_event_id="gcal_fail")],
@@ -694,7 +699,9 @@ class TestReconcileSaveFailure:
 class TestGCalDescription:
     """Tests for GCal event description content."""
 
-    def test_ensure_gcal_includes_context_and_task(self, temp_workspace, backend, mock_gcal_client):
+    def test_gcal_description_includes_context_and_task(
+        self, temp_workspace, backend, mock_gcal_client
+    ):
         """GCal event description includes context and related_task_id."""
         future = (datetime.now() + timedelta(hours=2)).isoformat()
         _write_notifications(
@@ -777,6 +784,214 @@ class TestTimerEdgeCases:
 
         send_cb.assert_called_once()
         scheduler.stop()
+
+
+class TestComputeSyncHash:
+    """Tests for _compute_sync_hash static method."""
+
+    def test_deterministic(self):
+        """Same input → same hash."""
+        n = {
+            "scheduled_at": "2026-03-10T09:00:00",
+            "message": "Test",
+            "context": "",
+            "related_task_id": None,
+        }
+        h1 = NotificationReconciler._compute_sync_hash(n)
+        h2 = NotificationReconciler._compute_sync_hash(n)
+        assert h1 == h2
+
+    def test_field_sensitivity(self):
+        """Changing any synced field changes the hash."""
+        base = {
+            "scheduled_at": "2026-03-10T09:00:00",
+            "message": "Test",
+            "context": "ctx",
+            "related_task_id": "t1",
+        }
+        base_hash = NotificationReconciler._compute_sync_hash(base)
+
+        for field, new_val in [
+            ("scheduled_at", "2026-03-11T09:00:00"),
+            ("message", "Changed"),
+            ("context", "new ctx"),
+            ("related_task_id", "t2"),
+        ]:
+            modified = {**base, field: new_val}
+            assert NotificationReconciler._compute_sync_hash(modified) != base_hash, f"{field}"
+
+    def test_none_values_safe(self):
+        """None values in all fields don't cause TypeError."""
+        n = {"scheduled_at": None, "message": None, "context": None, "related_task_id": None}
+        h = NotificationReconciler._compute_sync_hash(n)
+        assert isinstance(h, str) and len(h) == 32
+
+    def test_missing_keys_safe(self):
+        """Missing keys don't cause KeyError."""
+        h = NotificationReconciler._compute_sync_hash({})
+        assert isinstance(h, str) and len(h) == 32
+
+
+class TestBuildDescription:
+    """Tests for _build_description static method."""
+
+    def test_context_only(self):
+        desc = NotificationReconciler._build_description({"context": "my ctx"})
+        assert desc == "my ctx"
+
+    def test_task_id_only(self):
+        desc = NotificationReconciler._build_description({"related_task_id": "task_001"})
+        assert desc == "Related Task: task_001"
+
+    def test_both(self):
+        desc = NotificationReconciler._build_description(
+            {"context": "my ctx", "related_task_id": "task_001"}
+        )
+        assert "my ctx" in desc
+        assert "task_001" in desc
+
+    def test_neither(self):
+        assert NotificationReconciler._build_description({}) is None
+        assert (
+            NotificationReconciler._build_description({"context": "", "related_task_id": None})
+            is None
+        )
+
+
+class TestReconcilerGCalSync:
+    """Tests for snapshot-hash based GCal sync."""
+
+    def test_sync_gcal_update_on_hash_mismatch(self, temp_workspace, backend, mock_gcal_client):
+        """gcal_event_id present but hash mismatch → update_event called, hash updated."""
+        future = (datetime.now() + timedelta(hours=2)).isoformat()
+        n = _make_notification(scheduled_at=future, gcal_event_id="gcal_existing")
+        n["gcal_sync_hash"] = "old_stale_hash"
+        _write_notifications(temp_workspace, [n])
+
+        reconciler = NotificationReconciler(backend, gcal_client=mock_gcal_client)
+        result = reconciler.reconcile()
+
+        assert result.changed is True
+        mock_gcal_client.update_event.assert_called_once()
+        mock_gcal_client.create_event.assert_not_called()
+
+        data = _read_notifications(temp_workspace)
+        notif = data["notifications"][0]
+        assert notif["gcal_event_id"] == "gcal_existing"
+        assert notif["gcal_sync_hash"] == NotificationReconciler._compute_sync_hash(n)
+
+    def test_sync_gcal_update_404_clears_id(self, temp_workspace, backend, mock_gcal_client):
+        """update_event returns 404 (GCalEventNotFound) → ID/hash cleared, next cycle creates."""
+        from nanobot.google.calendar import GCalEventNotFound
+
+        mock_gcal_client.update_event.side_effect = GCalEventNotFound("gone")
+
+        future = (datetime.now() + timedelta(hours=2)).isoformat()
+        n = _make_notification(scheduled_at=future, gcal_event_id="gcal_gone")
+        n["gcal_sync_hash"] = "old_hash"
+        _write_notifications(temp_workspace, [n])
+
+        reconciler = NotificationReconciler(backend, gcal_client=mock_gcal_client)
+        result = reconciler.reconcile()
+
+        assert result.changed is True
+        data = _read_notifications(temp_workspace)
+        notif = data["notifications"][0]
+        assert notif["gcal_event_id"] is None
+        assert notif["gcal_sync_hash"] is None
+
+    def test_sync_gcal_update_failure_preserves_id(self, temp_workspace, backend, mock_gcal_client):
+        """update_event API failure → ID preserved for retry, hash unchanged."""
+        from nanobot.google.calendar import GoogleCalendarError
+
+        mock_gcal_client.update_event.side_effect = GoogleCalendarError("API timeout")
+
+        future = (datetime.now() + timedelta(hours=2)).isoformat()
+        n = _make_notification(scheduled_at=future, gcal_event_id="gcal_keep")
+        n["gcal_sync_hash"] = "old_hash"
+        _write_notifications(temp_workspace, [n])
+
+        reconciler = NotificationReconciler(backend, gcal_client=mock_gcal_client)
+        result = reconciler.reconcile()
+
+        assert result.changed is False
+        data = _read_notifications(temp_workspace)
+        notif = data["notifications"][0]
+        assert notif["gcal_event_id"] == "gcal_keep"
+        assert notif["gcal_sync_hash"] == "old_hash"
+
+    def test_sync_gcal_no_orphan_on_reschedule(self, temp_workspace, backend, mock_gcal_client):
+        """scheduled_at changed → gcal_event_id preserved → update (no orphan)."""
+        future = (datetime.now() + timedelta(hours=2)).isoformat()
+        n = _make_notification(scheduled_at=future, gcal_event_id="gcal_original")
+        # Hash was computed with original data; now scheduled_at changed → hash mismatch
+        n["gcal_sync_hash"] = "hash_before_reschedule"
+        _write_notifications(temp_workspace, [n])
+
+        reconciler = NotificationReconciler(backend, gcal_client=mock_gcal_client)
+        result = reconciler.reconcile()
+
+        assert result.changed is True
+        mock_gcal_client.update_event.assert_called_once_with(
+            event_id="gcal_original",
+            summary=n["message"],
+            start_iso=n["scheduled_at"],
+            timezone="Asia/Seoul",
+            duration_minutes=30,
+            description=None,
+        )
+        mock_gcal_client.create_event.assert_not_called()
+
+    def test_remove_gcal_clears_hash(self, temp_workspace, backend, mock_gcal_client):
+        """Cancel/deliver with gcal_event_id → both gcal_event_id and gcal_sync_hash cleared."""
+        n = _make_notification(
+            status="cancelled", gcal_event_id="gcal_to_del", gcal_sync_hash="some_hash"
+        )
+        _write_notifications(temp_workspace, [n])
+
+        reconciler = NotificationReconciler(backend, gcal_client=mock_gcal_client)
+        result = reconciler.reconcile()
+
+        assert result.changed is True
+        data = _read_notifications(temp_workspace)
+        notif = data["notifications"][0]
+        assert notif["gcal_event_id"] is None
+        assert notif["gcal_sync_hash"] is None
+
+    def test_mark_delivered_clears_hash(self, temp_workspace, backend, mock_gcal_client):
+        """mark_delivered clears both gcal_event_id and gcal_sync_hash."""
+        n = _make_notification(gcal_event_id="gcal_del_on_delivery", gcal_sync_hash="hash_val")
+        _write_notifications(temp_workspace, [n])
+
+        reconciler = NotificationReconciler(backend, gcal_client=mock_gcal_client)
+        ok = reconciler.mark_delivered("n_001")
+
+        assert ok is True
+        data = _read_notifications(temp_workspace)
+        notif = data["notifications"][0]
+        assert notif["gcal_event_id"] is None
+        assert notif["gcal_sync_hash"] is None
+
+    def test_migration_existing_data_self_heals(self, temp_workspace, backend, mock_gcal_client):
+        """Existing notification with gcal_event_id but no gcal_sync_hash → update (self-healing)."""
+        future = (datetime.now() + timedelta(hours=2)).isoformat()
+        n = _make_notification(scheduled_at=future, gcal_event_id="gcal_pre_migration")
+        # gcal_sync_hash not set (simulates pre-migration data)
+        assert "gcal_sync_hash" not in n
+        _write_notifications(temp_workspace, [n])
+
+        reconciler = NotificationReconciler(backend, gcal_client=mock_gcal_client)
+        result = reconciler.reconcile()
+
+        # hash=None != current_hash → update_event called (self-healing)
+        assert result.changed is True
+        mock_gcal_client.update_event.assert_called_once()
+        mock_gcal_client.create_event.assert_not_called()
+
+        data = _read_notifications(temp_workspace)
+        notif = data["notifications"][0]
+        assert notif["gcal_event_id"] == "gcal_pre_migration"  # Preserved
+        assert notif["gcal_sync_hash"] is not None  # Now populated
 
 
 if __name__ == "__main__":

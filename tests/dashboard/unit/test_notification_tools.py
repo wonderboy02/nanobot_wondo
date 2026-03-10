@@ -54,6 +54,7 @@ class TestScheduleNotificationTool:
         assert notif["priority"] == "medium"
         assert notif["status"] == "pending"
         assert notif["gcal_event_id"] is None
+        assert notif["gcal_sync_hash"] is None
 
     @pytest.mark.asyncio
     async def test_schedule_notification_relative_time(self, temp_workspace):
@@ -161,7 +162,7 @@ class TestUpdateNotificationTool:
 
     @pytest.mark.asyncio
     async def test_update_notification_scheduled_at(self, temp_workspace):
-        """Test updating notification scheduled time resets gcal_event_id."""
+        """Test updating notification scheduled time preserves gcal_event_id for Reconciler update."""
         notifications_file = temp_workspace / "dashboard" / "notifications.json"
         data = {
             "version": "1.0",
@@ -175,7 +176,7 @@ class TestUpdateNotificationTool:
                     "status": "pending",
                     "created_at": "2026-02-08T10:00:00",
                     "created_by": "worker",
-                    "gcal_event_id": "gcal_evt_old",
+                    "gcal_event_id": "gcal_existing",
                 }
             ],
         }
@@ -190,7 +191,7 @@ class TestUpdateNotificationTool:
         data = json.loads(notifications_file.read_text())
         notif = data["notifications"][0]
         assert notif["scheduled_at"] == "2026-02-11T10:00:00"
-        assert notif["gcal_event_id"] is None  # Reset for Reconciler
+        assert notif["gcal_event_id"] == "gcal_existing"  # Preserved for Reconciler
 
     @pytest.mark.asyncio
     async def test_update_notification_not_found(self, temp_workspace):

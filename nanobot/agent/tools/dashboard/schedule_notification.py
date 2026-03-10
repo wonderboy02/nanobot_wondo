@@ -122,6 +122,7 @@ class ScheduleNotificationTool(BaseDashboardTool):
                 "context": context,
                 "created_by": created_by,
                 "gcal_event_id": None,
+                "gcal_sync_hash": None,
             }
 
             notifications_list.append(notification)

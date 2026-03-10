@@ -8,6 +8,7 @@ identifies due notifications.  The Scheduler arms a timer and delivers.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -104,14 +105,14 @@ class NotificationReconciler:
                 # Due now
                 result.due.append(n)
             else:
-                # Future — ensure GCal event exists
-                if self._ensure_gcal(n):
+                # Future — sync GCal event (create/update as needed)
+                if self._sync_gcal(n):
                     result.changed = True
                 # Track nearest future due
                 if result.next_due_at is None or scheduled < result.next_due_at:
                     result.next_due_at = scheduled
 
-        # Persist any GCal ID changes
+        # Persist any GCal sync changes
         if result.changed:
             ok, msg = self.storage_backend.save_notifications(data)
             if not ok:
@@ -149,36 +150,100 @@ class NotificationReconciler:
         return True
 
     # ------------------------------------------------------------------
-    # GCal helpers (idempotent)
+    # GCal helpers
     # ------------------------------------------------------------------
 
-    def _ensure_gcal(self, n: dict) -> bool:
-        """Create GCal event if missing. Returns True if ledger mutated."""
+    @staticmethod
+    def _compute_sync_hash(n: dict) -> str:
+        """Compute hash of fields synced to GCal.
+
+        Hash covers: scheduled_at, message, context, related_task_id.
+        When adding new GCal-synced fields, update this list.
+        """
+        parts = [
+            n.get("scheduled_at") or "",
+            n.get("message") or "",
+            n.get("context") or "",
+            n.get("related_task_id") or "",
+        ]
+        return hashlib.md5("|".join(parts).encode()).hexdigest()
+
+    @staticmethod
+    def _build_description(n: dict) -> str | None:
+        """Build GCal event description from notification fields."""
+        desc_parts = []
+        if n.get("context"):
+            desc_parts.append(n["context"])
+        if n.get("related_task_id"):
+            desc_parts.append(f"Related Task: {n['related_task_id']}")
+        return "\n".join(desc_parts) if desc_parts else None
+
+    def _sync_gcal(self, n: dict) -> bool:
+        """Sync GCal event to match notification state. Returns True if ledger mutated."""
         if not self.gcal_client:
             return False
-        if n.get("gcal_event_id"):
-            return False  # already has one
+
+        gcal_event_id = n.get("gcal_event_id")
+        current_hash = self._compute_sync_hash(n)
+
+        if not gcal_event_id:
+            return self._create_gcal(n, current_hash)
+
+        if n.get("gcal_sync_hash") == current_hash:
+            return False  # Already in sync
+
+        return self._update_gcal(n, current_hash)
+
+    def _create_gcal(self, n: dict, sync_hash: str) -> bool:
+        """Create GCal event. Returns True if ledger mutated."""
+        from nanobot.google.calendar import GoogleCalendarError
 
         try:
-            desc_parts = []
-            if n.get("context"):
-                desc_parts.append(n["context"])
-            if n.get("related_task_id"):
-                desc_parts.append(f"Related Task: {n['related_task_id']}")
-
             event_id = self.gcal_client.create_event(
                 summary=n.get("message", ""),
                 start_iso=n["scheduled_at"],
                 timezone=self.gcal_timezone,
                 duration_minutes=self.gcal_duration_minutes,
-                description="\n".join(desc_parts) if desc_parts else None,
+                description=self._build_description(n),
             )
             n["gcal_event_id"] = event_id
-            logger.debug(f"[Reconciler] GCal created for {n.get('id', '?')}: {event_id}")
+            n["gcal_sync_hash"] = sync_hash
+            logger.debug("[Reconciler] GCal created for {}: {}", n.get("id", "?"), event_id)
             return True
-        except Exception as e:
-            logger.warning(f"[Reconciler] GCal create failed for {n.get('id', '?')}: {e}")
+        except GoogleCalendarError as e:
+            logger.warning("[Reconciler] GCal create failed for {}: {}", n.get("id", "?"), e)
             return False
+
+    def _update_gcal(self, n: dict, sync_hash: str) -> bool:
+        """Update existing GCal event. Returns True if ledger mutated.
+
+        On GCalEventNotFound (404/410): clears gcal_event_id and gcal_sync_hash
+        so the next reconcile cycle recreates the event.
+        """
+        from nanobot.google.calendar import GCalEventNotFound, GoogleCalendarError
+
+        try:
+            self.gcal_client.update_event(
+                event_id=n["gcal_event_id"],
+                summary=n.get("message", ""),
+                start_iso=n["scheduled_at"],
+                timezone=self.gcal_timezone,
+                duration_minutes=self.gcal_duration_minutes,
+                description=self._build_description(n),
+            )
+            n["gcal_sync_hash"] = sync_hash
+            logger.debug(
+                "[Reconciler] GCal updated for {}: {}", n.get("id", "?"), n["gcal_event_id"]
+            )
+            return True
+        except GCalEventNotFound:
+            n["gcal_event_id"] = None
+            n["gcal_sync_hash"] = None
+            logger.info("[Reconciler] GCal event gone for {}, will recreate", n.get("id", "?"))
+            return True  # Ledger mutated → next cycle will create
+        except GoogleCalendarError as e:
+            logger.warning("[Reconciler] GCal update failed for {}: {}", n.get("id", "?"), e)
+            return False  # ID preserved → next cycle retries
 
     def _remove_gcal(self, n: dict) -> bool:
         """Delete GCal event if present. Returns True if ledger mutated."""
@@ -188,12 +253,15 @@ class NotificationReconciler:
         if not gcal_event_id:
             return False
 
+        from nanobot.google.calendar import GoogleCalendarError
+
         try:
             self.gcal_client.delete_event(event_id=gcal_event_id)
             n["gcal_event_id"] = None
+            n["gcal_sync_hash"] = None
             return True
-        except Exception as e:
-            logger.warning(f"[Reconciler] GCal delete failed for {n.get('id', '?')}: {e}")
+        except GoogleCalendarError as e:
+            logger.warning("[Reconciler] GCal delete failed for {}: {}", n.get("id", "?"), e)
             return False
 
 

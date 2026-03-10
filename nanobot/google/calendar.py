@@ -16,6 +16,10 @@ class GoogleCalendarError(Exception):
     """Raised on any Google Calendar API failure."""
 
 
+class GCalEventNotFound(GoogleCalendarError):
+    """Raised when a GCal event is not found (404/410)."""
+
+
 class GoogleCalendarClient:
     """Thin wrapper around Google Calendar API v3."""
 
@@ -143,6 +147,9 @@ class GoogleCalendarClient:
         except GoogleCalendarError:
             raise
         except Exception as e:
+            status = getattr(getattr(e, "resp", None), "status", 0)
+            if status in (404, 410):
+                raise GCalEventNotFound(f"Event not found: {event_id}") from e
             raise GoogleCalendarError(f"Failed to update event: {e}") from e
 
     def delete_event(self, event_id: str) -> None:
