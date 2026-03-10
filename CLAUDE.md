@@ -247,10 +247,17 @@ bash tests/test_docker.sh                  # Docker integration test
 | Local | Container | Content |
 |-------|-----------|---------|
 | `./data/` | `/app/data/` | config.json, sessions/ |
-| `./workspace/` | `/app/workspace/` | Runtime data: dashboard/*.json, memory/, HEARTBEAT.md |
+| `./workspace/` | `/app/workspace/` | Runtime data: dashboard/*.json, memory/, HEARTBEAT.md, logs/ |
 
 - `NANOBOT_DATA_DIR=/app/data` (locally `~/.nanobot/`)
 - `.dockerignore`: excludes workspace/, data/, .git, node_modules/
+
+**Persistent Logging**:
+- Location: `workspace/logs/nanobot.log` (volume-mounted, survives `--force-recreate`)
+- Setup: `cli/commands.py` `gateway()` → `logger.add()` (loguru file handler)
+- Rotation: 10 MB per file, 30 days retention, gzip compression
+- Level: INFO (default), DEBUG with `--verbose`
+- SSH access: `tail -f workspace/logs/nanobot.log` or `grep` for filtering
 
 ## Fork Deltas (vs upstream)
 
@@ -315,7 +322,8 @@ nanobot dashboard worker                   # Manual Worker run
 nanobot notion validate                    # Notion connection check
 bash core_agent_lines.sh                   # Core line count
 docker compose up --build -d               # Local Docker run
-docker compose logs -f nanobot             # Logs
+docker compose logs -f nanobot             # Logs (ephemeral, lost on recreate)
+tail -f workspace/logs/nanobot.log         # Persistent logs (survives recreate)
 ```
 
 ## Update Checklist

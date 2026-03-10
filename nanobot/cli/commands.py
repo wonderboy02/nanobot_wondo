@@ -164,6 +164,7 @@ def gateway(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Verbose output"),
 ):
     """Start the nanobot gateway."""
+    from loguru import logger
     from nanobot.config.loader import load_config, get_data_dir
     from nanobot.bus.queue import MessageBus
     from nanobot.providers.litellm_provider import LiteLLMProvider
@@ -175,14 +176,28 @@ def gateway(
     from nanobot.heartbeat.service import HeartbeatService
     from nanobot.healthcheck.service import HealthcheckService
 
+    config = load_config()
+
+    # Persistent file logging (survives container recreation via workspace volume)
+    log_dir = config.workspace_path / "logs"
+    log_dir.mkdir(exist_ok=True)
+    logger.add(
+        log_dir / "nanobot.log",
+        rotation="10 MB",
+        retention="30 days",
+        compression="gz",
+        level="DEBUG" if verbose else "INFO",
+        format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {name}:{function}:{line} | {message}",
+        encoding="utf-8",
+    )
+    logger.info("Gateway starting — logs persisted to {}", log_dir / "nanobot.log")
+
     if verbose:
         import logging
 
         logging.basicConfig(level=logging.DEBUG)
 
     console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
-
-    config = load_config()
 
     # Create components
     bus = MessageBus()

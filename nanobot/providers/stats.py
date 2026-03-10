@@ -8,14 +8,13 @@ because stats are server-internal metadata — not user-facing timestamps.
 from __future__ import annotations
 
 import json
-import logging
 import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 def _empty_counter() -> dict[str, int]:
