@@ -349,6 +349,36 @@ def gateway(
         console.print(f"[green]✓[/green] Healthcheck: every {hc_label}")
 
     async def run():
+        # --- Alert sink: forward ERROR+ logs to Telegram ---
+        _alert_handler_id: int | None = None
+        if notification_chat_id:
+            from nanobot.alerts.service import TelegramAlertSink
+            from nanobot.bus.events import OutboundMessage
+
+            # Modules in the alert delivery path — exclude to prevent feedback loop.
+            # Note: nanobot.channels.telegram is included because most errors there
+            # occur in the send path; non-delivery errors (e.g. webhook parse) are
+            # also excluded as a trade-off for loop safety.
+            _alert_delivery_modules = frozenset({
+                "nanobot.alerts.service",
+                "nanobot.bus.queue",
+                "nanobot.channels.manager",
+                "nanobot.channels.telegram",
+            })
+
+            async def _send_alert(text: str) -> None:
+                await bus.publish_outbound(
+                    OutboundMessage(channel="telegram", chat_id=notification_chat_id, content=text)
+                )
+
+            _alert_sink = TelegramAlertSink(send_fn=_send_alert, loop=asyncio.get_running_loop())
+            _alert_handler_id = logger.add(
+                _alert_sink,
+                level="ERROR",
+                filter=lambda record: record["name"] not in _alert_delivery_modules,
+                format="{message}",
+            )
+
         try:
             await cron.start()
             await heartbeat.start()
@@ -359,6 +389,12 @@ def gateway(
             )
         except KeyboardInterrupt:
             console.print("\nShutting down...")
+        except Exception:
+            logger.exception("Gateway fatal error")
+            raise
+        finally:
+            if _alert_handler_id is not None:
+                logger.remove(_alert_handler_id)
             healthcheck_svc.stop()
             heartbeat.stop()
             cron.stop()

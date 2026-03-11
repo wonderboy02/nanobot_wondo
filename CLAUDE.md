@@ -34,6 +34,7 @@ nanobot/
 ├── google/calendar.py       # GCal client (sync I/O, _localize for tz-aware datetime)
 ├── healthcheck/service.py   # Healthchecks.io ping (liveness signal)
 ├── heartbeat/service.py     # 2-hour periodic Worker execution
+├── alerts/service.py        # TelegramAlertSink (loguru ERROR+ → Telegram, throttle/dedup)
 ├── utils/time.py            # Timezone-aware now() (default Asia/Seoul)
 └── config/, session/, cron/, skills/, cli/, utils/
 ```
@@ -204,6 +205,7 @@ tests/
 ├── test_api_key_stats.py               # API key usage stats (file persistence, weekly report)
 ├── test_time.py                         # Timezone utility (now(), app_tz)
 ├── test_healthcheck.py                  # Healthcheck ping service
+├── test_alerts.py                       # Alert sink (throttle, dedup, formatting)
 ├── test_instruction_resolution.py       # Instruction file resolution (prompts/ + workspace/)
 └── test_docker.sh                       # Docker image build/run test
 ```
@@ -292,6 +294,7 @@ bash tests/test_docker.sh                  # Docker integration test
 | 14 | `reconciler.py` | `reconcile()`에서 GCal create/update 후 ledger save 실패 시 다음 reconcile에서 중복 호출 가능. snapshot hash가 save 안 되면 hash 불일치 → 재update (멱등). create 경우만 중복 가능하나 save 실패 자체가 극히 드물어 실질적 영향 미미 | Low |
 | 15 | `worker.py` | Field-level snapshot guard는 one-cycle protection만 제공. 각 규칙은 관련 guard 필드가 변경됐을 때만 스킵 (title만 변경 시 모든 규칙 정상 동작). 다음 cycle에서 추가 변경 없으면 정상 규칙 적용. Phase 2 tool이 task 수정하면 다음 cycle에서 해당 필드가 user-changed로 감지됨 (의도한 동작) | Low |
 | 16 | `worker.py` | f-string 로깅이 12개 잔존 (bootstrap, archive, recurring, cleanup/LLM 영역). 새 코드는 loguru `{}` 포맷 사용. 별도 커밋으로 일괄 전환 필요 | Low |
+| 17 | `alerts/service.py` | Alert throttle state는 in-memory — 컨테이너 재시작 시 리셋 (cooldown/hourly count 초기화). 실질적 영향 미미 | Low |
 
 **Changes from previous doc**:
 - Removed: old #9 "Dashboard file race condition" — resolved by `_processing_lock` (in-process asyncio.Lock; single-worker assumption)

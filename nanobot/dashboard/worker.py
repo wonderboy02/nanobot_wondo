@@ -890,7 +890,7 @@ class WorkerAgent:
                 return self._handle_recurring_completion(task, recurring, today, days)
 
             # Stale completion from a previous day — reset for new cycle
-            self._reset_recurring_task(task)
+            self._reset_recurring_task(task, today)
             logger.info(f"[Worker] Recurring reset (new day): {task.get('id', '?')}")
             return True
 
@@ -979,16 +979,27 @@ class WorkerAgent:
         return True
 
     @staticmethod
-    def _reset_recurring_task(task: dict) -> None:
-        """Reset a recurring task for the next cycle."""
+    def _reset_recurring_task(task: dict, today: date) -> None:
+        """Reset a recurring task for the next cycle.
+
+        Args:
+            task: Task dict to reset in-place.
+            today: The date for the new cycle (from caller, avoids _now() skew).
+        """
         task["status"] = "active"
         task["completed_at"] = None
-        now = _now().isoformat()
-        task["updated_at"] = now
+        now_iso = _now().isoformat()
+        task["updated_at"] = now_iso
         progress = task.get("progress", {})
         progress["percentage"] = 0
-        progress["last_update"] = now
+        progress["last_update"] = now_iso
         task["progress"] = progress
+
+        # Advance deadline to today if it was previously set
+        if task.get("deadline"):
+            today_str = today.isoformat()
+            task["deadline"] = today_str
+            task["deadline_text"] = today_str
 
     @staticmethod
     def _find_prev_valid_day(today: date, days: list[int]) -> date | None:

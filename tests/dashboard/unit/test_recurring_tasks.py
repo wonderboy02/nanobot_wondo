@@ -55,6 +55,8 @@ def _make_recurring_task(
     last_miss_date=None,
     enabled=True,
     check_time=None,
+    deadline=None,
+    deadline_text=None,
 ):
     """Helper to create a recurring task dict."""
     now = datetime.now()
@@ -63,6 +65,8 @@ def _make_recurring_task(
         "title": title,
         "status": status,
         "priority": "medium",
+        "deadline": deadline,
+        "deadline_text": deadline_text,
         "created_at": (now - timedelta(days=7)).isoformat(),
         "updated_at": now.isoformat(),
         "completed_at": now.isoformat() if status == "completed" else None,
@@ -297,6 +301,77 @@ def test_recurring_resets_on_next_day():
     assert task["status"] == "active"
     assert task["progress"]["percentage"] == 0
     assert task["completed_at"] is None
+
+
+def test_recurring_reset_advances_deadline():
+    """When a recurring task resets for the next cycle, deadline should advance to today."""
+    from nanobot.dashboard.worker import WorkerAgent
+
+    today = date(2026, 3, 10)
+    tomorrow = date(2026, 3, 11)
+
+    task = _make_recurring_task(
+        status="completed",
+        progress=100,
+        last_completed_date=today.isoformat(),
+        deadline=today.isoformat(),
+        deadline_text=today.isoformat(),
+    )
+    task["completed_at"] = f"{today.isoformat()}T14:30:00"
+
+    worker = WorkerAgent.__new__(WorkerAgent)
+
+    # Process tomorrow — stale completion, reset to active, deadline advances
+    changed = worker._process_one_recurring(task, tomorrow)
+    assert changed is True
+    assert task["status"] == "active"
+    assert task["deadline"] == tomorrow.isoformat()
+    assert task["deadline_text"] == tomorrow.isoformat()
+
+
+def test_recurring_reset_no_deadline_unchanged():
+    """When a recurring task has no deadline, reset should not add one."""
+    from nanobot.dashboard.worker import WorkerAgent
+
+    today = date(2026, 3, 10)
+    tomorrow = date(2026, 3, 11)
+
+    task = _make_recurring_task(
+        status="completed",
+        progress=100,
+        last_completed_date=today.isoformat(),
+    )
+    task["completed_at"] = f"{today.isoformat()}T14:30:00"
+
+    worker = WorkerAgent.__new__(WorkerAgent)
+
+    changed = worker._process_one_recurring(task, tomorrow)
+    assert changed is True
+    assert task["status"] == "active"
+    assert task.get("deadline") is None  # No deadline added
+
+
+def test_recurring_reset_empty_string_deadline_unchanged():
+    """When a recurring task has deadline='', reset should not add one."""
+    from nanobot.dashboard.worker import WorkerAgent
+
+    today = date(2026, 3, 10)
+    tomorrow = date(2026, 3, 11)
+
+    task = _make_recurring_task(
+        status="completed",
+        progress=100,
+        last_completed_date=today.isoformat(),
+        deadline="",
+    )
+    task["completed_at"] = f"{today.isoformat()}T14:30:00"
+
+    worker = WorkerAgent.__new__(WorkerAgent)
+
+    changed = worker._process_one_recurring(task, tomorrow)
+    assert changed is True
+    assert task["status"] == "active"
+    assert task.get("deadline") == ""  # Empty string stays empty, not converted to date
 
 
 # ============================================================================

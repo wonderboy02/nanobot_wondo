@@ -126,8 +126,9 @@ def task_to_notion(task: dict) -> dict[str, Any]:
     """Convert internal task dict to Notion properties."""
     progress = task.get("progress", {})
     estimation = task.get("estimation", {})
+    recurring = task.get("recurring")
 
-    props: dict[str, Any] = {
+    return {
         "Title": _title(task.get("title", "")),
         "NanobotID": _rich_text(task.get("id", "")),
         "Status": _select(_capitalize(task.get("status", "active"))),
@@ -141,22 +142,16 @@ def task_to_notion(task: dict) -> dict[str, Any]:
         "Complexity": _select(_capitalize(estimation.get("complexity", "medium"))),
         "CreatedAt": _date(task.get("created_at")),
         "UpdatedAt": _date(task.get("updated_at")),
+        # Clearable fields — always included so Notion clears them when None/""
+        "Deadline": _date(task.get("deadline")),
+        "DeadlineText": _rich_text(task.get("deadline_text") or ""),
+        "EstimationHours": _number(estimation.get("hours")),
+        "CompletedAt": _date(task.get("completed_at")),
+        "Reflection": _rich_text(task.get("reflection") or ""),
+        "RecurringConfig": _rich_text(
+            json.dumps(recurring, ensure_ascii=False) if recurring else ""
+        ),
     }
-
-    if task.get("deadline"):
-        props["Deadline"] = _date(task["deadline"])
-    if task.get("deadline_text"):
-        props["DeadlineText"] = _rich_text(task["deadline_text"])
-    if estimation.get("hours") is not None:
-        props["EstimationHours"] = _number(estimation["hours"])
-    if task.get("completed_at"):
-        props["CompletedAt"] = _date(task["completed_at"])
-    if task.get("reflection"):
-        props["Reflection"] = _rich_text(task["reflection"])
-    if task.get("recurring"):
-        props["RecurringConfig"] = _rich_text(json.dumps(task["recurring"], ensure_ascii=False))
-
-    return props
 
 
 def notion_to_task(page: dict) -> dict[str, Any]:
@@ -203,7 +198,7 @@ def notion_to_task(page: dict) -> dict[str, Any]:
 
 def question_to_notion(q: dict) -> dict[str, Any]:
     """Convert internal question dict to Notion properties."""
-    props: dict[str, Any] = {
+    return {
         "Question": _title(q.get("question", "")),
         "NanobotID": _rich_text(q.get("id", "")),
         "Priority": _select(_capitalize(q.get("priority", "medium"))),
@@ -215,14 +210,10 @@ def question_to_notion(q: dict) -> dict[str, Any]:
         "AskedCount": _number(q.get("asked_count", 0)),
         "CooldownHours": _number(q.get("cooldown_hours", 24)),
         "CreatedAt": _date(q.get("created_at")),
+        # Clearable fields — always included so Notion clears them when None
+        "AnsweredAt": _date(q.get("answered_at")),
+        "LastAskedAt": _date(q.get("last_asked_at")),
     }
-
-    if q.get("answered_at"):
-        props["AnsweredAt"] = _date(q["answered_at"])
-    if q.get("last_asked_at"):
-        props["LastAskedAt"] = _date(q["last_asked_at"])
-
-    return props
 
 
 def notion_to_question(page: dict) -> dict[str, Any]:
@@ -257,7 +248,7 @@ def notion_to_question(page: dict) -> dict[str, Any]:
 
 def notification_to_notion(n: dict) -> dict[str, Any]:
     """Convert internal notification dict to Notion properties."""
-    props: dict[str, Any] = {
+    return {
         "Message": _title(n.get("message", "")),
         "NanobotID": _rich_text(n.get("id", "")),
         "ScheduledAt": _date(n.get("scheduled_at")),
@@ -272,10 +263,9 @@ def notification_to_notion(n: dict) -> dict[str, Any]:
         "CreatedAt": _date(n.get("created_at")),
         "DeliveredAt": _date(n.get("delivered_at")),
         "CancelledAt": _date(n.get("cancelled_at")),
+        "GCalEventID": _rich_text(n.get("gcal_event_id") or ""),
+        "GCalSyncHash": _rich_text(n.get("gcal_sync_hash") or ""),
     }
-    props["GCalEventID"] = _rich_text(n.get("gcal_event_id") or "")
-    props["GCalSyncHash"] = _rich_text(n.get("gcal_sync_hash") or "")
-    return props
 
 
 def notion_to_notification(page: dict) -> dict[str, Any]:

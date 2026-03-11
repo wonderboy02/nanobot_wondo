@@ -114,10 +114,10 @@ class TestTaskMapping:
         assert result["tags"] == []
 
     def test_task_no_deadline(self):
-        """Task with no deadline produces null date in Notion."""
+        """Task with no deadline produces null date in Notion (clears the field)."""
         notion_props = task_to_notion({"title": "No deadline task"})
-        # Deadline key should not be present (only set if task.get("deadline") is truthy)
-        assert "Deadline" not in notion_props
+        # Deadline key should be present with null date to clear it in Notion
+        assert notion_props["Deadline"] == {"date": None}
 
     def test_task_with_completed_at(self):
         """completed_at field survives the round trip."""
@@ -157,9 +157,10 @@ class TestTaskMapping:
         assert result["recurring"]["last_completed_date"] == "2026-02-26"
 
     def test_task_no_recurring_round_trip(self):
-        """Task without recurring produces None after round trip."""
+        """Task without recurring produces empty rich_text and None after round trip."""
         notion_props = task_to_notion(self.SAMPLE_TASK)
-        assert "RecurringConfig" not in notion_props
+        # RecurringConfig is always present (empty string clears Notion field)
+        assert notion_props["RecurringConfig"] == {"rich_text": [{"text": {"content": ""}}]}
 
         page = _wrap_page(notion_props)
         result = notion_to_task(page)
