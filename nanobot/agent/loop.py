@@ -437,6 +437,8 @@ class AgentLoop:
 
         await self._precompute_dashboard()
 
+        from nanobot.dashboard.helper import get_dashboard_summary
+
         # Build messages (history param kept for session logging, not used in LLM context)
         messages = self.context.build_messages(
             history=session.get_history(),
@@ -483,6 +485,35 @@ class AgentLoop:
                     result = await self.tools.execute(tool_call.name, tool_call.arguments)
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
+                    )
+
+                # 실시간 컨텍스트: tool call 후 dashboard 최신 상태 반영
+                # storage_backend=None이어도 get_dashboard_summary는 JSON fallback 동작
+                try:
+                    refreshed = await asyncio.to_thread(
+                        get_dashboard_summary,
+                        self.workspace / "dashboard",
+                        self._storage_backend,
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "## Updated Dashboard State (after tool calls)\n\n" + refreshed
+                            ),
+                        }
+                    )
+                except Exception as exc:
+                    logger.exception("Failed to refresh dashboard state")
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "## Warning: Dashboard state refresh failed\n\n"
+                                f"Error: {type(exc).__name__}: {exc}\n"
+                                "Avoid issuing redundant tool calls."
+                            ),
+                        }
                     )
             else:
                 # No tool calls, we're done
@@ -599,6 +630,8 @@ class AgentLoop:
                     messages = self.context.add_tool_result(
                         messages, tool_call.id, tool_call.name, result
                     )
+                # NOTE: 실시간 컨텍스트(dashboard refresh) 미적용 — 시스템 메시지
+                # (announce 등)는 단발성 처리이며, 반복적 notification 생성 경로가 아님.
             else:
                 final_content = response.content
                 break

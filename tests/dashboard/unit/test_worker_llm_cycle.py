@@ -1276,5 +1276,118 @@ async def test_notifications_summary_error_returns_warning_and_reports(test_work
     assert callback.call_count >= 1
 
 
+@pytest.mark.asyncio
+async def test_llm_cycle_refreshes_dashboard_after_tool_call(test_workspace):
+    """After tool calls, an updated dashboard state message is appended."""
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    mock_provider = AsyncMock()
+
+    # LLM makes a tool call, then finishes
+    mock_provider.chat = AsyncMock(
+        side_effect=[
+            _make_response(
+                "Creating question.",
+                [
+                    {
+                        "id": "call_1",
+                        "name": "create_question",
+                        "arguments": {
+                            "question": "진행률 확인",
+                            "priority": "medium",
+                            "type": "info_gather",
+                        },
+                    }
+                ],
+            ),
+            _make_response("Done."),
+        ]
+    )
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=mock_provider,
+        model="test-model",
+    )
+
+    await worker.run_cycle()
+
+    # Second LLM call should have received the refreshed dashboard state
+    assert mock_provider.chat.call_count == 2
+    second_call_messages = mock_provider.chat.call_args_list[1].kwargs.get(
+        "messages", mock_provider.chat.call_args_list[1][1].get("messages", [])
+    )
+    refresh_msgs = [
+        m for m in second_call_messages if "Updated Dashboard State" in m.get("content", "")
+    ]
+    assert len(refresh_msgs) == 1
+
+
+@pytest.mark.asyncio
+async def test_llm_cycle_warns_on_refresh_failure(test_workspace):
+    """When dashboard refresh fails, a warning message is appended instead."""
+    from unittest.mock import patch
+
+    from nanobot.dashboard.storage import JsonStorageBackend
+    from nanobot.dashboard.worker import WorkerAgent
+
+    backend = JsonStorageBackend(test_workspace)
+    mock_provider = AsyncMock()
+
+    mock_provider.chat = AsyncMock(
+        side_effect=[
+            _make_response(
+                "Creating question.",
+                [
+                    {
+                        "id": "call_1",
+                        "name": "create_question",
+                        "arguments": {
+                            "question": "진행률 확인",
+                            "priority": "medium",
+                            "type": "info_gather",
+                        },
+                    }
+                ],
+            ),
+            _make_response("Done."),
+        ]
+    )
+
+    worker = WorkerAgent(
+        workspace=test_workspace,
+        storage_backend=backend,
+        provider=mock_provider,
+        model="test-model",
+    )
+
+    # _build_context calls get_dashboard_summary once (succeed),
+    # then the refresh after tool call should fail.
+    from nanobot.dashboard.helper import get_dashboard_summary as _real
+
+    _real_result = _real(test_workspace / "dashboard", backend)
+
+    with patch(
+        "nanobot.dashboard.helper.get_dashboard_summary",
+        side_effect=[_real_result, RuntimeError("Notion API down")],
+    ):
+        await worker.run_cycle()
+
+    # Second LLM call should have the warning message
+    assert mock_provider.chat.call_count == 2
+    second_call_messages = mock_provider.chat.call_args_list[1].kwargs.get(
+        "messages", mock_provider.chat.call_args_list[1][1].get("messages", [])
+    )
+    warning_msgs = [
+        m
+        for m in second_call_messages
+        if "Warning: Dashboard state refresh failed" in m.get("content", "")
+    ]
+    assert len(warning_msgs) == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

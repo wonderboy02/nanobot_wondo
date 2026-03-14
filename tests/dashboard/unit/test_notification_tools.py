@@ -10,6 +10,39 @@ from nanobot.agent.tools.dashboard.cancel_notification import CancelNotification
 from nanobot.agent.tools.dashboard.list_notifications import ListNotificationsTool
 
 
+def _make_notification(
+    id: str,
+    *,
+    scheduled_at: str = "2026-03-12T09:00:00",
+    type: str = "reminder",
+    status: str = "pending",
+    related_task_id: str = "task_001",
+    message: str = "",
+    priority: str = "medium",
+) -> dict:
+    """Build a minimal notification dict for seeding tests."""
+    return {
+        "id": id,
+        "message": message or f"Notif {id}",
+        "scheduled_at": scheduled_at,
+        "type": type,
+        "priority": priority,
+        "status": status,
+        "related_task_id": related_task_id,
+        "created_at": "2026-03-10T10:00:00",
+        "created_by": "worker",
+    }
+
+
+def _seed_notifications(workspace, notifications: list[dict]) -> None:
+    """Write a list of notification dicts to the workspace notifications.json."""
+    path = workspace / "dashboard" / "notifications.json"
+    path.write_text(
+        json.dumps({"version": "1.0", "notifications": notifications}),
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def temp_workspace(tmp_path):
     """Create temporary workspace with dashboard structure."""
@@ -112,6 +145,237 @@ class TestScheduleNotificationTool:
 
         assert "Error" in result
         assert "Could not parse" in result
+
+    @pytest.mark.asyncio
+    async def test_dedup_rejects_same_task_date_type(self, temp_workspace):
+        """Dedup guard rejects when same task+date+type pending notification exists."""
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        # First: succeeds
+        result = await tool.execute(
+            message="Progress check",
+            scheduled_at="2026-03-12T09:00:00",
+            type="progress_check",
+            related_task_id="task_001",
+        )
+        assert "✅" in result
+
+        # Second: same task + same date + same type → rejected
+        result = await tool.execute(
+            message="Progress check again",
+            scheduled_at="2026-03-12T18:00:00",
+            type="progress_check",
+            related_task_id="task_001",
+        )
+        assert "Duplicate rejected" in result
+        assert "update_notification" in result
+
+    @pytest.mark.asyncio
+    async def test_dedup_allows_different_type(self, temp_workspace):
+        """Dedup guard allows different type for same task+date."""
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        result = await tool.execute(
+            message="Progress check",
+            scheduled_at="2026-03-12T09:00:00",
+            type="progress_check",
+            related_task_id="task_001",
+        )
+        assert "✅" in result
+
+        # Different type → allowed
+        result = await tool.execute(
+            message="Deadline alert",
+            scheduled_at="2026-03-12T18:00:00",
+            type="deadline_alert",
+            related_task_id="task_001",
+        )
+        assert "✅" in result
+
+    @pytest.mark.asyncio
+    async def test_dedup_allows_different_date(self, temp_workspace):
+        """Dedup guard allows same type on different date."""
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        result = await tool.execute(
+            message="Progress check",
+            scheduled_at="2026-03-12T09:00:00",
+            type="progress_check",
+            related_task_id="task_001",
+        )
+        assert "✅" in result
+
+        # Different date → allowed
+        result = await tool.execute(
+            message="Progress check",
+            scheduled_at="2026-03-13T09:00:00",
+            type="progress_check",
+            related_task_id="task_001",
+        )
+        assert "✅" in result
+
+    @pytest.mark.asyncio
+    async def test_dedup_allows_no_task_id(self, temp_workspace):
+        """Dedup guard skipped when no related_task_id."""
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        result1 = await tool.execute(
+            message="General reminder",
+            scheduled_at="2026-03-12T09:00:00",
+            type="reminder",
+        )
+        assert "✅" in result1
+
+        # Same date+type but no task_id → allowed (no dedup)
+        result2 = await tool.execute(
+            message="Another reminder",
+            scheduled_at="2026-03-12T09:00:00",
+            type="reminder",
+        )
+        assert "✅" in result2
+
+    @pytest.mark.asyncio
+    async def test_dedup_ignores_cancelled(self, temp_workspace):
+        """Dedup guard ignores cancelled notifications."""
+        _seed_notifications(
+            temp_workspace,
+            [_make_notification("n_old", type="progress_check", status="cancelled")],
+        )
+
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        # Same task+date+type but existing is cancelled → allowed
+        result = await tool.execute(
+            message="New progress check",
+            scheduled_at="2026-03-12T09:00:00",
+            type="progress_check",
+            related_task_id="task_001",
+        )
+        assert "✅" in result
+
+    @pytest.mark.asyncio
+    async def test_dedup_ignores_delivered(self, temp_workspace):
+        """Dedup guard ignores delivered notifications."""
+        _seed_notifications(
+            temp_workspace,
+            [_make_notification("n_done", type="progress_check", status="delivered")],
+        )
+
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        # Same task+date+type but existing is delivered → allowed
+        result = await tool.execute(
+            message="New progress check",
+            scheduled_at="2026-03-12T09:00:00",
+            type="progress_check",
+            related_task_id="task_001",
+        )
+        assert "✅" in result
+
+    @pytest.mark.asyncio
+    async def test_per_task_cap_rejects_at_max(self, temp_workspace):
+        """Per-task cap rejects when task already has 3 pending notifications."""
+        _seed_notifications(
+            temp_workspace,
+            [
+                _make_notification(
+                    f"n_{i}",
+                    scheduled_at=f"2026-03-{12 + i}T09:00:00",
+                    type=["progress_check", "deadline_alert", "reminder"][i],
+                    related_task_id="task_full",
+                )
+                for i in range(3)
+            ],
+        )
+
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        result = await tool.execute(
+            message="Fourth notification",
+            scheduled_at="2026-03-16T09:00:00",
+            type="blocker_followup",
+            related_task_id="task_full",
+        )
+        assert "Rejected" in result
+        assert "max 3" in result
+
+    @pytest.mark.asyncio
+    async def test_per_task_cap_ignores_other_tasks(self, temp_workspace):
+        """Per-task cap counts only the target task, not others."""
+        _seed_notifications(
+            temp_workspace,
+            [
+                _make_notification(
+                    f"n_{i}",
+                    scheduled_at=f"2026-03-{12 + i}T09:00:00",
+                    related_task_id="task_other",
+                )
+                for i in range(3)
+            ],
+        )
+
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        # Different task → allowed despite 3 notifications for task_other
+        result = await tool.execute(
+            message="New task notif",
+            scheduled_at="2026-03-12T09:00:00",
+            type="reminder",
+            related_task_id="task_new",
+        )
+        assert "✅" in result
+
+    @pytest.mark.asyncio
+    async def test_per_task_cap_allows_at_boundary(self, temp_workspace):
+        """Per-task cap allows 3rd notification (boundary: 2 existing → 3rd OK)."""
+        _seed_notifications(
+            temp_workspace,
+            [
+                _make_notification(
+                    f"n_{i}",
+                    scheduled_at=f"2026-03-{12 + i}T09:00:00",
+                    type=["progress_check", "deadline_alert"][i],
+                    related_task_id="task_boundary",
+                )
+                for i in range(2)
+            ],
+        )
+
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        # 3rd notification → allowed (cap is 3)
+        result = await tool.execute(
+            message="Third notification",
+            scheduled_at="2026-03-15T09:00:00",
+            type="reminder",
+            related_task_id="task_boundary",
+        )
+        assert "✅" in result
+
+    @pytest.mark.asyncio
+    async def test_dedup_fail_closed_on_corrupt_scheduled_at(self, temp_workspace):
+        """Dedup treats unparsable scheduled_at as potential match (fail-closed)."""
+        _seed_notifications(
+            temp_workspace,
+            [
+                _make_notification(
+                    "n_corrupt",
+                    scheduled_at="not-a-date",
+                    type="progress_check",
+                )
+            ],
+        )
+
+        tool = ScheduleNotificationTool(temp_workspace)
+
+        # Existing has corrupt scheduled_at → treated as match → rejected
+        result = await tool.execute(
+            message="New progress check",
+            scheduled_at="2026-03-12T09:00:00",
+            type="progress_check",
+            related_task_id="task_001",
+        )
+        assert "Duplicate rejected" in result
 
     @pytest.mark.asyncio
     async def test_schedule_with_backend_injection(self, temp_workspace):

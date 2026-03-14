@@ -2,13 +2,37 @@
 
 Ledger-only: writes a pending notification to storage.
 GCal sync and delivery are handled by ReconciliationScheduler.
+
+Guards:
+- Dedup: rejects duplicate notifications for the same task + date + type.
+- Per-task cap: max 3 pending notifications per task.
 """
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Optional
 
+from loguru import logger
+
 from nanobot.agent.tools.dashboard.base import BaseDashboardTool, with_dashboard_lock
+
+
+def _scheduled_date(scheduled_at: str, notification_id: str = "?") -> date | None:
+    """Extract calendar date from a scheduled_at ISO string.
+
+    Returns None on parse failure (logged as warning). Callers must
+    treat None as a potential match (fail-closed) to avoid dedup bypass.
+    """
+    try:
+        return datetime.fromisoformat(scheduled_at).date()
+    except (ValueError, TypeError):
+        logger.warning(
+            "Could not parse scheduled_at for dedup: id={}, value='{}'",
+            notification_id,
+            scheduled_at,
+        )
+        return None
 
 
 class ScheduleNotificationTool(BaseDashboardTool):
@@ -101,10 +125,48 @@ class ScheduleNotificationTool(BaseDashboardTool):
             if not scheduled_dt:
                 return f"Error: Could not parse scheduled_at '{scheduled_at}'"
 
-            notification_id = self._generate_id("n")
-
             notifications_data = await self._load_notifications()
             notifications_list = notifications_data.get("notifications", [])
+
+            # Guards: dedup + per-task cap
+            if related_task_id:
+                task_pending = [
+                    n
+                    for n in notifications_list
+                    if n.get("status") == "pending" and n.get("related_task_id") == related_task_id
+                ]
+
+                # Per-task cap (max 3 pending notifications)
+                max_per_task = 3
+                if len(task_pending) >= max_per_task:
+                    ids = ", ".join(n.get("id", "?") for n in task_pending)
+                    return (
+                        f"Rejected: {related_task_id} already has "
+                        f"{len(task_pending)} pending notifications (max {max_per_task}): "
+                        f"{ids}. Use update_notification or cancel_notification first."
+                    )
+
+                # Dedup: same task + same date + same type → reject
+                # Fail-closed: unparsable scheduled_at treated as potential match
+                target_date = scheduled_dt.date()
+                duplicates = [
+                    n
+                    for n in task_pending
+                    if n.get("type") == type
+                    and (
+                        (d := _scheduled_date(n.get("scheduled_at", ""), n.get("id", "?"))) is None
+                        or d == target_date
+                    )
+                ]
+                if duplicates:
+                    ids = ", ".join(n.get("id", "?") for n in duplicates)
+                    return (
+                        f"Duplicate rejected: pending {type} already exists "
+                        f"for {related_task_id} on {target_date}: {ids}. "
+                        f"Use update_notification to modify."
+                    )
+
+            notification_id = self._generate_id("n")
 
             notification = {
                 "id": notification_id,
@@ -139,4 +201,5 @@ class ScheduleNotificationTool(BaseDashboardTool):
             )
 
         except Exception as e:
-            return f"Error scheduling notification: {str(e)}"
+            logger.exception("Unexpected error in schedule_notification")
+            return f"Error scheduling notification ({type(e).__name__}): {e}"

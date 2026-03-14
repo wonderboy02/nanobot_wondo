@@ -51,11 +51,13 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 
 ## 핵심 규칙
 
-### 알림 중복 방지 (가장 중요)
-context의 **Pending Notifications** 섹션에서 기존 알림을 확인하라.
-같은 Task에 대해 비슷한 알림이 이미 있으면:
-- 시간/내용이 적절하면 → 새로 스케줄링하지 마라
-- 시간/내용이 맞지 않으면 → `update_notification`으로 수정하거나 `cancel_notification` 후 재생성
+### **중요** — 알림 중복 방지
+**schedule_notification 호출 전에 반드시 Pending Notifications 섹션을 확인하라.**
+같은 Task에 같은 날짜 + 같은 type의 pending 알림이 이미 있으면 새로 만들지 마라.
+- 시간/내용이 적절하면 → **아무것도 하지 마라**
+- 시간/내용을 바꿔야 하면 → `update_notification`으로 수정하거나 `cancel_notification` 후 재생성
+- Task당 pending 알림은 최대 3개까지만 유지하라 (초과 시 `schedule_notification` 도구가 거부 메시지를 반환한다)
+- 같은 Task + 같은 날짜 + 같은 type의 알림이 이미 있으면 `schedule_notification` 도구가 거부 메시지를 반환한다
 추가 필터링이 필요하면 `list_notifications`를 호출할 수 있다.
 
 ### Task ↔ Notification 자동 동기화

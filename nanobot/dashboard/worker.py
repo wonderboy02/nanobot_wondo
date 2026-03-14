@@ -1175,6 +1175,7 @@ class WorkerAgent:
 
         try:
             from nanobot.agent.tools.registry import ToolRegistry
+            from nanobot.dashboard.helper import get_dashboard_summary
 
             # Recreated each cycle (not cached across cycles).
             # Stored on self so tests can inspect registered tools after run_cycle().
@@ -1262,6 +1263,34 @@ class WorkerAgent:
                         logger.exception(f"[Worker] Tool {tool_name} error")
 
                 messages.extend(tool_results)
+
+                # 실시간 컨텍스트: tool call 후 dashboard 최신 상태 반영
+                try:
+                    refreshed = await asyncio.to_thread(
+                        get_dashboard_summary,
+                        self.workspace / "dashboard",
+                        self.storage_backend,
+                    )
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "## Updated Dashboard State (after tool calls)\n\n" + refreshed
+                            ),
+                        }
+                    )
+                except Exception as exc:
+                    logger.exception("[Worker] Failed to refresh dashboard state")
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "## Warning: Dashboard state refresh failed\n\n"
+                                f"Error: {type(exc).__name__}: {exc}\n"
+                                "Avoid issuing redundant tool calls."
+                            ),
+                        }
+                    )
 
             logger.info("[Worker] LLM analysis completed")
             return True

@@ -22,7 +22,11 @@ def _format_notification_line(n: dict) -> str:
         time_str = dt.strftime("%m-%d %H:%M")
     except (ValueError, TypeError):
         time_str = scheduled_at
-    return f"  - {n.get('id', '?')} ({n.get('type', '?')}): {n.get('message', '')} [{time_str}]"
+    priority = n.get("priority", "medium")
+    return (
+        f"  - {n.get('id', '?')} ({n.get('type', '?')}, {priority}): "
+        f"{n.get('message', '')} [{time_str}]"
+    )
 
 
 def get_dashboard_summary(
@@ -182,7 +186,11 @@ def get_dashboard_summary(
             if task_id is None:
                 continue
             title = task_titles.get(task_id, "")
-            header = f"**{task_id}** ({title}):" if title else f"**{task_id}**:"
+            count = len(notifs)
+            if title:
+                header = f"**{task_id}** ({title}) — {count} pending:"
+            else:
+                header = f"**{task_id}** — {count} pending:"
             notif_lines.append(header)
             for n in notifs:
                 notif_lines.append(_format_notification_line(n))

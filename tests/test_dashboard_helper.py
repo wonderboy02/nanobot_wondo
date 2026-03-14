@@ -191,6 +191,38 @@ def test_summary_shows_task_title_in_group(dashboard_dir):
     assert "운동 루틴" in result
 
 
+def test_summary_shows_pending_count_in_group_header(dashboard_dir):
+    """Group header includes pending notification count."""
+    now = datetime.now()
+    notif_data = {
+        "version": "1.0",
+        "notifications": [
+            {
+                "id": "n_a",
+                "message": "알림 1",
+                "scheduled_at": (now + timedelta(hours=1)).isoformat(),
+                "type": "reminder",
+                "priority": "medium",
+                "status": "pending",
+                "related_task_id": "task_001",
+            },
+            {
+                "id": "n_b",
+                "message": "알림 2",
+                "scheduled_at": (now + timedelta(hours=2)).isoformat(),
+                "type": "deadline_alert",
+                "priority": "high",
+                "status": "pending",
+                "related_task_id": "task_001",
+            },
+        ],
+    }
+    (dashboard_dir / "notifications.json").write_text(json.dumps(notif_data), encoding="utf-8")
+
+    result = get_dashboard_summary(dashboard_dir)
+    assert "2 pending" in result
+
+
 def test_summary_no_notifications_no_section(dashboard_dir):
     """When no pending notifications exist, the section is absent."""
     result = get_dashboard_summary(dashboard_dir)
@@ -425,6 +457,28 @@ def test_format_notification_line_valid_date():
     assert "n_fmt" in result
     assert "03-15 14:30" in result
     assert "테스트" in result
+
+
+def test_format_notification_line_includes_priority():
+    """Priority is included in the formatted line."""
+    n = {
+        "id": "n_pri",
+        "type": "deadline_alert",
+        "priority": "high",
+        "message": "마감",
+        "scheduled_at": "2026-03-15T14:30:00",
+    }
+    result = _format_notification_line(n)
+    assert "high" in result
+
+    n_default = {
+        "id": "n_def",
+        "type": "reminder",
+        "message": "기본",
+        "scheduled_at": "2026-03-15T14:30:00",
+    }
+    result_default = _format_notification_line(n_default)
+    assert "medium" in result_default
 
 
 def test_format_notification_line_invalid_date():
