@@ -77,18 +77,6 @@ def onboard():
 
 def _create_workspace_templates(workspace: Path):
     """Create default workspace template files."""
-    # HEARTBEAT.md — runtime-writable, copy to workspace
-    heartbeat_file = workspace / "HEARTBEAT.md"
-    if not heartbeat_file.exists():
-        import shutil
-
-        from nanobot.prompts import PROMPTS_DIR
-
-        src = PROMPTS_DIR / "HEARTBEAT.md"
-        if src.exists():
-            shutil.copy(src, heartbeat_file)
-            console.print("  [dim]Created HEARTBEAT.md[/dim]")
-
     console.print(
         "  [dim]Instruction files loaded from package defaults. "
         "Copy to workspace/ to customize.[/dim]"
@@ -283,11 +271,6 @@ def gateway(
 
     cron.on_job = on_cron_job
 
-    # Create heartbeat service
-    async def on_heartbeat(prompt: str) -> str:
-        """Execute heartbeat through the agent."""
-        return await agent.process_direct(prompt, session_key="heartbeat")
-
     # Determine worker model (empty string or missing → None → provider uses defaults.model)
     worker_config = getattr(config.agents, "worker", None)
     worker_model = worker_config.model if (worker_config and worker_config.model) else None
@@ -302,7 +285,6 @@ def gateway(
 
     heartbeat = HeartbeatService(
         workspace=config.workspace_path,
-        on_heartbeat=on_heartbeat,
         # Uses DEFAULT_HEARTBEAT_INTERVAL_S (2 hours)
         enabled=True,
         provider=provider,
@@ -359,12 +341,14 @@ def gateway(
             # Note: nanobot.channels.telegram is included because most errors there
             # occur in the send path; non-delivery errors (e.g. webhook parse) are
             # also excluded as a trade-off for loop safety.
-            _alert_delivery_modules = frozenset({
-                "nanobot.alerts.service",
-                "nanobot.bus.queue",
-                "nanobot.channels.manager",
-                "nanobot.channels.telegram",
-            })
+            _alert_delivery_modules = frozenset(
+                {
+                    "nanobot.alerts.service",
+                    "nanobot.bus.queue",
+                    "nanobot.channels.manager",
+                    "nanobot.channels.telegram",
+                }
+            )
 
             async def _send_alert(text: str) -> None:
                 await bus.publish_outbound(

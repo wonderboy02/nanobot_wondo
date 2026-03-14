@@ -374,7 +374,7 @@ Config file: `~/.nanobot/config.json`
 | `channels.*.allowFrom` | `[]` (allow all) | Whitelist of user IDs. Empty = allow everyone; non-empty = only listed users can interact. |
 
 **Instruction File Protection** (v0.1.4+):
-- Agent cannot modify instruction files: `DASHBOARD.md`, `TOOLS.md`, `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `HEARTBEAT.md`, `config.json`, `.env`
+- Agent cannot modify instruction files: `DASHBOARD.md`, `TOOLS.md`, `AGENTS.md`, `SOUL.md`, `USER.md`, `IDENTITY.md`, `config.json`, `.env`
 - Dashboard updates go to data files: `dashboard/tasks.json`, `dashboard/questions.json`
 - Clear error messages guide agent to correct files
 

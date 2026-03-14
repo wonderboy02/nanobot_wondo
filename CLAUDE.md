@@ -45,7 +45,6 @@ nanobot/
 - Override: `workspace/*.md` (user customization, takes priority)
 - Pattern: Same as `nanobot/skills/` (builtin + workspace override)
 - Used by: `context.py` (bootstrap), `worker.py` (WORKER.md)
-- Exception: `HEARTBEAT.md` reads workspace/ directly (runtime writable file)
 
 ### Dashboard Tools (13)
 
@@ -159,7 +158,7 @@ AgentLoop 생성 → _processing_lock = asyncio.Lock()
 
 ### Protected Files (write_file/edit_file read-only)
 
-- `AGENTS.md, SOUL.md, USER.md, TOOLS.md, DASHBOARD.md, HEARTBEAT.md, IDENTITY.md`
+- `AGENTS.md, SOUL.md, USER.md, TOOLS.md, DASHBOARD.md, IDENTITY.md`
 - `config.json, .env`
 - `dashboard/*.json, dashboard/knowledge/*.json`
 
@@ -249,7 +248,7 @@ bash tests/test_docker.sh                  # Docker integration test
 | Local | Container | Content |
 |-------|-----------|---------|
 | `./data/` | `/app/data/` | config.json, sessions/ |
-| `./workspace/` | `/app/workspace/` | Runtime data: dashboard/*.json, memory/, HEARTBEAT.md, logs/ |
+| `./workspace/` | `/app/workspace/` | Runtime data: dashboard/*.json, memory/, logs/ |
 
 - `NANOBOT_DATA_DIR=/app/data` (locally `~/.nanobot/`)
 - `.dockerignore`: excludes workspace/, data/, .git, node_modules/

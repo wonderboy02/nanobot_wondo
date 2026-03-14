@@ -19,7 +19,6 @@ def test_is_read_only_detects_instruction_files(tmp_path):
         "SOUL.md",
         "USER.md",
         "IDENTITY.md",
-        "HEARTBEAT.md",
         "config.json",
         ".env",
     ]

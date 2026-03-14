@@ -24,7 +24,6 @@ def _is_read_only(path: Path, workspace: Path | None = None) -> bool:
         "SOUL.md",
         "USER.md",
         "IDENTITY.md",
-        "HEARTBEAT.md",
         "config.json",
         ".env",
         # Dashboard JSON files (use dashboard tools instead)

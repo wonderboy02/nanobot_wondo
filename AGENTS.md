@@ -94,7 +94,7 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 ### Protected Files (write_file/edit_file read-only)
 
-- `AGENTS.md, SOUL.md, USER.md, TOOLS.md, DASHBOARD.md, HEARTBEAT.md, IDENTITY.md`
+- `AGENTS.md, SOUL.md, USER.md, TOOLS.md, DASHBOARD.md, IDENTITY.md`
 - `config.json, .env`
 - `dashboard/*.json, dashboard/knowledge/*.json`
 

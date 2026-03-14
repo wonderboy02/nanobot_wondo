@@ -83,8 +83,7 @@ if [ ! -f "$PROMPTS_MIGRATED_MARKER" ]; then
     echo "📦 Migrating: workspace instruction files now in nanobot/prompts/"
     rm -f workspace/AGENTS.md workspace/SOUL.md workspace/USER.md \
           workspace/TOOLS.md workspace/DASHBOARD.md workspace/WORKER.md \
-          workspace/NOTION_SETUP.md
-    # HEARTBEAT.md 유지 — 런타임 데이터
+          workspace/NOTION_SETUP.md workspace/HEARTBEAT.md
     mkdir -p workspace
     touch "$PROMPTS_MIGRATED_MARKER"
     echo "✅ Migration complete"
