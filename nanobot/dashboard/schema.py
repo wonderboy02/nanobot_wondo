@@ -147,6 +147,8 @@ class Question(BaseModel):
         "blocker_check",
         "status_check",
         "routine_check",
+        "progress_check",  # deprecated: kept for existing data compatibility
+        "completion_check",  # deprecated: kept for existing data compatibility
     ] = "info_gather"
     related_task_id: Optional[str] = None
     asked_count: int = 0
@@ -178,7 +180,8 @@ class Notification(BaseModel):
     scheduled_at: str  # ISO datetime
     scheduled_at_text: Optional[str] = None  # Natural language (e.g., "내일 아침")
     type: Literal[
-        "reminder", "deadline_alert", "blocker_followup", "question_reminder"
+        "reminder", "deadline_alert", "blocker_followup", "question_reminder",
+        "progress_check",  # deprecated: kept for existing data compatibility
     ] = "reminder"
     priority: Literal["low", "medium", "high"] = "medium"
     related_task_id: Optional[str] = None
