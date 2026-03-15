@@ -25,8 +25,10 @@ from nanobot.dashboard.storage import SaveResult, StorageBackend
 class MemoryCache:
     """Simple TTL-based in-memory cache using a dict.
 
-    NOT thread-safe — caller must hold a lock when accessing from multiple
-    threads. In this codebase, NotionStorageBackend._lock guards all access.
+    NOT inherently thread-safe — concurrent access to the same key requires
+    external synchronization. In this codebase, NotionStorageBackend per-entity
+    locks guard per-key access; cross-key concurrency is safe under CPython GIL
+    (dict operations are atomic at the bytecode level).
 
     Usage:
         cache = MemoryCache(ttl_s=300)
@@ -97,7 +99,12 @@ class NotionStorageBackend(StorageBackend):
         # Thread safety: asyncio.to_thread() dispatches to a thread pool,
         # while other paths (context builder, telegram handlers) may call
         # backend methods directly from the main thread.
-        self._lock = threading.Lock()
+        # Per-entity locks allow parallel loading of independent entity types
+        # (e.g., tasks + questions + notifications in ThreadPoolExecutor).
+        # Must match entity types used in load_*/save_* methods below.
+        # Adding a new entity without updating this tuple will cause KeyError.
+        self._entity_types = ("tasks", "questions", "notifications", "insights")
+        self._locks: dict[str, threading.Lock] = {et: threading.Lock() for et in self._entity_types}
 
     def close(self) -> None:
         """Close the underlying Notion HTTP client."""
@@ -111,21 +118,30 @@ class NotionStorageBackend(StorageBackend):
         so that user edits in Notion are picked up.
         Clearing _id_maps forces a rebuild on next load, picking up
         items the user added directly in Notion UI.
+
+        Acquires all per-entity locks to prevent racing with concurrent
+        _load_entity calls (e.g., Telegram /questions handler runs without
+        _processing_lock while a message is being processed).
         """
-        with self._lock:
+        for lock in self._locks.values():
+            lock.acquire()
+        try:
             self._cache.invalidate_all()
             self._id_maps.clear()
+        finally:
+            for lock in self._locks.values():
+                lock.release()
 
     # ---- ID mapping (bootstrap support) ----
 
     def register_id_mapping(self, entity_type: str, nanobot_id: str, page_id: str) -> None:
         """Register a nanobot_id → notion_page_id so save uses update_page."""
-        with self._lock:
+        with self._locks[entity_type]:
             self._id_maps.setdefault(entity_type, {})[nanobot_id] = page_id
 
     def unregister_id_mapping(self, entity_type: str, nanobot_id: str) -> None:
         """Remove mapping (rollback on save failure)."""
-        with self._lock:
+        with self._locks[entity_type]:
             entity_map = self._id_maps.get(entity_type, {})
             entity_map.pop(nanobot_id, None)
 
@@ -170,7 +186,7 @@ class NotionStorageBackend(StorageBackend):
         if not db_id:
             return default_data
 
-        with self._lock:
+        with self._locks[entity_type]:
             cached = self._cache.get(entity_type)
             if cached is not None:
                 return cached
@@ -216,7 +232,7 @@ class NotionStorageBackend(StorageBackend):
         if not db_id:
             return SaveResult(False, f"No Notion database configured for {entity_type}")
 
-        with self._lock:
+        with self._locks[entity_type]:
             try:
                 id_map = self._id_maps.get(entity_type, {})
                 incoming_ids = {item.get("id", "") for item in items if item.get("id")}

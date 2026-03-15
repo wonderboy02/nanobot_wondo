@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -69,27 +70,45 @@ def get_dashboard_summary(
     # and reported via on_error; JSON backend's load_json_file swallows
     # parse errors internally (returns empty dict).
     if storage_backend is not None:
-        try:
-            tasks_data = storage_backend.load_tasks()
-        except Exception:
-            logger.exception("[DashboardHelper] Failed to load tasks")
-            if on_error:
-                on_error("Failed to load tasks for dashboard summary")
-            tasks_data = {}
-        try:
-            questions_data = storage_backend.load_questions()
-        except Exception:
-            logger.exception("[DashboardHelper] Failed to load questions")
-            if on_error:
-                on_error("Failed to load questions for dashboard summary")
-            questions_data = {}
-        try:
-            notif_data = storage_backend.load_notifications()
-        except Exception:
-            logger.exception("[DashboardHelper] Failed to load notifications")
-            if on_error:
-                on_error("Failed to load pending notifications for dashboard summary")
-            notif_data = {}
+
+        def _safe_load(loader: Callable, error_msg: str, default: dict) -> tuple[dict, str | None]:
+            try:
+                return loader(), None
+            except Exception:
+                logger.exception("[DashboardHelper] {}", error_msg)
+                return default, error_msg
+
+        # Short-lived pool: thread creation cost (~µs) is negligible vs Notion I/O (~s).
+        # A persistent pool would add lifecycle complexity for no measurable gain.
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            ft = pool.submit(
+                _safe_load,
+                storage_backend.load_tasks,
+                "Failed to load tasks for dashboard summary",
+                {},
+            )
+            fq = pool.submit(
+                _safe_load,
+                storage_backend.load_questions,
+                "Failed to load questions for dashboard summary",
+                {},
+            )
+            fn = pool.submit(
+                _safe_load,
+                storage_backend.load_notifications,
+                "Failed to load pending notifications for dashboard summary",
+                {},
+            )
+
+        # _safe_load catches Exception internally, so .result() only re-raises
+        # BaseException (e.g. KeyboardInterrupt) — which should propagate anyway.
+        tasks_data, t_err = ft.result()
+        questions_data, q_err = fq.result()
+        notif_data, n_err = fn.result()
+
+        for err in (t_err, q_err, n_err):
+            if err and on_error:
+                on_error(err)
     else:
         from nanobot.dashboard.storage import load_json_file
 
