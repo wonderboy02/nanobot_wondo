@@ -92,7 +92,7 @@ def test_summary_groups_notifications_by_task(dashboard_dir):
                 "id": "n_def",
                 "message": "진행 확인",
                 "scheduled_at": (now + timedelta(hours=4)).isoformat(),
-                "type": "progress_check",
+                "type": "deadline_alert",
                 "priority": "medium",
                 "status": "pending",
                 "related_task_id": "task_001",

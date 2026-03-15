@@ -54,7 +54,7 @@ You can create them in a single page for organization.
 | Question | title | Question text |
 | NanobotID | text | `q_xxxxxxxx` |
 | Priority | select | Options: Low, Medium, High |
-| Type | select | Options: info_gather, progress_check, deadline_check, start_check, blocker_check, status_check, completion_check, routine_check |
+| Type | select | Options: info_gather, deadline_check, start_check, blocker_check, status_check, routine_check |
 | RelatedTaskID | text | Related task ID (e.g., `task_xxxxxxxx`) |
 | Context | text | Question context |
 | Answered | checkbox | **User checks this to answer** |
@@ -73,7 +73,7 @@ You can create them in a single page for organization.
 | NanobotID | text | Unique identifier |
 | ScheduledAt | date | When to send |
 | ScheduledAtText | text | Natural language schedule (e.g., "tomorrow 9am") |
-| Type | select | Options: reminder, deadline_alert, progress_check, blocker_followup, question_reminder |
+| Type | select | Options: reminder, deadline_alert, blocker_followup, question_reminder |
 | Priority | select | Options: Low, Medium, High |
 | Status | select | Options: Pending, Delivered, Cancelled |
 | RelatedTaskID | text | Related task ID |

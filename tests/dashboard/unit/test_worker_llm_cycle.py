@@ -146,7 +146,7 @@ async def test_llm_cycle_with_tool_call(test_workspace):
                         "arguments": {
                             "question": "블로그 작성 진행 어떻게 되고 있나요?",
                             "priority": "high",
-                            "type": "progress_check",
+                            "type": "blocker_check",
                             "related_task_id": "task_001",
                         },
                     }
@@ -706,7 +706,7 @@ async def test_context_includes_answered_questions(test_workspace):
             "answered": True,
             "answer": "Chapter 5까지 완료",
             "related_task_id": "task_001",
-            "type": "progress_check",
+            "type": "blocker_check",
             "created_at": now.isoformat(),
         },
     ]
@@ -783,7 +783,7 @@ async def test_answer_without_checkbox_excluded_from_unanswered_summary(
             "question": "블로그 진행?",
             "answered": False,
             "answer": "70% 완료",
-            "type": "progress_check",
+            "type": "blocker_check",
             "created_at": now.isoformat(),
         },
     ]
@@ -885,7 +885,7 @@ async def test_notifications_summary_with_recent_delivered(test_workspace):
     assert "n_delivered_recent" in result
     assert "최근 전달된 알림" in result
     assert "task_001" in result
-    assert "WORKER.md" in result
+    assert "상태 분석에 참고하라" in result
 
 
 @pytest.mark.asyncio
@@ -1002,7 +1002,7 @@ async def test_notifications_summary_pending_and_delivered(test_workspace):
                 "message": "전달 완료 알림",
                 "scheduled_at": (now - timedelta(hours=3)).isoformat(),
                 "delivered_at": (now - timedelta(hours=1)).isoformat(),
-                "type": "progress_check",
+                "type": "deadline_alert",
                 "priority": "high",
                 "status": "delivered",
                 "related_task_id": "task_003",

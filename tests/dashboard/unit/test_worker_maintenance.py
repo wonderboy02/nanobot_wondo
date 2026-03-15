@@ -503,7 +503,7 @@ async def test_extract_answered_questions_returns_answered(test_workspace):
             "answered": True,
             "answer": "Chapter 5까지 완료",
             "related_task_id": "task_001",
-            "type": "progress_check",
+            "type": "blocker_check",
             "created_at": now.isoformat(),
         },
         {

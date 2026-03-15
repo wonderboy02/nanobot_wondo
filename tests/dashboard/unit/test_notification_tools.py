@@ -155,7 +155,7 @@ class TestScheduleNotificationTool:
         result = await tool.execute(
             message="Progress check",
             scheduled_at="2026-03-12T09:00:00",
-            type="progress_check",
+            type="deadline_alert",
             related_task_id="task_001",
         )
         assert "✅" in result
@@ -164,7 +164,7 @@ class TestScheduleNotificationTool:
         result = await tool.execute(
             message="Progress check again",
             scheduled_at="2026-03-12T18:00:00",
-            type="progress_check",
+            type="deadline_alert",
             related_task_id="task_001",
         )
         assert "Duplicate rejected" in result
@@ -178,16 +178,16 @@ class TestScheduleNotificationTool:
         result = await tool.execute(
             message="Progress check",
             scheduled_at="2026-03-12T09:00:00",
-            type="progress_check",
+            type="deadline_alert",
             related_task_id="task_001",
         )
         assert "✅" in result
 
         # Different type → allowed
         result = await tool.execute(
-            message="Deadline alert",
+            message="Blocker followup",
             scheduled_at="2026-03-12T18:00:00",
-            type="deadline_alert",
+            type="blocker_followup",
             related_task_id="task_001",
         )
         assert "✅" in result
@@ -200,7 +200,7 @@ class TestScheduleNotificationTool:
         result = await tool.execute(
             message="Progress check",
             scheduled_at="2026-03-12T09:00:00",
-            type="progress_check",
+            type="deadline_alert",
             related_task_id="task_001",
         )
         assert "✅" in result
@@ -209,7 +209,7 @@ class TestScheduleNotificationTool:
         result = await tool.execute(
             message="Progress check",
             scheduled_at="2026-03-13T09:00:00",
-            type="progress_check",
+            type="deadline_alert",
             related_task_id="task_001",
         )
         assert "✅" in result
@@ -239,7 +239,7 @@ class TestScheduleNotificationTool:
         """Dedup guard ignores cancelled notifications."""
         _seed_notifications(
             temp_workspace,
-            [_make_notification("n_old", type="progress_check", status="cancelled")],
+            [_make_notification("n_old", type="deadline_alert", status="cancelled")],
         )
 
         tool = ScheduleNotificationTool(temp_workspace)
@@ -248,7 +248,7 @@ class TestScheduleNotificationTool:
         result = await tool.execute(
             message="New progress check",
             scheduled_at="2026-03-12T09:00:00",
-            type="progress_check",
+            type="deadline_alert",
             related_task_id="task_001",
         )
         assert "✅" in result
@@ -258,7 +258,7 @@ class TestScheduleNotificationTool:
         """Dedup guard ignores delivered notifications."""
         _seed_notifications(
             temp_workspace,
-            [_make_notification("n_done", type="progress_check", status="delivered")],
+            [_make_notification("n_done", type="deadline_alert", status="delivered")],
         )
 
         tool = ScheduleNotificationTool(temp_workspace)
@@ -267,7 +267,7 @@ class TestScheduleNotificationTool:
         result = await tool.execute(
             message="New progress check",
             scheduled_at="2026-03-12T09:00:00",
-            type="progress_check",
+            type="deadline_alert",
             related_task_id="task_001",
         )
         assert "✅" in result
@@ -281,7 +281,7 @@ class TestScheduleNotificationTool:
                 _make_notification(
                     f"n_{i}",
                     scheduled_at=f"2026-03-{12 + i}T09:00:00",
-                    type=["progress_check", "deadline_alert", "reminder"][i],
+                    type=["deadline_alert", "blocker_followup", "reminder"][i],
                     related_task_id="task_full",
                 )
                 for i in range(3)
@@ -334,7 +334,7 @@ class TestScheduleNotificationTool:
                 _make_notification(
                     f"n_{i}",
                     scheduled_at=f"2026-03-{12 + i}T09:00:00",
-                    type=["progress_check", "deadline_alert"][i],
+                    type=["deadline_alert", "blocker_followup"][i],
                     related_task_id="task_boundary",
                 )
                 for i in range(2)
@@ -361,7 +361,7 @@ class TestScheduleNotificationTool:
                 _make_notification(
                     "n_corrupt",
                     scheduled_at="not-a-date",
-                    type="progress_check",
+                    type="deadline_alert",
                 )
             ],
         )
@@ -372,7 +372,7 @@ class TestScheduleNotificationTool:
         result = await tool.execute(
             message="New progress check",
             scheduled_at="2026-03-12T09:00:00",
-            type="progress_check",
+            type="deadline_alert",
             related_task_id="task_001",
         )
         assert "Duplicate rejected" in result

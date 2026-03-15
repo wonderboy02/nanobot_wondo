@@ -79,14 +79,14 @@ class TestUpdateQuestionTool:
 
         tool = UpdateQuestionTool(temp_workspace)
 
-        result = await tool.execute(question_id="q_001", type="progress_check")
+        result = await tool.execute(question_id="q_001", type="blocker_check")
 
         assert "✅" in result
-        assert "type: info_gather → progress_check" in result
+        assert "type: info_gather → blocker_check" in result
 
         data = json.loads(questions_file.read_text())
         question = data["questions"][0]
-        assert question["type"] == "progress_check"
+        assert question["type"] == "blocker_check"
 
     @pytest.mark.asyncio
     async def test_update_question_cooldown(self, temp_workspace):
@@ -174,18 +174,18 @@ class TestUpdateQuestionTool:
         tool = UpdateQuestionTool(temp_workspace)
 
         result = await tool.execute(
-            question_id="q_001", priority="high", type="progress_check", cooldown_hours=12
+            question_id="q_001", priority="high", type="blocker_check", cooldown_hours=12
         )
 
         assert "✅" in result
         assert "priority: low → high" in result
-        assert "type: info_gather → progress_check" in result
+        assert "type: info_gather → blocker_check" in result
         assert "cooldown: 24h → 12h" in result
 
         data = json.loads(questions_file.read_text())
         question = data["questions"][0]
         assert question["priority"] == "high"
-        assert question["type"] == "progress_check"
+        assert question["type"] == "blocker_check"
         assert question["cooldown_hours"] == 12
 
     @pytest.mark.asyncio

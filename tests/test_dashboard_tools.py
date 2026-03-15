@@ -125,7 +125,7 @@ async def test_create_question_tool(temp_workspace):
     result = await tool.execute(
         question="진행 상황은?",
         priority="high",
-        type="progress_check",
+        type="blocker_check",
         related_task_id="task_123",
     )
 
@@ -139,7 +139,7 @@ async def test_create_question_tool(temp_workspace):
     question = questions_data["questions"][0]
     assert question["question"] == "진행 상황은?"
     assert question["priority"] == "high"
-    assert question["type"] == "progress_check"
+    assert question["type"] == "blocker_check"
     assert question["related_task_id"] == "task_123"
 
 

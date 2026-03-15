@@ -71,7 +71,6 @@ class ScheduleNotificationTool(BaseDashboardTool):
                     "enum": [
                         "reminder",
                         "deadline_alert",
-                        "progress_check",
                         "blocker_followup",
                         "question_reminder",
                     ],

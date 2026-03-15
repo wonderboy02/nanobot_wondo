@@ -245,7 +245,7 @@ def test_journey_01_one_week_lifecycle(agent_setup):
             "id": f"q_worker_{now.strftime('%Y%m%d')}",
             "question": "React Hooks 공부 진행이 좀 느린데, 괜찮아? 도움 필요해?",
             "priority": "high",
-            "type": "progress_check",
+            "type": "blocker_check",
             "related_task_id": react_task["id"] if react_task else "unknown",
             "answered": False,
             "created_at": now.isoformat(),

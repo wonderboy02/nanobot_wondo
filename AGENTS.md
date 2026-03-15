@@ -80,7 +80,7 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 - **Phase 1** (deterministic, always): bootstrap manually-added items, enforce data consistency, archive completed/cancelled tasks, re-evaluate active/someday
 - **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
-- **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
+- **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), data cleanup
 - **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
 - Runs automatically every 2 hours via Heartbeat
 - **Notification delivery**: Ledger-Based Delivery via `ReconciliationScheduler` — tools write to ledger only; Reconciler handles GCal sync, due detection, and delivery via `send_callback`. See WORKER.md for follow-up instructions
@@ -208,7 +208,7 @@ bash tests/test_docker.sh                  # Docker integration test
 | 7 | `telegram.py` | `_is_quiet_hours()` depends on server timezone (mitigated by Docker TZ=Asia/Seoul) | Low |
 | 8 | `bus/events.py` | OutboundMessage has no explicit type field (reaction uses metadata convention) | Low |
 | 9 | `storage.py:18` | `load_json_file` 파싱 오류를 빈 default로 삼킴 → 빈 리스트 감지로 완화했으나 부분 손상은 감지 불가 | Low |
-| 10 | `worker.py` | delivered notification 48h 유지: LLM이 completion_check 중복 생성 가능. WORKER.md 지침으로 완화하나 LLM 준수에 의존 | Low |
+| 10 | — | ~~completion_check 중복 생성~~ resolved: completion_check 플로우 자체 제거 (progress_check noti type도 제거) | — |
 | 11 | `reconciler.py` | update_notification으로 scheduled_at 변경 시 gcal_event_id=None으로 리셋 → 이전 GCal 이벤트 ID 유실로 Reconciler가 삭제 불가 (영구 orphan). 빈도 낮고 GCal 자체 피해 경미하나, 해결하려면 Reconciler에 old_gcal_event_id 추적 로직 필요 | Low |
 | 12 | `notifications.json` | delivered/cancelled notification 영구 보존 — archival 정책 없음. tasks.json과 동일 패턴 (#6). Worker Phase 1에 cleanup 추가 검토 | Low |
 | 13 | `reconciler.py` | SyncTarget 추상화 없음 — GCal 하드코딩. target 3개 이상 시 SyncTarget ABC 도입 필요 | Low |

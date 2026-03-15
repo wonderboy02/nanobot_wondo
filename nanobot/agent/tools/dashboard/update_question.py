@@ -32,12 +32,10 @@ class UpdateQuestionTool(BaseDashboardTool):
                     "type": "string",
                     "enum": [
                         "info_gather",
-                        "progress_check",
                         "deadline_check",
                         "start_check",
                         "blocker_check",
                         "status_check",
-                        "completion_check",
                         "routine_check",
                     ],
                     "description": "New question type (optional)",

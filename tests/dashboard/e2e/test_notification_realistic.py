@@ -253,12 +253,12 @@ class TestNotificationTaskIntegration:
             related_task_id="task_001",
         )
 
-        # Schedule progress check
+        # Schedule blocker followup
         progress_time = (datetime.now() + timedelta(days=2)).isoformat()
         await tool.execute(
             message="How's progress?",
             scheduled_at=progress_time,
-            type="progress_check",
+            type="blocker_followup",
             priority="medium",
             related_task_id="task_001",
         )
@@ -276,7 +276,7 @@ class TestNotificationTaskIntegration:
 
         types = [n["type"] for n in task_notifications]
         assert "deadline_alert" in types
-        assert "progress_check" in types
+        assert "blocker_followup" in types
 
 
 class TestNotificationPriority:

@@ -1432,7 +1432,7 @@ class WorkerAgent:
                 lines.append(f"  Related Task: {notif['related_task_id']}")
 
         lines.append(
-            "\n위 알림은 이미 전달되었다. WORKER.md의 '전달된 알림 후속 조치' 지침에 따라 처리하라."
+            "\n위 알림은 이미 전달되었다. 관련 Task가 아직 active면 상태 분석에 참고하라."
         )
 
         return "\n".join(lines)

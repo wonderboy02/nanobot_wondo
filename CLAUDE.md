@@ -90,7 +90,7 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 
 - **Phase 1** (deterministic, always): bootstrap manually-added items, field-level snapshot guard (each destructive rule checks only its guard fields — R6: `{completed_at}`, R1/R2a: `{status, progress}`, R5: `{progress}`, reevaluate: `{status}`), Active Sync (user status change → sync progress/completed_at), enforce data consistency (R1-R8 including deadline backfill + deadline_text backfill), archive completed/cancelled tasks, re-evaluate active/someday, process recurring tasks (completed tasks stay completed until next day, then reset)
 - **Extract** (always): extract answered questions (read-only snapshot for Phase 2)
-- **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), delivered notification follow-up (completion_check), data cleanup
+- **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), data cleanup
 - **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
 - Runs automatically every 2 hours via Heartbeat
 - **Notification delivery**: Ledger-Based Delivery via `ReconciliationScheduler` — tools write to ledger only; Reconciler handles GCal sync, due detection, and delivery via `send_callback`. See WORKER.md for follow-up instructions
@@ -286,7 +286,7 @@ bash tests/test_docker.sh                  # Docker integration test
 | 7 | — | ~~server timezone~~ resolved: `nanobot/utils/time.py` `now()` defaults to Asia/Seoul | — |
 | 8 | `bus/events.py` | OutboundMessage has no explicit type field (reaction uses metadata convention) | Low |
 | 9 | `storage.py:18` | `load_json_file` 파싱 오류를 빈 default로 삼킴 → 빈 리스트 감지로 완화했으나 부분 손상은 감지 불가 | Low |
-| 10 | `worker.py` | delivered notification 48h 유지: LLM이 completion_check 중복 생성 가능. WORKER.md 지침으로 완화하나 LLM 준수에 의존 | Low |
+| 10 | — | ~~completion_check 중복 생성~~ resolved: completion_check 플로우 자체 제거 (progress_check noti type도 제거) | — |
 | 11 | — | ~~GCal orphan on notification update~~ resolved: snapshot hash 기반 `_sync_gcal`이 gcal_event_id 유지 + update_event로 해결 | — |
 | 12 | `notifications.json` | delivered/cancelled notification 영구 보존 — archival 정책 없음. tasks.json과 동일 패턴 (#6). Worker Phase 1에 cleanup 추가 검토 | Low |
 | 13 | `reconciler.py` | SyncTarget 추상화 없음 — GCal 하드코딩. target 3개 이상 시 SyncTarget ABC 도입 필요 | Low |

@@ -37,7 +37,15 @@ class CreateQuestionTool(BaseDashboardTool):
                 },
                 "type": {
                     "type": "string",
-                    "description": "Question type (e.g., 'info_gather', 'progress_check', 'clarification')",
+                    "enum": [
+                        "info_gather",
+                        "deadline_check",
+                        "start_check",
+                        "blocker_check",
+                        "status_check",
+                        "routine_check",
+                    ],
+                    "description": "Question type (default: info_gather)",
                 },
                 "related_task_id": {
                     "type": "string",

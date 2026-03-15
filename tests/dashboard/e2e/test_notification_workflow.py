@@ -372,7 +372,7 @@ class TestNotificationWorkflow:
                     "id": "q_001",
                     "question": "How is the task going?",
                     "priority": "medium",
-                    "type": "progress_check",
+                    "type": "blocker_check",
                     "related_task_id": "task_003",
                     "answered": False,
                     "created_at": (datetime.now() - timedelta(days=2)).isoformat(),

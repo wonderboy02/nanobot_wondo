@@ -142,12 +142,10 @@ class Question(BaseModel):
     priority: Literal["low", "medium", "high"] = "medium"
     type: Literal[
         "info_gather",
-        "progress_check",
         "deadline_check",
         "start_check",
         "blocker_check",
         "status_check",
-        "completion_check",
         "routine_check",
     ] = "info_gather"
     related_task_id: Optional[str] = None
@@ -180,7 +178,7 @@ class Notification(BaseModel):
     scheduled_at: str  # ISO datetime
     scheduled_at_text: Optional[str] = None  # Natural language (e.g., "내일 아침")
     type: Literal[
-        "reminder", "deadline_alert", "progress_check", "blocker_followup", "question_reminder"
+        "reminder", "deadline_alert", "blocker_followup", "question_reminder"
     ] = "reminder"
     priority: Literal["low", "medium", "high"] = "medium"
     related_task_id: Optional[str] = None

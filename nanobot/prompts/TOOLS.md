@@ -89,7 +89,7 @@ cancel_notification(notification_id: str, reason: str = "") -> str
 list_notifications(status: str = None, related_task_id: str = None) -> str
 ```
 
-**Notification Types**: `reminder`, `deadline_alert`, `progress_check`, `blocker_followup`, `question_reminder`
+**Notification Types**: `reminder`, `deadline_alert`, `blocker_followup`, `question_reminder`
 **Status values**: `pending`, `delivered`, `cancelled`
 
 **When to use:**

@@ -20,7 +20,6 @@
 Dashboard 상태를 보고 아래 시그널을 감지하라:
 
 **Task 관련:**
-- 진행률이 오래 멈춰 있다 → `schedule_notification` (progress_check) 또는 `create_question`
 - 마감이 임박하다 → `schedule_notification` (deadline_alert)
 - Blocked 상태가 지속된다 → `schedule_notification` (blocker_followup)
 - progress=100% 또는 status=cancelled → Phase 1이 자동 아카이브 (별도 조치 불필요, 단 completed recurring task는 아카이브 대신 리셋. cancelled recurring은 정상 아카이브)
@@ -31,18 +30,6 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 - 유용한 인사이트 → `save_insight`
 - 불충분한 답변/후속 필요 → `create_question`
 - Task 완료 의미 → `update_task` (status: completed)
-
-**전달된 알림 후속 조치 (Recently Delivered Notifications):**
-- 전달된 알림에 related_task_id가 있고, 해당 Task가 아직 active면:
-  1. 해당 Task에 대해 이미 completion_check 질문이 있는지 확인 (answered=false 및 answered=true 모두 포함)
-  2. 없으면 → `create_question` (type: completion_check)
-  3. 질문: 알림 메시지 참조하여 구체적 후속 질문 작성
-  4. **중복 방지**: 같은 Task에 completion_check이 이미 존재하면 (answered=true 포함) 생성하지 마라
-- 관련 Task가 completed/archived면 → 후속 조치 불필요
-- completion_check 답변 처리:
-  - "완료" → `update_task` (status: completed)
-  - 진행 중 → `update_task` (progress 업데이트)
-  - 추가 시간 필요 → `schedule_notification` (type: reminder)
 
 **Question 관련:**
 - 같은 내용의 질문이 중복 → `remove_question` (최신 것만 유지)
@@ -68,9 +55,8 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 | Type | 용도 |
 |------|------|
 | `deadline_alert` | 마감 임박 |
-| `progress_check` | 진행률 정체 확인 |
 | `blocker_followup` | Blocked 상태 후속 |
-| `reminder` | 일반 리마인더, 추가 시간 필요 시 |
+| `reminder` | 일반 리마인더 |
 | `question_reminder` | 미답변 질문 리마인드 |
 
 ### Notification message 작성 규칙
@@ -124,7 +110,6 @@ Phase 1이 자동으로 처리하는 recurring task 로직:
 4. **status 보호**: recurring task는 항상 active 유지 (someday 전환 방지)
 
 Worker가 recurring task에 대해 할 일:
-- recurring task 관련 progress_check 알림을 스케줄링할 수 있음
 - recurring task에 대한 질문은 일반 task와 동일하게 처리
 - **recurring 설정 변경은 Main Agent 역할** (set_recurring tool)
 
