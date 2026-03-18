@@ -143,6 +143,10 @@ def get_dashboard_summary(
                 task_lines.append(f"  - ⚠️ Blocked: {blocker_note}")
             if tags:
                 task_lines.append(f"  - Tags: {', '.join(tags)}")
+            recurring = task.get("recurring")
+            if recurring and recurring.get("enabled"):
+                freq = recurring.get("frequency", "daily")
+                task_lines.append(f"  - Recurring: {freq}")
             task_lines.append("")  # Empty line between tasks
 
         parts.append("\n".join(task_lines))
