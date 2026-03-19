@@ -34,6 +34,8 @@ class HeartbeatService:
         scheduler: Any | None = None,  # ReconciliationScheduler
         api_key_stats: "ApiKeyStats | None" = None,
         report_callback: Callable[[str], Coroutine[Any, Any, None]] | None = None,
+        gcal_client: Any | None = None,
+        gcal_timezone: str = "Asia/Seoul",
     ):
         self.workspace = workspace
         self.interval_s = interval_s
@@ -45,6 +47,8 @@ class HeartbeatService:
         self.scheduler = scheduler
         self.api_key_stats = api_key_stats
         self.report_callback = report_callback
+        self.gcal_client = gcal_client
+        self.gcal_timezone = gcal_timezone
         self._running = False
         self._task: asyncio.Task | None = None
 
@@ -123,6 +127,8 @@ class HeartbeatService:
                 model=self.model,
                 scheduler=self.scheduler,
                 report_callback=self.report_callback,
+                gcal_client=self.gcal_client,
+                gcal_timezone=self.gcal_timezone,
             )
 
             if self._processing_lock:

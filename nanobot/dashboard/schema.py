@@ -104,6 +104,8 @@ class Task(BaseModel):
     completed_at: Optional[str] = None  # ISO datetime
     reflection: str = ""
     recurring: Optional[RecurringConfig] = None
+    gcal_event_id: Optional[str] = None
+    gcal_sync_hash: Optional[str] = None
 
     @field_validator("deadline", mode="before")
     @classmethod
@@ -180,7 +182,10 @@ class Notification(BaseModel):
     scheduled_at: str  # ISO datetime
     scheduled_at_text: Optional[str] = None  # Natural language (e.g., "내일 아침")
     type: Literal[
-        "reminder", "deadline_alert", "blocker_followup", "question_reminder",
+        "reminder",
+        "deadline_alert",
+        "blocker_followup",
+        "question_reminder",
         "progress_check",  # deprecated: kept for existing data compatibility
     ] = "reminder"
     priority: Literal["low", "medium", "high"] = "medium"

@@ -151,6 +151,8 @@ def task_to_notion(task: dict) -> dict[str, Any]:
         "RecurringConfig": _rich_text(
             json.dumps(recurring, ensure_ascii=False) if recurring else ""
         ),
+        "GCalEventID": _rich_text(task.get("gcal_event_id") or ""),
+        "GCalSyncHash": _rich_text(task.get("gcal_sync_hash") or ""),
     }
 
 
@@ -187,6 +189,8 @@ def notion_to_task(page: dict) -> dict[str, Any]:
         "completed_at": _extract_date(_get_prop(props, "CompletedAt")),
         "reflection": _extract_rich_text(_get_prop(props, "Reflection")),
         "recurring": _parse_json_or_none(_extract_rich_text(_get_prop(props, "RecurringConfig"))),
+        "gcal_event_id": _extract_rich_text(_get_prop(props, "GCalEventID")) or None,
+        "gcal_sync_hash": _extract_rich_text(_get_prop(props, "GCalSyncHash")) or None,
         "_notion_page_id": page.get("id", ""),
     }
 

@@ -60,7 +60,7 @@ Dashboard 상태를 보고 아래 시그널을 감지하라:
 | `question_reminder` | 미답변 질문 리마인드 |
 
 ### Notification message 작성 규칙
-- **짧은 명사형/동사형**으로 작성 (GCal 제목 + Telegram 알림에 공용)
+- **짧은 명사형/동사형**으로 작성 (Telegram 알림용)
 - Task title과 유사한 스타일: `~하기`, `~참석`, `~ 마감` 등
 - ❌ "리포트 마감이 내일입니다. 진행 상황은 어떠신가요?"
 - ✅ "리포트 마감"
@@ -114,6 +114,13 @@ Worker가 recurring task에 대해 할 일:
 - **recurring 설정 변경은 Main Agent 역할** (set_recurring tool)
 
 ---
+
+## GCal 동기화
+
+Task deadline은 Worker cycle에서 자동으로 GCal All-Day Event로 동기화됨 (별도 조치 불필요).
+- active/someday + deadline → GCal 이벤트 생성/업데이트
+- completed/cancelled/archived → GCal 이벤트 삭제
+- recurring task → GCal sync 스킵 (캘린더 노이즈 방지)
 
 ## 운영 원칙
 

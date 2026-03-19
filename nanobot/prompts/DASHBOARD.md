@@ -68,6 +68,7 @@ User: "오늘 운동 했어"
 - "다음주 금요일" → `2026-03-07`
 - 시간 정보가 필요한 경우 → notification의 `scheduled_at`에 설정 (deadline은 날짜만)
 - 마감이 진짜 없는 경우에만 빈 문자열
+- **Task deadline은 Worker가 자동으로 GCal All-Day Event로 동기화** (별도 조치 불필요)
 
 ---
 
@@ -113,7 +114,7 @@ Notification은 반드시 Task와 연결되어야 한다:
 
 ### Notification message 작성 규칙
 
-- **짧은 명사형/동사형**으로 작성 (GCal 제목 + Telegram 알림에 공용)
+- **짧은 명사형/동사형**으로 작성 (Telegram 알림용)
 - Task title과 유사한 스타일: `~하기`, `~참석`, `~ 마감` 등
 - ❌ "미팅 시간입니다", "운동 시간입니다", "리포트 마감 리마인더"
 - ✅ "팀 미팅", "운동하기", "리포트 마감"

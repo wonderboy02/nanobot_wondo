@@ -118,6 +118,8 @@ class CreateTaskTool(BaseDashboardTool):
                     "insights": [],
                     "resources": [],
                 },
+                "gcal_event_id": None,
+                "gcal_sync_hash": None,
             }
 
             # Add recurring config if requested

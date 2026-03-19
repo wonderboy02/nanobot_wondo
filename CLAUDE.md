@@ -93,17 +93,20 @@ ABC -> JsonStorageBackend (default, local JSON) | NotionStorageBackend (Notion A
 - **Phase 2** (LLM, when provider/model configured): notifications, question generation, answered question processing (update tasks, save insights), data cleanup
 - **Cleanup** (always, after Phase 2): remove stale questions; answered questions only removed if Phase 2 succeeded (preserved for retry otherwise)
 - Runs automatically every 2 hours via Heartbeat
-- **Notification delivery**: Ledger-Based Delivery via `ReconciliationScheduler` — tools write to ledger only; Reconciler handles GCal sync, due detection, and delivery via `send_callback`. See WORKER.md for follow-up instructions
+- **Task GCal Sync** (after Phase 1): task deadline → GCal All-Day Event (active/someday + deadline → create/update, completed/cancelled/archived → delete, recurring → skip). Uses `asyncio.to_thread()` + separate load/save.
+- **Notification delivery**: Ledger-Based Delivery via `ReconciliationScheduler` — tools write to ledger only; Reconciler handles due detection and delivery via `send_callback`. GCal sync moved from notifications to task deadlines. See WORKER.md for follow-up instructions
 
 ### Ledger-Based Delivery (reconciler.py)
 
-**핵심 원칙**: 도구는 ledger(JSON)에만 쓰고, 외부 동기화(GCal, 전송)는 Reconciler가 처리.
+**핵심 원칙**: 도구는 ledger(JSON)에만 쓰고, 전송은 Reconciler가 처리. GCal 동기화는 task deadline 기반으로 Worker가 처리.
 
 ```
-Tool (write) → Ledger (notifications.json) ← Reconciler (read + sync)
-                                              ├── GCal: _sync_gcal / _create_gcal / _update_gcal / _remove_gcal
+Tool (write) → Ledger (notifications.json) ← Reconciler (read + deliver)
+                                              ├── GCal: _remove_gcal only (legacy cleanup)
                                               ├── Delivery: send_callback
                                               └── Timer: _arm_timer(next_due_at)
+
+Worker → tasks.json → GCal All-Day Event (task deadline sync)
 ```
 
 **동기화 패턴 (Sync Targets)**:
@@ -111,7 +114,7 @@ Tool (write) → Ledger (notifications.json) ← Reconciler (read + sync)
 | 대상 | 방식 | 트리거 | 위치 |
 |------|------|--------|------|
 | **Notion** | StorageBackend ABC (정교한 R/W) | 매 save() 호출 시 | `storage.py`, `notion/storage.py` |
-| **GCal** | Reconciler 멱등 루프 | trigger() 호출 시 | `reconciler.py` |
+| **GCal** | Worker `_sync_tasks_gcal()` | 매 Worker cycle (Phase 1 이후) | `worker.py` |
 | **Telegram** | send_callback 단방향 push | due notification 감지 시 | `reconciler.py` |
 
 **Telegram 전송 포맷**: `"🔔 알림이 도착했습니다.\n- {message}"` 래핑 (notification message는 짧은 명사형: "팀 미팅", "운동하기")
@@ -132,14 +135,14 @@ AgentLoop 생성 → _processing_lock = asyncio.Lock()
                  └── _process_message() — 전체 메시지 처리 중 lock 보유
 ```
 
-**새 Sync Target 추가 시** (예: Slack, SMS):
+**새 Notification Sync Target 추가 시** (예: Slack, SMS):
 
 1. Notification dict에 `{target}_event_id: None` 필드 추가 (`schema.py`)
 2. `NotificationReconciler`에 `_ensure_{target}()` / `_remove_{target}()` 구현
 3. `reconcile()` 루프에 hook 추가 (pending → ensure, cancelled/delivered → remove)
 4. 기존 도구 코드 변경 불필요 (ledger-only 원칙)
 
-> **TODO**: Sync target이 3개 이상이면 `SyncTarget` ABC 도입 검토 (현재는 GCal 1개로 인라인 충분)
+> **NOTE**: GCal은 더 이상 notification이 아닌 task deadline과 동기화됨 (`worker.py`). Reconciler의 `_remove_gcal`은 기존 notification GCal 이벤트 정리용으로만 유지.
 
 **주요 타입** (`reconciler.py`):
 
@@ -189,7 +192,7 @@ AgentLoop 생성 → _processing_lock = asyncio.Lock()
 
 ```
 tests/
-├── dashboard/unit/        # Worker unit (maintenance, LLM cycle, questions, notifications, recurring, snapshot)
+├── dashboard/unit/        # Worker unit (maintenance, LLM cycle, questions, notifications, recurring, snapshot, task_gcal_sync)
 ├── dashboard/e2e/         # E2E scenarios (@pytest.mark.e2e, requires LLM API)
 ├── notion/                # Notion client, mapper, cache, storage
 ├── channels/              # Telegram notification manager
@@ -289,8 +292,8 @@ bash tests/test_docker.sh                  # Docker integration test
 | 10 | — | ~~completion_check 중복 생성~~ resolved: completion_check 플로우 자체 제거 (progress_check noti type도 제거) | — |
 | 11 | — | ~~GCal orphan on notification update~~ resolved: snapshot hash 기반 `_sync_gcal`이 gcal_event_id 유지 + update_event로 해결 | — |
 | 12 | `notifications.json` | delivered/cancelled notification 영구 보존 — archival 정책 없음. tasks.json과 동일 패턴 (#6). Worker Phase 1에 cleanup 추가 검토 | Low |
-| 13 | `reconciler.py` | SyncTarget 추상화 없음 — GCal 하드코딩. target 3개 이상 시 SyncTarget ABC 도입 필요 | Low |
-| 14 | `reconciler.py` | `reconcile()`에서 GCal create/update 후 ledger save 실패 시 다음 reconcile에서 중복 호출 가능. snapshot hash가 save 안 되면 hash 불일치 → 재update (멱등). create 경우만 중복 가능하나 save 실패 자체가 극히 드물어 실질적 영향 미미 | Low |
+| 13 | `worker.py` | GCal sync는 Worker에서 task deadline 기반으로 처리. Reconciler의 `_remove_gcal`은 기존 notification GCal 이벤트 정리용으로만 유지 (자연 소멸 후 제거 가능) | Low |
+| 14 | `worker.py` | `_sync_tasks_gcal_impl()`에서 GCal create 후 save 실패 시 다음 cycle에서 중복 생성 가능. create 경우만 해당, save 실패 자체가 극히 드물어 실질적 영향 미미 | Low |
 | 15 | `worker.py` | Field-level snapshot guard는 one-cycle protection만 제공. 각 규칙은 관련 guard 필드가 변경됐을 때만 스킵 (title만 변경 시 모든 규칙 정상 동작). 다음 cycle에서 추가 변경 없으면 정상 규칙 적용. Phase 2 tool이 task 수정하면 다음 cycle에서 해당 필드가 user-changed로 감지됨 (의도한 동작) | Low |
 | 16 | `worker.py` | f-string 로깅이 12개 잔존 (bootstrap, archive, recurring, cleanup/LLM 영역). 새 코드는 loguru `{}` 포맷 사용. 별도 커밋으로 일괄 전환 필요 | Low |
 | 17 | `alerts/service.py` | Alert throttle state는 in-memory — 컨테이너 재시작 시 리셋 (cooldown/hourly count 초기화). 실질적 영향 미미 | Low |

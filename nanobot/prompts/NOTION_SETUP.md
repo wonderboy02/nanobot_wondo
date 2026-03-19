@@ -46,6 +46,8 @@ You can create them in a single page for organization.
 | CompletedAt | date | Completion date |
 | Reflection | text | Post-completion reflection note |
 | RecurringConfig | text | JSON-serialized recurring config (daily habit tracking) |
+| GCalEventID | text | Google Calendar event ID (for deadline sync) |
+| GCalSyncHash | text | Hash of fields synced to GCal (worker-owned) |
 
 ### Questions DB
 

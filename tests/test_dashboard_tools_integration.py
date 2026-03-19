@@ -145,7 +145,7 @@ def test_notification_tools_always_registered(temp_workspace):
 
 
 def test_gcal_public_properties(temp_workspace):
-    """AgentLoop exposes gcal_client/timezone/duration as public properties."""
+    """AgentLoop exposes gcal_client/timezone as public properties."""
     bus = MessageBus()
     provider = LiteLLMProvider(api_key="test")
 
@@ -159,7 +159,6 @@ def test_gcal_public_properties(temp_workspace):
     # Default values when GCal not configured
     assert agent.gcal_client is None
     assert agent.gcal_timezone == "Asia/Seoul"
-    assert agent.gcal_duration_minutes == 30
 
 
 @pytest.mark.asyncio

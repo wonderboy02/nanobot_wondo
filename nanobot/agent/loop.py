@@ -82,13 +82,11 @@ class AgentLoop:
                     calendar_id=cal.calendar_id,
                 )
                 self._gcal_timezone = cal.timezone
-                self._gcal_duration_minutes = cal.default_duration_minutes
                 logger.info("Google Calendar client configured")
             except Exception as e:
                 logger.warning(f"Failed to configure Google Calendar: {e}")
         if not self._gcal_client:
             self._gcal_timezone = "Asia/Seoul"
-            self._gcal_duration_minutes = 30
 
         self.context = ContextBuilder(workspace)
         self.sessions = SessionManager(workspace)
@@ -132,11 +130,6 @@ class AgentLoop:
         return self._gcal_timezone
 
     @property
-    def gcal_duration_minutes(self) -> int:
-        """Google Calendar default event duration in minutes."""
-        return self._gcal_duration_minutes
-
-    @property
     def processing_lock(self) -> asyncio.Lock:
         """Shared processing lock (used by Heartbeat and Scheduler)."""
         return self._processing_lock
@@ -164,8 +157,6 @@ class AgentLoop:
             reconciler = NotificationReconciler(
                 storage_backend=self._storage_backend,
                 gcal_client=self._gcal_client,
-                gcal_timezone=self._gcal_timezone,
-                gcal_duration_minutes=self._gcal_duration_minutes,
                 default_chat_id=self._notification_chat_id,
                 default_channel="telegram",
             )

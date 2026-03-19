@@ -112,6 +112,8 @@ class WorkerAgent:
         model: str | None = None,
         scheduler: Any | None = None,
         report_callback: Callable[[str], Coroutine[Any, Any, None]] | None = None,
+        gcal_client: Any | None = None,
+        gcal_timezone: str = "Asia/Seoul",
     ):
         self.workspace = workspace
         self.storage_backend = storage_backend
@@ -119,6 +121,8 @@ class WorkerAgent:
         self.model = model
         self.scheduler = scheduler  # ReconciliationScheduler (or None)
         self.report_callback = report_callback
+        self.gcal_client = gcal_client  # GoogleCalendarClient (or None)
+        self.gcal_timezone = gcal_timezone
         # Recreated each _run_llm_cycle(); None when Phase 2 never runs.
         self.tools: ToolRegistry | None = None
 
@@ -306,6 +310,9 @@ class WorkerAgent:
         # - Consistency/archive/reevaluate: tasks only
         await self._run_maintenance()
 
+        # Task deadline → GCal sync (external I/O, after Phase 1)
+        await self._sync_tasks_gcal()
+
         # Extract answered questions before cleanup (read-only snapshot).
         # None means extraction itself failed — treat as "answers may exist"
         # so cleanup preserves them rather than risking data loss.
@@ -355,6 +362,133 @@ class WorkerAgent:
                 logger.exception("[Worker] Scheduler trigger error")
 
         logger.info("[Worker] Cycle complete.")
+
+    # =========================================================================
+    # Task Deadline → GCal Sync
+    # =========================================================================
+
+    async def _sync_tasks_gcal(self) -> None:
+        """Sync task deadlines to GCal as all-day events.
+
+        Runs after Phase 1 (deterministic maintenance) so deadline backfill
+        (R7/R8) is already applied. Uses separate load/save from Phase 1.
+        """
+        if not self.gcal_client:
+            return
+        try:
+            await asyncio.to_thread(self._sync_tasks_gcal_impl)
+        except Exception:
+            logger.exception("[Worker] Task GCal sync error")
+
+    def _sync_tasks_gcal_impl(self) -> None:
+        """Sync implementation (sync I/O, runs in thread pool)."""
+        tasks_data = self.storage_backend.load_tasks()
+        changed = False
+        for task in tasks_data.get("tasks", []):
+            status = task.get("status", "active")
+            deadline = task.get("deadline") or ""
+            is_recurring = _is_recurring_enabled(task)
+
+            should_have_gcal = status in ("active", "someday") and deadline and not is_recurring
+            if should_have_gcal:
+                changed |= self._ensure_task_gcal(task)
+            else:
+                changed |= self._remove_task_gcal(task)
+
+        if changed:
+            self.storage_backend.save_tasks(tasks_data)
+
+    @staticmethod
+    def _compute_task_sync_hash(task: dict) -> str:
+        """Compute hash of task fields synced to GCal."""
+        import hashlib
+
+        parts = [
+            task.get("deadline") or "",
+            task.get("title") or "",
+            (task.get("context") or "")[:200],
+        ]
+        return hashlib.md5("|".join(parts).encode()).hexdigest()
+
+    @staticmethod
+    def _build_task_description(task: dict) -> str | None:
+        """Build GCal event description from task fields."""
+        parts = []
+        context = (task.get("context") or "")[:200]
+        if context:
+            parts.append(context)
+        task_id = task.get("id")
+        if task_id:
+            parts.append(f"Task: {task_id}")
+        return "\n".join(parts) if parts else None
+
+    def _ensure_task_gcal(self, task: dict) -> bool:
+        """Create or update GCal event for a task. Returns True if task dict mutated."""
+        from nanobot.google.calendar import GCalEventNotFound, GoogleCalendarError
+
+        gcal_event_id = task.get("gcal_event_id")
+        current_hash = self._compute_task_sync_hash(task)
+
+        if not gcal_event_id:
+            # Create new event
+            try:
+                event_id = self.gcal_client.create_event(
+                    summary=task.get("title", ""),
+                    all_day_date=task["deadline"],
+                    description=self._build_task_description(task),
+                )
+                task["gcal_event_id"] = event_id
+                task["gcal_sync_hash"] = current_hash
+                logger.debug("[Worker] GCal created for task {}: {}", task.get("id", "?"), event_id)
+                return True
+            except GoogleCalendarError as e:
+                logger.warning(
+                    "[Worker] GCal create failed for task {}: {}", task.get("id", "?"), e
+                )
+                return False
+
+        if task.get("gcal_sync_hash") == current_hash:
+            return False  # Already in sync
+
+        # Update existing event
+        try:
+            self.gcal_client.update_event(
+                event_id=gcal_event_id,
+                summary=task.get("title", ""),
+                all_day_date=task["deadline"],
+                description=self._build_task_description(task),
+            )
+            task["gcal_sync_hash"] = current_hash
+            logger.debug(
+                "[Worker] GCal updated for task {}: {}", task.get("id", "?"), gcal_event_id
+            )
+            return True
+        except GCalEventNotFound:
+            task["gcal_event_id"] = None
+            task["gcal_sync_hash"] = None
+            logger.info("[Worker] GCal event gone for task {}, will recreate", task.get("id", "?"))
+            return True  # Mutated — next cycle will create
+        except GoogleCalendarError as e:
+            logger.warning("[Worker] GCal update failed for task {}: {}", task.get("id", "?"), e)
+            return False  # ID preserved — next cycle retries
+
+    def _remove_task_gcal(self, task: dict) -> bool:
+        """Delete GCal event for a task if present. Returns True if task dict mutated."""
+        gcal_event_id = task.get("gcal_event_id")
+        if not gcal_event_id:
+            return False
+
+        from nanobot.google.calendar import GoogleCalendarError
+
+        try:
+            self.gcal_client.delete_event(event_id=gcal_event_id)
+            task["gcal_event_id"] = None
+            task["gcal_sync_hash"] = None
+            logger.debug("[Worker] GCal removed for task {}", task.get("id", "?"))
+            return True
+        except GoogleCalendarError as e:
+            logger.warning("[Worker] GCal delete failed for task {}: {}", task.get("id", "?"), e)
+            return False
 
     # =========================================================================
     # Phase 1: Deterministic Maintenance
@@ -1431,9 +1565,7 @@ class WorkerAgent:
             if notif.get("related_task_id"):
                 lines.append(f"  Related Task: {notif['related_task_id']}")
 
-        lines.append(
-            "\n위 알림은 이미 전달되었다. 관련 Task가 아직 active면 상태 분석에 참고하라."
-        )
+        lines.append("\n위 알림은 이미 전달되었다. 관련 Task가 아직 active면 상태 분석에 참고하라.")
 
         return "\n".join(lines)
 

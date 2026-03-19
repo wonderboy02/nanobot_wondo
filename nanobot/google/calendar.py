@@ -1,4 +1,4 @@
-"""Google Calendar client for notification sync.
+"""Google Calendar client for task deadline and notification sync.
 
 Sync I/O (same pattern as NotionClient). Callers wrap with asyncio.to_thread().
 Lazy imports — graceful error when google libraries are not installed.
@@ -6,7 +6,7 @@ Lazy imports — graceful error when google libraries are not installed.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from loguru import logger
@@ -88,22 +88,40 @@ class GoogleCalendarClient:
     def create_event(
         self,
         summary: str,
-        start_iso: str,
+        start_iso: str | None = None,
         timezone: str = "Asia/Seoul",
         duration_minutes: int = 30,
         description: str | None = None,
+        all_day_date: str | None = None,
     ) -> str:
-        """Create a calendar event. Returns the event ID."""
+        """Create a calendar event. Returns the event ID.
+
+        Args:
+            all_day_date: "YYYY-MM-DD" for all-day events. When provided,
+                          start_iso is ignored and the event uses date-only format.
+        """
         try:
             service = self._get_service()
-            start_dt = self._localize(start_iso, timezone)
-            end_dt = start_dt + timedelta(minutes=duration_minutes)
 
-            body: dict = {
-                "summary": summary,
-                "start": {"dateTime": start_dt.isoformat(), "timeZone": timezone},
-                "end": {"dateTime": end_dt.isoformat(), "timeZone": timezone},
-            }
+            if all_day_date:
+                # All-day event: start=당일, end=다음날
+                start_date = date.fromisoformat(all_day_date)
+                end_date = start_date + timedelta(days=1)
+                body: dict = {
+                    "summary": summary,
+                    "start": {"date": start_date.isoformat()},
+                    "end": {"date": end_date.isoformat()},
+                }
+            else:
+                if start_iso is None:
+                    raise GoogleCalendarError("Either start_iso or all_day_date is required")
+                start_dt = self._localize(start_iso, timezone)
+                end_dt = start_dt + timedelta(minutes=duration_minutes)
+                body = {
+                    "summary": summary,
+                    "start": {"dateTime": start_dt.isoformat(), "timeZone": timezone},
+                    "end": {"dateTime": end_dt.isoformat(), "timeZone": timezone},
+                }
             if description:
                 body["description"] = description
 
@@ -124,15 +142,26 @@ class GoogleCalendarClient:
         timezone: str = "Asia/Seoul",
         duration_minutes: int = 30,
         description: str | None = None,
+        all_day_date: str | None = None,
     ) -> None:
-        """Update an existing calendar event."""
+        """Update an existing calendar event.
+
+        Args:
+            all_day_date: "YYYY-MM-DD" for all-day events. When provided,
+                          start_iso is ignored and the event uses date-only format.
+        """
         try:
             service = self._get_service()
             event = service.events().get(calendarId=self._calendar_id, eventId=event_id).execute()
 
             if summary is not None:
                 event["summary"] = summary
-            if start_iso is not None:
+            if all_day_date is not None:
+                start_date = date.fromisoformat(all_day_date)
+                end_date = start_date + timedelta(days=1)
+                event["start"] = {"date": start_date.isoformat()}
+                event["end"] = {"date": end_date.isoformat()}
+            elif start_iso is not None:
                 start_dt = self._localize(start_iso, timezone)
                 end_dt = start_dt + timedelta(minutes=duration_minutes)
                 event["start"] = {"dateTime": start_dt.isoformat(), "timeZone": timezone}

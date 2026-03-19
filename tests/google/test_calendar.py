@@ -140,6 +140,65 @@ class TestGoogleCalendarClient:
                 start_iso="2026-02-23T10:00:00",
             )
 
+    def test_create_all_day_event(self, client, mock_service):
+        """create_event with all_day_date creates an all-day event."""
+        mock_service.events().insert().execute.return_value = {"id": "evt_allday"}
+
+        result = client.create_event(
+            summary="Task deadline",
+            all_day_date="2026-03-15",
+        )
+
+        assert result == "evt_allday"
+        call_args = mock_service.events().insert.call_args
+        body = call_args.kwargs.get("body") or call_args[1].get("body")
+        assert body["start"] == {"date": "2026-03-15"}
+        assert body["end"] == {"date": "2026-03-16"}
+        assert "dateTime" not in body["start"]
+        assert "dateTime" not in body["end"]
+
+    def test_create_all_day_overrides_start_iso(self, client, mock_service):
+        """all_day_date takes priority over start_iso when both provided."""
+        mock_service.events().insert().execute.return_value = {"id": "evt_override"}
+
+        client.create_event(
+            summary="Override test",
+            start_iso="2026-03-15T10:00:00",
+            all_day_date="2026-03-15",
+        )
+
+        call_args = mock_service.events().insert.call_args
+        body = call_args.kwargs.get("body") or call_args[1].get("body")
+        assert "date" in body["start"]
+        assert "dateTime" not in body["start"]
+
+    def test_update_all_day_event(self, client, mock_service):
+        """update_event with all_day_date converts to all-day format."""
+        mock_service.events().get().execute.return_value = {
+            "id": "evt_123",
+            "summary": "Old title",
+            "start": {"dateTime": "2026-02-23T10:00:00", "timeZone": "Asia/Seoul"},
+            "end": {"dateTime": "2026-02-23T10:30:00", "timeZone": "Asia/Seoul"},
+        }
+        mock_service.events().update().execute.return_value = {}
+
+        client.update_event(
+            event_id="evt_123",
+            summary="Updated deadline",
+            all_day_date="2026-03-20",
+        )
+
+        call_args = mock_service.events().update.call_args
+        body = call_args.kwargs.get("body") or call_args[1].get("body")
+        assert body["start"] == {"date": "2026-03-20"}
+        assert body["end"] == {"date": "2026-03-21"}
+        assert body["summary"] == "Updated deadline"
+
+    def test_create_no_start_iso_no_all_day_raises(self, client, mock_service):
+        """Neither start_iso nor all_day_date → GoogleCalendarError."""
+        with pytest.raises(GoogleCalendarError, match="Either start_iso or all_day_date"):
+            client.create_event(summary="No time")
+
     def test_import_error_raises_gcal_error(self, tmp_path):
         """Missing google libraries raises GoogleCalendarError."""
         c = GoogleCalendarClient(

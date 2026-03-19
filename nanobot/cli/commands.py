@@ -294,6 +294,8 @@ def gateway(
         scheduler=agent.scheduler,
         api_key_stats=api_key_stats,
         report_callback=send_stats_report if notification_chat_id else None,
+        gcal_client=agent.gcal_client,
+        gcal_timezone=agent.gcal_timezone,
     )
 
     # Create healthcheck service
